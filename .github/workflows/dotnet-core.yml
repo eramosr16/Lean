@@ -22,9 +22,11 @@ jobs:
         export DAY=$(date -d "$D" '+%-d')
         export MONTH=$(date -d "$D" '+%-m')
         export YEAR=$(date -d "$D" '+%y')
-        export VERSION=1.$YEAR.$MONTH.$DAY$BITBUCKET_BUILD_NUMBER                
+        export VERSION=1.$YEAR.$MONTH.$DAY$BUILD_NUMBER                
         dotnet build ./Logging/QuantConnect.Logging.csproj -p:Version=$VERSION --configuration Release
+        dotnet build ./Configuration/QuantConnect.Configuration.csproj -p:Version=$VERSION --configuration Release
         dotnet nuget push ./Logging/bin/Release/QuantConnect.Logging.$VERSION.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source ${{ secrets.NUGET_URL }}
+        dotnet nuget push ./Configuration/bin/Release/QuantConnect.Configuration.$VERSION.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source ${{ secrets.NUGET_URL }}
 
 #    - name: Install dependencies
 #      run: dotnet restore
