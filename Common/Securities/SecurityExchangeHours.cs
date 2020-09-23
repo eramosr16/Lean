@@ -111,7 +111,7 @@ namespace QuantConnect.Securities
             IReadOnlyDictionary<DateTime, TimeSpan> lateOpens)
         {
             TimeZone = timeZone;
-            _holidays = holidayDates.Select(x => x.Date.Ticks).ToHashSet();
+            _holidays = LinqExtensions.ToHashSet(holidayDates.Select(x => x.Date.Ticks));
             _earlyCloses = earlyCloses.ToDictionary(x => x.Key.Date, x => x.Value);
             _lateOpens = lateOpens.ToDictionary(x => x.Key.Date, x => x.Value);
 

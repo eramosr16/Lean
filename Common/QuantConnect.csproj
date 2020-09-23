@@ -47,6 +47,7 @@
     <PackageReference Include="NodaTime" Version="3.0.0" />
     <PackageReference Include="protobuf-net" Version="3.0.29" />
     <PackageReference Include="protobuf-net.Core" Version="3.0.29" />
+    <PackageReference Include="Python.Runtime.NETStandard" Version="3.7.1" />
     <PackageReference Include="QLNet" Version="1.11.4" />
     <PackageReference Include="QuantConnect.pythonnet" Version="1.0.5.30" />
     <PackageReference Include="SharpZipLib.NETStandard" Version="1.0.7" />

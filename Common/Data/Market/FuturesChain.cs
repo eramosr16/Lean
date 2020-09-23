@@ -118,7 +118,7 @@ namespace QuantConnect.Data.Market
             Time = time;
             Symbol = canonicalFutureSymbol;
             DataType = MarketDataType.FuturesChain;
-            FilteredContracts = filteredContracts.ToHashSet();
+            FilteredContracts = LinqExtensions.ToHashSet(filteredContracts);
 
             Ticks = new Ticks(time);
             TradeBars = new TradeBars(time);

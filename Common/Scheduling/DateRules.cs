@@ -97,7 +97,7 @@ namespace QuantConnect.Scheduling
         /// <returns>A date rule that fires on every specified day of week</returns>
         public IDateRule Every(params DayOfWeek[] days)
         {
-            var hash = days.ToHashSet();
+            var hash = LinqExtensions.ToHashSet(days);
             return new FuncDateRule(string.Join(",", days), (start, end) => Time.EachDay(start, end).Where(date => hash.Contains(date.DayOfWeek)));
         }
 
