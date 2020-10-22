@@ -128,6 +128,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var brokerage = new Mock<IBrokerage>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
             brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
             brokerage.Setup(x => x.GetAccountHoldings()).Returns(getHoldings);
             brokerage.Setup(x => x.GetOpenOrders()).Returns(getOrders);
@@ -181,6 +182,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
             brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
             brokerage.Setup(x => x.GetAccountHoldings()).Returns(new List<Holding>
             {
@@ -228,6 +230,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
             brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
             brokerage.Setup(x => x.GetAccountHoldings()).Returns(new List<Holding>
             {
@@ -283,6 +286,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
             brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
             brokerage.Setup(x => x.GetAccountHoldings()).Returns(new List<Holding>());
             brokerage.Setup(x => x.GetOpenOrders()).Returns(new List<Order>());
@@ -324,6 +328,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
             brokerage.Setup(x => x.GetCashBalance()).Returns(
                 hasCashBalance
                     ? new List<CashAmount>
@@ -346,22 +351,16 @@ namespace QuantConnect.Tests.Engine.Setup
             IBrokerageFactory factory;
             setupHandler.CreateBrokerage(job, algorithm, out factory);
 
-            var isSuccess = hasCashBalance || hasHoldings;
-
             var dataManager = new DataManagerStub(algorithm, new MockDataFeed(), true);
 
-            Assert.AreEqual(isSuccess, setupHandler.Setup(new SetupHandlerParameters(dataManager.UniverseSelection, algorithm, brokerage.Object, job, resultHandler.Object,
+            Assert.IsTrue(setupHandler.Setup(new SetupHandlerParameters(dataManager.UniverseSelection, algorithm, brokerage.Object, job, resultHandler.Object,
                 transactionHandler.Object, realTimeHandler.Object, objectStore.Object)));
 
-            if (isSuccess)
+            if (!hasCashBalance && !hasHoldings)
             {
-                Assert.AreEqual(0, setupHandler.Errors.Count);
-            }
-            else
-            {
-                Assert.AreEqual(1, setupHandler.Errors.Count);
+                Assert.That(algorithm.DebugMessages.Count > 0);
 
-                Assert.That(setupHandler.Errors[0].Message.Contains("No cash balances or holdings were found in the brokerage account."));
+                Assert.That(algorithm.DebugMessages.Any(x => x.Contains("No cash balances or holdings were found in the brokerage account.")));
             }
         }
 

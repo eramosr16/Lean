@@ -82,7 +82,7 @@ namespace QuantConnect.Brokerages.Bitfinex
         /// <param name="priceProvider">The price provider for missing FX conversion rates</param>
         /// <param name="aggregator">consolidate ticks</param>
         public BitfinexBrokerage(IWebSocket websocket, IRestClient restClient, string apiKey, string apiSecret, IAlgorithm algorithm, IPriceProvider priceProvider, IDataAggregator aggregator)
-            : base(WebSocketUrl, websocket, restClient, apiKey, apiSecret, Market.Bitfinex, "Bitfinex")
+            : base(WebSocketUrl, websocket, restClient, apiKey, apiSecret, "Bitfinex")
         {
             SubscriptionManager = new BitfinexSubscriptionManager(this, WebSocketUrl, _symbolMapper);
             _symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder();
@@ -102,8 +102,6 @@ namespace QuantConnect.Brokerages.Bitfinex
         /// <param name="e"></param>
         public override void OnMessage(object sender, WebSocketMessage e)
         {
-            LastHeartbeatUtcTime = DateTime.UtcNow;
-
             OnMessageImpl(e);
         }
 
@@ -399,6 +397,15 @@ namespace QuantConnect.Brokerages.Bitfinex
                     status = totalFillQuantity == order.Quantity
                         ? OrderStatus.Filled
                         : OrderStatus.PartiallyFilled;
+                }
+
+                if (_algorithm.BrokerageModel.AccountType == AccountType.Cash &&
+                    order.Direction == OrderDirection.Buy)
+                {
+                    // fees are debited in the base currency, so we have to subtract them from the filled quantity
+                    fillQuantity -= orderFee.Value.Amount;
+
+                    orderFee = new ModifiedFillQuantityOrderFee(orderFee.Value);
                 }
 
                 var orderEvent = new OrderEvent
