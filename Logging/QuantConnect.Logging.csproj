@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <Id>QuantConnect.Configuration</Id>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net5</TargetFramework>
     <Version>$(Version)</Version>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
