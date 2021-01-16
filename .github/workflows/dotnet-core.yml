@@ -25,8 +25,8 @@ jobs:
         dotnet-version: 5.0.100
     - name: Set Variables and build
       run: |
-        echo "TODAY=$(date +%y.%m.%d)" >> $TODAY
-        echo "VERSION=$TODAY$BUILD_NUMBER" >> $VERSION                
+        export TODAY=$(date +%y.%m.%d)
+        export VERSION=$TODAY$BUILD_NUMBER
         dotnet build ./Logging/QuantConnect.Logging.csproj -p:Version=$VERSION --configuration Release
         dotnet build ./Configuration/QuantConnect.Configuration.csproj -p:Version=$VERSION --configuration Release
         dotnet build ./Common/QuantConnect.csproj -p:Version=$VERSION --configuration Release
