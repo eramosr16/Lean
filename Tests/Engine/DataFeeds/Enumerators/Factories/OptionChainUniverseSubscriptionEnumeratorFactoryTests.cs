@@ -83,8 +83,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                         false,
                         endTime,
                         Resolution.Minute.ToTimeSpan(),
-                        TimeZones.Utc,
-                        startTime);
+                        TimeZones.Utc);
                 };
             var factory = new OptionChainUniverseSubscriptionEnumeratorFactory(underlyingEnumeratorFunc);
 
@@ -156,8 +155,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                         false,
                         Time.EndOfTime,
                         Resolution.Minute.ToTimeSpan(),
-                        TimeZones.Utc,
-                        Time.BeginningOfTime);
+                        TimeZones.Utc);
                 };
             var factory = new OptionChainUniverseSubscriptionEnumeratorFactory(underlyingEnumeratorFunc, symbolUniverse, timeProvider);
 
@@ -258,7 +256,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                 _timeProvider = timeProvider;
             }
 
-            public IEnumerable<Symbol> LookupSymbols(string lookupName, SecurityType securityType, bool includeExpired, string securityCurrency = null, string securityExchange = null)
+            public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
             {
                 TotalLookupCalls++;
 

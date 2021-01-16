@@ -29,7 +29,7 @@ namespace QuantConnect.Securities
         private static SymbolPropertiesDatabase _dataFolderSymbolPropertiesDatabase;
         private static readonly object DataFolderSymbolPropertiesDatabaseLock = new object();
 
-        private readonly IReadOnlyDictionary<SecurityDatabaseKey, SymbolProperties> _entries;
+        private readonly Dictionary<SecurityDatabaseKey, SymbolProperties> _entries;
         private readonly IReadOnlyDictionary<SecurityDatabaseKey, SecurityDatabaseKey> _keyBySecurityType;
 
         private SymbolPropertiesDatabase(string file)
@@ -108,17 +108,32 @@ namespace QuantConnect.Securities
         /// Gets the symbol properties for the specified market/symbol/security-type
         /// </summary>
         /// <param name="market">The market the exchange resides in, i.e, 'usa', 'fxcm', ect...</param>
-        /// <param name="symbol">The particular symbol being traded</param>
+        /// <param name="symbol">The particular symbol being traded (Symbol class)</param>
         /// <param name="securityType">The security type of the symbol</param>
         /// <param name="defaultQuoteCurrency">Specifies the quote currency to be used when returning a default instance of an entry is not found in the database</param>
         /// <returns>The symbol properties matching the specified market/symbol/security-type or null if not found</returns>
-        public SymbolProperties GetSymbolProperties(string market, string symbol, SecurityType securityType, string defaultQuoteCurrency)
+        /// <remarks>For any derivative options asset that is not for equities, we default to the underlying symbol's properties if no entry is found in the database</remarks>
+        public SymbolProperties GetSymbolProperties(string market, Symbol symbol, SecurityType securityType, string defaultQuoteCurrency)
         {
             SymbolProperties symbolProperties;
-            var key = new SecurityDatabaseKey(market, symbol, securityType);
+            var lookupTicker = MarketHoursDatabase.GetDatabaseSymbolKey(symbol);
+            var key = new SecurityDatabaseKey(market, lookupTicker, securityType);
 
             if (!_entries.TryGetValue(key, out symbolProperties))
             {
+                if (symbol != null && symbol.SecurityType == SecurityType.FutureOption)
+                {
+                    // Default to looking up the underlying symbol's properties and using those instead if there's
+                    // no existing entry for the future option.
+                    lookupTicker = MarketHoursDatabase.GetDatabaseSymbolKey(symbol.Underlying);
+                    key = new SecurityDatabaseKey(market, lookupTicker, symbol.Underlying.SecurityType);
+
+                    if (_entries.TryGetValue(key, out symbolProperties))
+                    {
+                        return symbolProperties;
+                    }
+                }
+
                 // now check with null symbol key
                 if (!_entries.TryGetValue(new SecurityDatabaseKey(market, null, securityType), out symbolProperties))
                 {
@@ -128,23 +143,6 @@ namespace QuantConnect.Securities
             }
 
             return symbolProperties;
-        }
-
-        /// <summary>
-        /// Gets the symbol properties for the specified market/symbol/security-type
-        /// </summary>
-        /// <param name="market">The market the exchange resides in, i.e, 'usa', 'fxcm', ect...</param>
-        /// <param name="symbol">The particular symbol being traded (Symbol class)</param>
-        /// <param name="securityType">The security type of the symbol</param>
-        /// <param name="defaultQuoteCurrency">Specifies the quote currency to be used when returning a default instance of an entry is not found in the database</param>
-        /// <returns>The symbol properties matching the specified market/symbol/security-type or null if not found</returns>
-        public SymbolProperties GetSymbolProperties(string market, Symbol symbol, SecurityType securityType, string defaultQuoteCurrency)
-        {
-            return GetSymbolProperties(
-                market,
-                MarketHoursDatabase.GetDatabaseSymbolKey(symbol),
-                securityType,
-                defaultQuoteCurrency);
         }
 
         /// <summary>
@@ -165,6 +163,40 @@ namespace QuantConnect.Securities
                     yield return new KeyValuePair<SecurityDatabaseKey, SymbolProperties>(key, symbolProperties);
                 }
             }
+        }
+
+        /// <summary>
+        /// Gets a list of symbol properties for the specified market
+        /// </summary>
+        /// <param name="market">The market the exchange resides in, i.e, 'usa', 'fxcm', ect...</param>
+        /// <returns>An IEnumerable of symbol properties matching the specified market</returns>
+        public IEnumerable<KeyValuePair<SecurityDatabaseKey, SymbolProperties>> GetSymbolPropertiesList(string market)
+        {
+            foreach (var entry in _entries)
+            {
+                var key = entry.Key;
+                var symbolProperties = entry.Value;
+
+                if (key.Market == market)
+                {
+                    yield return new KeyValuePair<SecurityDatabaseKey, SymbolProperties>(key, symbolProperties);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Set SymbolProperties entry for a particular market, symbol and security type.
+        /// </summary>
+        /// <param name="market">Market of the entry</param>
+        /// <param name="symbol">Symbol of the entry</param>
+        /// <param name="securityType">Type of security for the entry</param>
+        /// <param name="properties">The new symbol properties to store</param>
+        /// <returns>True if successful</returns>
+        public bool SetEntry(string market, string symbol, SecurityType securityType, SymbolProperties properties)
+        {
+            var key = new SecurityDatabaseKey(market, symbol, securityType);
+            _entries[key] = properties;
+            return true;
         }
 
         /// <summary>
@@ -227,7 +259,8 @@ namespace QuantConnect.Securities
                 quoteCurrency: csv[4],
                 contractMultiplier: csv[5].ToDecimal(),
                 minimumPriceVariation: csv[6].ToDecimalAllowExponent(),
-                lotSize: csv[7].ToDecimal());
+                lotSize: csv[7].ToDecimal(),
+                marketTicker: csv.Length > 8 ? csv[8] : string.Empty);
         }
 
 

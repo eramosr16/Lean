@@ -16,6 +16,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using QuantConnect.Configuration;
@@ -104,7 +105,7 @@ namespace QuantConnect.Lean.Engine.Results
                     //While there's no work to do, go back to the algorithm:
                     if (Messages.Count == 0)
                     {
-                        Thread.Sleep(50);
+                        ExitEvent.WaitOne(50);
                     }
                     else
                     {
@@ -233,7 +234,7 @@ namespace QuantConnect.Lean.Engine.Results
                 }
 
                 // let's re update this value after we finish just in case, so we don't re enter in the next loop
-                _nextUpdate = DateTime.UtcNow.AddSeconds(3);
+                _nextUpdate = DateTime.UtcNow.Add(MainUpdateInterval);
             }
             catch (Exception err)
             {
@@ -244,7 +245,7 @@ namespace QuantConnect.Lean.Engine.Results
         /// <summary>
         /// Run over all the data and break it into smaller packets to ensure they all arrive at the terminal
         /// </summary>
-        public IEnumerable<BacktestResultPacket> SplitPackets(Dictionary<string, Chart> deltaCharts, Dictionary<int, Order> deltaOrders, Dictionary<string, string> runtimeStatistics, decimal progress, Dictionary<string, string> serverStatistics)
+        public virtual IEnumerable<BacktestResultPacket> SplitPackets(Dictionary<string, Chart> deltaCharts, Dictionary<int, Order> deltaOrders, Dictionary<string, string> runtimeStatistics, decimal progress, Dictionary<string, string> serverStatistics)
         {
             // break the charts into groups
             var splitPackets = new List<BacktestResultPacket>();
@@ -360,13 +361,16 @@ namespace QuantConnect.Lean.Engine.Results
                 {
                     result = BacktestResultPacket.CreateEmpty(_job);
                 }
-                result.ProcessingTime = (DateTime.UtcNow - StartTime).TotalSeconds;
+
+                var utcNow = DateTime.UtcNow;
+                result.ProcessingTime = (utcNow - StartTime).TotalSeconds;
                 result.DateFinished = DateTime.Now;
                 result.Progress = 1;
 
                 //Place result into storage.
                 StoreResult(result);
 
+                result.Results.ServerStatistics = GetServerStatistics(utcNow);
                 //Second, send the truncated packet:
                 MessagingHandler.Send(result);
 
@@ -533,7 +537,7 @@ namespace QuantConnect.Lean.Engine.Results
                 //Add our value:
                 if (series.Values.Count == 0 || time > Time.UnixTimeStampToDateTime(series.Values[series.Values.Count - 1].x))
                 {
-                    series.Values.Add(new ChartPoint(time, value));
+                    series.AddPoint(time, value);
                 }
             }
         }
@@ -636,6 +640,7 @@ namespace QuantConnect.Lean.Engine.Results
 
                 // Set exit flag, update task will send any message before stopping
                 ExitTriggered = true;
+                ExitEvent.Set();
 
                 StopUpdateRunner();
 
@@ -652,7 +657,7 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="message">Additional optional status message.</param>
         public virtual void SendStatusUpdate(AlgorithmStatus status, string message = "")
         {
-            var statusPacket = new AlgorithmStatusPacket(_algorithmId, _projectId, status, message);
+            var statusPacket = new AlgorithmStatusPacket(_algorithmId, _projectId, status, message) { OptimizationId = _job.OptimizationId };
             MessagingHandler.Send(statusPacket);
         }
 
@@ -681,7 +686,7 @@ namespace QuantConnect.Lean.Engine.Results
 
             var time = Algorithm.UtcTime;
 
-            if (ShouldSampleCharts(time) && time > _nextSample || forceProcess)
+            if (time > _nextSample || forceProcess)
             {
                 //Set next sample time: 4000 samples per backtest
                 _nextSample = time.Add(ResamplePeriod);

@@ -114,7 +114,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             // check if this universe must be filtered with fine fundamental data
             var fineFiltered = universe as FineFundamentalFilteredUniverse;
-            if (fineFiltered != null)
+            if (fineFiltered != null
+                // if the universe has been disposed we don't perform selection. This us handled bellow by 'Universe.PerformSelection'
+                // but in this case we directly call 'SelectSymbols' because we want to perform fine selection even if coarse returns the same
+                // symbols, see 'Universe.PerformSelection', which detects this and returns 'Universe.Unchanged'
+                && !universe.DisposeRequested)
             {
                 // perform initial filtering and limit the result
                 selectSymbolsResult = universe.SelectSymbols(dateTimeUtc, universeData);
@@ -313,7 +317,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         universe.UniverseSettings.ExtendedMarketHours,
                         dataNormalizationMode: universe.UniverseSettings.DataNormalizationMode);
 
-                    security = _securityService.CreateSecurity(symbol, configs, universe.UniverseSettings.Leverage, symbol.ID.SecurityType == SecurityType.Option);
+                    security = _securityService.CreateSecurity(symbol, configs, universe.UniverseSettings.Leverage, (symbol.ID.SecurityType == SecurityType.Option || symbol.ID.SecurityType == SecurityType.FutureOption));
 
                     pendingAdditions.Add(symbol, security);
                 }

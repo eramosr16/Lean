@@ -95,12 +95,12 @@ namespace QuantConnect.Research
                     _pandas = Py.Import("pandas");
                 }
 
-                // Issue #4892 : Set start time relative to NY time 
+                // Issue #4892 : Set start time relative to NY time
                 // when the data is available from the previous day
                 var newYorkTime = DateTime.UtcNow.ConvertFromUtc(TimeZones.NewYork);
                 var hourThreshold = Config.GetInt("qb-data-hour", 9);
-                
-                // If it is after our hour threshold; then we can use today 
+
+                // If it is after our hour threshold; then we can use today
                 if (newYorkTime.Hour >= hourThreshold)
                 {
                     SetStartDate(newYorkTime);
@@ -109,7 +109,7 @@ namespace QuantConnect.Research
                 {
                     SetStartDate(newYorkTime - TimeSpan.FromDays(1));
                 }
-                
+
 
                 // Sets PandasConverter
                 SetPandasConverter();
@@ -205,7 +205,7 @@ namespace QuantConnect.Research
 
             //Covert to symbols
             var symbols = PythonUtil.ConvertToSymbols(input);
-            
+
             //Fetch the data
             var fundamentalData = GetAllFundamental(symbols, selector, start, end);
 
@@ -322,9 +322,24 @@ namespace QuantConnect.Research
             }
 
             // Load a canonical option Symbol if the user provides us with an underlying Symbol
-            if (symbol.SecurityType != SecurityType.Option)
+            if (symbol.SecurityType != SecurityType.Option && symbol.SecurityType != SecurityType.FutureOption)
             {
-                symbol = AddOption(symbol.Value, resolution, symbol.ID.Market).Symbol;
+                var option = AddOption(symbol, resolution, symbol.ID.Market);
+
+                // Allow 20 strikes from the money for futures. No expiry filter is applied
+                // so that any future contract provided will have data returned.
+                if (symbol.SecurityType == SecurityType.Future && symbol.IsCanonical())
+                {
+                    throw new ArgumentException("The Future Symbol provided is a canonical Symbol (i.e. a Symbol representing all Futures), which is not supported at this time. " +
+                        "If you are using the Symbol accessible from `AddFuture(...)`, use the Symbol from `AddFutureContract(...)` instead. " +
+                        "You can use `qb.FutureOptionChainProvider(canonicalFuture, datetime)` to get a list of futures contracts for a given date, and add them to your algorithm with `AddFutureContract(symbol, Resolution)`.");
+                }
+                if (symbol.SecurityType == SecurityType.Future && !symbol.IsCanonical())
+                {
+                    option.SetFilter(universe => universe.Strikes(-10, +10));
+                }
+
+                symbol = option.Symbol;
             }
 
             IEnumerable<Symbol> symbols;
@@ -337,8 +352,19 @@ namespace QuantConnect.Research
                                                        .GetHighestResolution();
                 if (!Securities.ContainsKey(symbol.Underlying))
                 {
-                    // only add underlying if not present
-                    AddEquity(symbol.Underlying.Value, resolutionToUseForUnderlying);
+                    if (symbol.Underlying.SecurityType == SecurityType.Equity)
+                    {
+                        // only add underlying if not present
+                        AddEquity(symbol.Underlying.Value, resolutionToUseForUnderlying);
+                    }
+                    if (symbol.Underlying.SecurityType == SecurityType.Future && symbol.Underlying.IsCanonical())
+                    {
+                        AddFuture(symbol.Underlying.ID.Symbol, resolutionToUseForUnderlying);
+                    }
+                    else if (symbol.Underlying.SecurityType == SecurityType.Future)
+                    {
+                        AddFutureContract(symbol.Underlying, resolutionToUseForUnderlying);
+                    }
                 }
                 var allSymbols = new List<Symbol>();
                 for (var date = start; date < end; date = date.AddDays(1))

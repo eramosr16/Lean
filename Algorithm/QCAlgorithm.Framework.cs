@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Algorithm.Framework.Alphas;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
@@ -31,6 +32,7 @@ namespace QuantConnect.Algorithm
     {
         private readonly ISecurityValuesProvider _securityValuesProvider;
         private bool _isEmitWarmupInsightWarningSent;
+        private bool _isEmitDelistedInsightWarningSent;
 
         /// <summary>
         /// Enables additional logging of framework models including:
@@ -111,14 +113,21 @@ namespace QuantConnect.Algorithm
                         continue;
                     }
 
+                    if (ukvp.Value.DisposeRequested)
+                    {
+                        // have to remove in the next loop after the universe is marked as disposed, when 'Dispose()' is called it will trigger universe selection
+                        // and deselect all symbols, sending the removed security changes, which are picked up by the AlgorithmManager and tags securities
+                        // as non tradable as long as they are not active in any universe (uses UniverseManager.ActiveSecurities)
+                        // but they will remain tradable if a position is still being hold since they won't be remove from the UniverseManager
+                        // but this last part will not happen if we remove the universe from the UniverseManager right away, since it won't be part of 'UniverseManager'. 
+                        // And we have to remove the universe even if it's present at 'universes' because that one is another New universe that should get added!
+                        // 'UniverseManager' will skip duplicate entries getting added.
+                        UniverseManager.Remove(universeSymbol);
+                    }
+
                     Universe universe;
                     if (!universes.TryGetValue(universeSymbol, out universe))
                     {
-                        if (ukvp.Value.DisposeRequested)
-                        {
-                            UniverseManager.Remove(universeSymbol);
-                        }
-
                         // mark this universe as disposed to remove all child subscriptions
                         ukvp.Value.Dispose();
                     }
@@ -147,7 +156,8 @@ namespace QuantConnect.Algorithm
             // only fire insights generated event if we actually have insights
             if (insights.Length != 0)
             {
-                OnInsightsGenerated(insights.Select(InitializeInsightFields));
+                insights = InitializeInsights(insights);
+                OnInsightsGenerated(insights);
             }
 
             ProcessInsights(insights);
@@ -226,7 +236,7 @@ namespace QuantConnect.Algorithm
                     Log($"{Time}: RISK ADJUSTED TARGETS: {string.Join(" | ", riskAdjustedTargets.Select(t => t.ToString()).OrderBy(t => t))}");
                 }
             }
-            
+
             Execution.Execute(this, riskAdjustedTargets);
         }
 
@@ -382,7 +392,8 @@ namespace QuantConnect.Algorithm
                 return;
             }
 
-            OnInsightsGenerated(insights.Select(InitializeInsightFields));
+            insights = InitializeInsights(insights);
+            OnInsightsGenerated(insights);
             ProcessInsights(insights);
         }
 
@@ -394,7 +405,52 @@ namespace QuantConnect.Algorithm
         /// <param name="insight">The insight to be emitted</param>
         public void EmitInsights(Insight insight)
         {
-            EmitInsights(new []{insight});
+            EmitInsights(new[] { insight });
+        }
+
+        /// <summary>
+        /// Helper method used to validate insights and prepare them to be emitted
+        /// </summary>
+        /// <param name="insights">insights preparing to be emitted</param>
+        /// <returns>Validated insights</returns>
+        private Insight[] InitializeInsights(Insight[] insights)
+        {
+            List<Insight> validInsights = null;
+            for (var i = 0; i < insights.Length; i++)
+            {
+                if (Securities[insights[i].Symbol].IsDelisted)
+                {
+                    if (!_isEmitDelistedInsightWarningSent)
+                    {
+                        Error($"QCAlgorithm.EmitInsights(): Warning: cannot emit insights for delisted securities, these will be discarded");
+                        _isEmitDelistedInsightWarningSent = true;
+                    }
+
+                    // If this is our first invalid insight, create the list and fill it with previous values
+                    if (validInsights == null)
+                    {
+                        validInsights = new List<Insight>() {};
+                        for (var j = 0; j < i; j++)
+                        {
+                            validInsights.Add(insights[j]);
+                        }
+                    }
+                }
+                else
+                {
+                    // Initialize the insight fields
+                    insights[i] = InitializeInsightFields(insights[i]);
+
+                    // If we already had an invalid insight, this will have been initialized storing the valid ones.
+                    if (validInsights != null)
+                    {
+                        validInsights.Add(insights[i]);
+                    }
+                }
+            }
+
+            return validInsights == null ? insights : validInsights.ToArray();
+
         }
 
         /// <summary>

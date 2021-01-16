@@ -16,12 +16,14 @@
 
 using QuantConnect.Util;
 using System;
+using ProtoBuf;
 
 namespace QuantConnect.Data.Market
 {
     /// <summary>
     /// Defines a data type that represents open interest for given security
     /// </summary>
+    [ProtoContract(SkipConstructor = true)]
     public class OpenInterest : Tick
     {
         /// <summary>
@@ -137,6 +139,7 @@ namespace QuantConnect.Data.Market
 
             var source = LeanData.GenerateZipFilePath(Globals.DataFolder, config.Symbol, date, config.Resolution, config.TickType);
             if (config.SecurityType == SecurityType.Option ||
+                config.SecurityType == SecurityType.FutureOption ||
                 config.SecurityType == SecurityType.Future)
             {
                 source += "#" + LeanData.GenerateZipEntryName(config.Symbol, date, config.Resolution, config.TickType);
