@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -46,6 +46,7 @@ using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Algorithm.Framework.Risk;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Algorithm.Selection;
+using QuantConnect.Data.Shortable;
 using QuantConnect.Storage;
 
 namespace QuantConnect.Algorithm
@@ -1475,13 +1476,13 @@ namespace QuantConnect.Algorithm
         /// <param name="fillDataForward">If true, returns the last available data even if none in that timeslice.</param>
         /// <param name="leverage">leverage for this security</param>
         /// <param name="extendedMarketHours">ExtendedMarketHours send in data from 4am - 8pm, not used for FOREX</param>
-        /// <returns></returns>
+        /// <returns>The new Security that was added to the algorithm</returns>
         public Security AddSecurity(Symbol symbol, Resolution? resolution = null, bool fillDataForward = true, decimal leverage = Security.NullLeverage, bool extendedMarketHours = false)
         {
             var isCanonical = symbol.IsCanonical();
 
             // Short-circuit to AddOptionContract because it will add the underlying if required
-            if (!isCanonical && symbol.SecurityType == SecurityType.Option)
+            if (!isCanonical && (symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.FutureOption))
             {
                 return AddOptionContract(symbol, resolution, fillDataForward, leverage);
             }
@@ -1504,7 +1505,7 @@ namespace QuantConnect.Algorithm
                 if (!UniverseManager.TryGetValue(symbol, out universe) && _pendingUniverseAdditions.All(u => u.Configuration.Symbol != symbol))
                 {
                     var settings = new UniverseSettings(configs.First().Resolution, leverage, true, false, TimeSpan.Zero);
-                    if (symbol.SecurityType == SecurityType.Option)
+                    if (symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.FutureOption)
                     {
                         universe = new OptionChainUniverse((Option)security, settings, LiveMode);
                     }
@@ -1556,13 +1557,53 @@ namespace QuantConnect.Algorithm
                 }
             }
 
+            var underlyingSymbol = QuantConnect.Symbol.Create(underlying, SecurityType.Equity, market);
+            return AddOption(underlyingSymbol, resolution, market, fillDataForward, leverage);
+        }
+
+        /// <summary>
+        /// Creates and adds a new <see cref="Option"/> security to the algorithm.
+        /// This method can be used to add options with non-equity asset classes
+        /// to the algorithm (e.g. Future Options).
+        /// </summary>
+        /// <param name="underlying">Underlying asset Symbol to use as the option's underlying</param>
+        /// <param name="resolution">The <see cref="Resolution"/> of market data, Tick, Second, Minute, Hour, or Daily. Default is <see cref="Resolution.Minute"/></param>
+        /// <param name="market">The option's market, <seealso cref="Market"/>. Default value is null, but will be resolved using BrokerageModel.DefaultMarkets in <see cref="AddSecurity{T}"/></param>
+        /// <param name="fillDataForward">If true, data will be provided to the algorithm every Second, Minute, Hour, or Day, while the asset is open and depending on the Resolution this option was configured to use.</param>
+        /// <param name="leverage">The requested leverage for the </param>
+        /// <returns></returns>
+        /// <exception cref="KeyNotFoundException"></exception>
+        public Option AddOption(Symbol underlying, Resolution? resolution = null, string market = null, bool fillDataForward = true, decimal leverage = Security.NullLeverage)
+        {
+            var optionType = SecurityType.Option;
+            if (underlying.SecurityType == SecurityType.Future)
+            {
+                optionType = SecurityType.FutureOption;
+            }
+
+            if (market == null)
+            {
+                if (!BrokerageModel.DefaultMarkets.TryGetValue(optionType, out market))
+                {
+                    throw new KeyNotFoundException($"No default market set for security type: {optionType}");
+                }
+            }
+
             Symbol canonicalSymbol;
-            var alias = "?" + underlying;
+            var alias = "?" + underlying.Value;
             if (!SymbolCache.TryGetSymbol(alias, out canonicalSymbol) ||
                 canonicalSymbol.ID.Market != market ||
-                canonicalSymbol.SecurityType != SecurityType.Option)
+                (canonicalSymbol.SecurityType != SecurityType.Option &&
+                canonicalSymbol.SecurityType != SecurityType.FutureOption))
             {
-                canonicalSymbol = QuantConnect.Symbol.Create(underlying, SecurityType.Option, market, alias);
+                canonicalSymbol = QuantConnect.Symbol.CreateOption(
+                    underlying,
+                    underlying.ID.Market,
+                    default(OptionStyle),
+                    default(OptionRight),
+                    0,
+                    SecurityIdentifier.DefaultDate,
+                    alias);
             }
 
             return (Option)AddSecurity(canonicalSymbol, resolution, fillDataForward, leverage);
@@ -1614,6 +1655,42 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
+        /// Creates and adds a new Future Option contract to the algorithm.
+        /// </summary>
+        /// <param name="symbol">The <see cref="Future"/> canonical symbol (i.e. Symbol returned from <see cref="AddFuture"/>)</param>
+        /// <param name="optionFilter">Filter to apply to option contracts loaded as part of the universe</param>
+        /// <returns>The new <see cref="Option"/> security, containing a <see cref="Future"/> as its underlying.</returns>
+        /// <exception cref="ArgumentException">The symbol provided is not canonical.</exception>
+        public void AddFutureOption(Symbol symbol, Func<OptionFilterUniverse, OptionFilterUniverse> optionFilter = null)
+        {
+            if (!symbol.IsCanonical())
+            {
+                throw new ArgumentException("Symbol provided must be canonical (i.e. the Symbol returned from AddFuture(), not AddFutureContract().");
+            }
+
+            AddUniverseOptions(symbol, optionFilter);
+        }
+
+        /// <summary>
+        /// Adds a future option contract to the algorithm.
+        /// </summary>
+        /// <param name="symbol">Option contract Symbol</param>
+        /// <param name="resolution">Resolution of the option contract, i.e. the granularity of the data</param>
+        /// <param name="fillDataForward">If true, this will fill in missing data points with the previous data point</param>
+        /// <param name="leverage">The leverage to apply to the option contract</param>
+        /// <returns>Option security</returns>
+        /// <exception cref="ArgumentException">Symbol is canonical (i.e. a generic Symbol returned from <see cref="AddFuture"/> or <see cref="AddOption"/>)</exception>
+        public Option AddFutureOptionContract(Symbol symbol, Resolution? resolution = null, bool fillDataForward = true, decimal leverage = Security.NullLeverage)
+        {
+            if (symbol.IsCanonical())
+            {
+                throw new ArgumentException("Expected non-canonical Symbol (i.e. a Symbol representing a specific Future contract");
+            }
+
+            return AddOptionContract(symbol, resolution, fillDataForward, leverage);
+        }
+
+        /// <summary>
         /// Creates and adds a new single <see cref="Option"/> contract to the algorithm
         /// </summary>
         /// <param name="symbol">The option contract symbol</param>
@@ -1625,14 +1702,13 @@ namespace QuantConnect.Algorithm
         {
             var configs = SubscriptionManager.SubscriptionDataConfigService.Add(symbol, resolution, fillDataForward, dataNormalizationMode:DataNormalizationMode.Raw);
             var option = (Option)Securities.CreateSecurity(symbol, configs, leverage);
-
             // add underlying if not present
             var underlying = option.Symbol.Underlying;
-            Security equity;
+            Security underlyingSecurity;
             List<SubscriptionDataConfig> underlyingConfigs;
-            if (!Securities.TryGetValue(underlying, out equity))
+            if (!Securities.TryGetValue(underlying, out underlyingSecurity))
             {
-                equity = AddEquity(underlying.Value, resolution, underlying.ID.Market, false);
+                underlyingSecurity = AddSecurity(underlying, resolution, fillDataForward, leverage);
                 underlyingConfigs = SubscriptionManager.SubscriptionDataConfigService
                     .GetSubscriptionDataConfigs(underlying);
             }
@@ -1652,11 +1728,12 @@ namespace QuantConnect.Algorithm
                     );
                 }
             }
+
             underlyingConfigs.SetDataNormalizationMode(DataNormalizationMode.Raw);
             // For backward compatibility we need to refresh the security DataNormalizationMode Property
-            equity.RefreshDataNormalizationModeProperty();
+            underlyingSecurity.RefreshDataNormalizationModeProperty();
 
-            option.Underlying = equity;
+            option.Underlying = underlyingSecurity;
             Securities.Add(option);
 
             // get or create the universe
@@ -1900,6 +1977,30 @@ namespace QuantConnect.Algorithm
             where T : IBaseData, new()
         {
             return AddData(typeof(T), underlying, resolution, timeZone, fillDataForward, leverage);
+        }
+
+        /// <summary>
+        /// AddData<typeparam name="T"/> a new user defined data source including symbol properties and exchange hours,
+        /// all other vars are not required and will use defaults.
+        /// </summary>
+        /// <param name="ticker">Key/Ticker for data</param>
+        /// <param name="properties">The properties of this new custom data</param>
+        /// <param name="exchangeHours">The Exchange hours of this symbol</param>
+        /// <param name="resolution">Resolution of the Data Required</param>
+        /// <param name="fillDataForward">When no data available on a tradebar, return the last data that was generated</param>
+        /// <param name="leverage">Custom leverage per security</param>
+        /// <returns>The new <see cref="Security"/></returns>
+        public Security AddData<T>(string ticker, SymbolProperties properties, SecurityExchangeHours exchangeHours, Resolution? resolution = null, bool fillDataForward = false, decimal leverage = 1.0m)
+            where T : IBaseData, new()
+        {
+            // Get the right key for storage of base type symbols
+            var key = SecurityIdentifier.GenerateBaseSymbol(typeof(T), ticker);
+
+            // Set our database entries for this data type
+            SetDatabaseEntries(key, properties, exchangeHours);
+
+            // Then add the data
+            return AddData(typeof(T), ticker, resolution, null, fillDataForward, leverage);
         }
 
         /// <summary>
@@ -2210,17 +2311,15 @@ namespace QuantConnect.Algorithm
         /// </summary>
         /// <param name="insights">The collection of insights generaed at the current time step</param>
         /// <param name="clone">Will emit a clone of the generated insights</param>
-        private void OnInsightsGenerated(IEnumerable<Insight> insights, bool clone = true)
+        private void OnInsightsGenerated(Insight[] insights, bool clone = true)
         {
-            var insightCollection = insights.ToArray();
-
             // debug printing of generated insights
             if (DebugMode)
             {
-                Log($"{Time}: ALPHA: {string.Join(" | ", insightCollection.Select(i => i.ToString()).OrderBy(i => i))}");
+                Log($"{Time}: ALPHA: {string.Join(" | ", insights.Select(i => i.ToString()).OrderBy(i => i))}");
             }
 
-            InsightsGenerated?.Invoke(this, new GeneratedInsightsCollection(UtcTime, insightCollection, clone: clone));
+            InsightsGenerated?.Invoke(this, new GeneratedInsightsCollection(UtcTime, insights, clone: clone));
         }
 
         /// <summary>
@@ -2249,6 +2348,77 @@ namespace QuantConnect.Algorithm
         public void SetObjectStore(IObjectStore objectStore)
         {
             ObjectStore = new ObjectStore(objectStore);
+        }
+
+        /// <summary>
+        /// Determines if the Symbol is shortable at the brokerage
+        /// </summary>
+        /// <param name="symbol">Symbol to check if shortable</param>
+        /// <returns>True if shortable</returns>
+        public bool Shortable(Symbol symbol)
+        {
+            return Shortable(symbol, 0);
+        }
+
+        /// <summary>
+        /// Determines if the Symbol is shortable at the brokerage
+        /// </summary>
+        /// <param name="symbol">Symbol to check if shortable</param>
+        /// <param name="shortQuantity">Order's quantity to check if it is currently shortable, taking into account current holdings and open orders</param>
+        /// <returns>True if shortable</returns>
+        public bool Shortable(Symbol symbol, decimal shortQuantity)
+        {
+            var shortableQuantity = BrokerageModel.GetShortableProvider().ShortableQuantity(symbol, Time);
+            if (shortableQuantity == null)
+            {
+                return true;
+            }
+
+            var openOrderQuantity = Transactions.GetOpenOrdersRemainingQuantity(symbol);
+            var portfolioQuantity = Portfolio.ContainsKey(symbol) ? Portfolio[symbol].Quantity : 0;
+            // We check portfolio and open orders beforehand to ensure that orderQuantity == 0 case does not return
+            // a true result whenever we have no more shares left to short.
+            if (portfolioQuantity + openOrderQuantity <= -shortableQuantity)
+            {
+                return false;
+            }
+
+            shortQuantity = -Math.Abs(shortQuantity);
+            return portfolioQuantity + shortQuantity + openOrderQuantity >= -shortableQuantity;
+        }
+
+        /// <summary>
+        /// Gets the quantity shortable for the given asset
+        /// </summary>
+        /// <returns>
+        /// Quantity shortable for the given asset. Zero if not
+        /// shortable, or a number greater than zero if shortable.
+        /// </returns>
+        public long ShortableQuantity(Symbol symbol)
+        {
+            var shortableSymbols = AllShortableSymbols();
+            return shortableSymbols.ContainsKey(symbol) ? shortableSymbols[symbol] : 0;
+        }
+
+        /// <summary>
+        /// Gets all Symbols that are shortable, as well as the quantity shortable for them
+        /// </summary>
+        /// <returns>All shortable Symbols, null if all Symbols are shortable</returns>
+        public Dictionary<Symbol, long> AllShortableSymbols()
+        {
+            return BrokerageModel.GetShortableProvider().AllShortableSymbols(Time);
+        }
+        
+        /// Set the properties and exchange hours for a given key into our databases
+        /// </summary>
+        /// <param name="key">Key for database storage</param>
+        /// <param name="properties">Properties to store</param>
+        /// <param name="exchangeHours">Exchange hours to store</param>
+        private void SetDatabaseEntries(string key, SymbolProperties properties, SecurityExchangeHours exchangeHours)
+        {
+            // Add entries to our Symbol Properties DB and MarketHours DB
+            SymbolPropertiesDatabase.SetEntry(Market.USA, key, SecurityType.Base, properties);
+            MarketHoursDatabase.SetEntry(Market.USA, key, SecurityType.Base, exchangeHours);
         }
     }
 }

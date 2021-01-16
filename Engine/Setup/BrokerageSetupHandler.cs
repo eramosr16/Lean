@@ -236,11 +236,21 @@ namespace QuantConnect.Lean.Engine.Setup
                         //Set the source impl for the event scheduling
                         algorithm.Schedule.SetEventSchedule(parameters.RealTimeHandler);
 
+                        var optionChainProvider = Composer.Instance.GetPart<IOptionChainProvider>();
+                        if (optionChainProvider == null)
+                        {
+                            optionChainProvider = new CachingOptionChainProvider(new LiveOptionChainProvider());
+                        }
                         // set the option chain provider
-                        algorithm.SetOptionChainProvider(new CachingOptionChainProvider(new LiveOptionChainProvider()));
+                        algorithm.SetOptionChainProvider(optionChainProvider);
 
+                        var futureChainProvider = Composer.Instance.GetPart<IFutureChainProvider>();
+                        if (futureChainProvider == null)
+                        {
+                            futureChainProvider = new CachingFutureChainProvider(new LiveFutureChainProvider());
+                        }
                         // set the future chain provider
-                        algorithm.SetFutureChainProvider(new CachingFutureChainProvider(new LiveFutureChainProvider()));
+                        algorithm.SetFutureChainProvider(futureChainProvider);
 
                         // set the object store
                         algorithm.SetObjectStore(parameters.ObjectStore);
@@ -271,7 +281,7 @@ namespace QuantConnect.Lean.Engine.Setup
                         AddInitializationError(err.ToString(), err);
                     }
                 }, controls.RamAllocation,
-                    sleepIntervalMillis: 50); // entire system is waiting on this, so be as fast as possible
+                    sleepIntervalMillis: 100); // entire system is waiting on this, so be as fast as possible
 
                 if (!initializeComplete)
                 {
@@ -300,7 +310,7 @@ namespace QuantConnect.Lean.Engine.Setup
 
                 var supportedSecurityTypes = new HashSet<SecurityType>
                 {
-                    SecurityType.Equity, SecurityType.Forex, SecurityType.Cfd, SecurityType.Option, SecurityType.Future, SecurityType.Crypto
+                    SecurityType.Equity, SecurityType.Forex, SecurityType.Cfd, SecurityType.Option, SecurityType.Future, SecurityType.FutureOption, SecurityType.Crypto
                 };
                 var minResolution = new Lazy<Resolution>(() => algorithm.Securities.Select(x => x.Value.Resolution).DefaultIfEmpty(Resolution.Second).Min());
 
@@ -405,7 +415,7 @@ namespace QuantConnect.Lean.Engine.Setup
             {
                 Log.Trace("BrokerageSetupHandler.Setup(): Adding unrequested security: " + symbol.Value);
 
-                if (symbol.SecurityType == SecurityType.Option)
+                if (symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.FutureOption)
                 {
                     // add current option contract to the system
                     algorithm.AddOptionContract(symbol, minResolution, true, 1.0m);

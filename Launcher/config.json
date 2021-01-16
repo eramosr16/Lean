@@ -11,15 +11,12 @@
   // algorithm class selector
   "algorithm-type-name": "BasicTemplateFrameworkAlgorithm",
 
-  // Algorithm language selector - options CSharp, FSharp, VisualBasic, Python, Java
+  // Algorithm language selector - options CSharp, Python
   "algorithm-language": "CSharp",
 
   //Physical DLL location
   "algorithm-location": "QuantConnect.Algorithm.CSharp.dll",
   //"algorithm-location": "../../../Algorithm.Python/BasicTemplateFrameworkAlgorithm.py",
-  //"algorithm-location": "QuantConnect.Algorithm.FSharp.dll",
-  //"algorithm-location": "QuantConnect.Algorithm.VisualBasic.dll",
-  //"algorithm-location": "QuantConnect.Algorithm.Java.dll",
 
   //Research notebook
   //"composer-dll-directory": ".",
@@ -118,6 +115,10 @@
     // binance configuration
   "binance-api-secret": "",
   "binance-api-key": "",
+
+  // Required to access data from Quiver Quantitative
+  // To get your access token go to https://api.quiverquant.com
+  "quiver-auth-token": "",
 
   // Required to access data from Quandl
   // To get your access token go to https://www.quandl.com/account/api
@@ -310,7 +311,7 @@
 
       // real brokerage implementations require the BrokerageTransactionHandler
       "live-mode-brokerage": "AlpacaBrokerage",
-      "data-queue-handler": "AlpacaBrokerage",
+      "data-queue-handler": "PolygonDataQueueHandler",
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",

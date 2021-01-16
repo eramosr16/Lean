@@ -556,6 +556,54 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(thursdayBeforeGoodFriday, OptionSymbol.GetLastDayOfTrading(symbol));
         }
 
+        [TestCase("ES", "ES")]
+        [TestCase("GC", "OG")]
+        [TestCase("ZT", "OZT")]
+        public void FutureOptionsWithDifferentUnderlyingGlobexTickersAreMapped(string futureTicker, string expectedFutureOptionTicker)
+        {
+            var future = Symbol.CreateFuture(futureTicker, Market.CME, DateTime.UtcNow.Date);
+            var canonicalFutureOption = Symbol.CreateOption(
+                future,
+                Market.CME,
+                default(OptionStyle),
+                default(OptionRight),
+                default(decimal),
+                SecurityIdentifier.DefaultDate);
+
+            var nonCanonicalFutureOption = Symbol.CreateOption(
+                future,
+                Market.CME,
+                default(OptionStyle),
+                default(OptionRight),
+                default(decimal),
+                new DateTime(2020, 12, 18));
+
+            Assert.AreEqual(canonicalFutureOption.Underlying.ID.Symbol, futureTicker);
+            Assert.AreEqual(canonicalFutureOption.ID.Symbol, expectedFutureOptionTicker);
+            Assert.IsTrue(canonicalFutureOption.Value.StartsWith("?" + futureTicker));
+
+            Assert.AreEqual(nonCanonicalFutureOption.Underlying.ID.Symbol, futureTicker);
+            Assert.AreEqual(nonCanonicalFutureOption.ID.Symbol, expectedFutureOptionTicker);
+            Assert.IsTrue(nonCanonicalFutureOption.Value.StartsWith(expectedFutureOptionTicker));
+        }
+
+        [Test]
+        public void SymbolWithSidContainingUnderlyingCreatedWithoutNullUnderlying()
+        {
+            var future = Symbol.CreateFuture("ES", Market.CME, new DateTime(2020, 6, 19));
+            var optionSid = SecurityIdentifier.GenerateOption(
+                future.ID.Date,
+                future.ID,
+                future.ID.Market,
+                3500m,
+                OptionRight.Call,
+                OptionStyle.American);
+
+            var option = new Symbol(optionSid, "ES");
+            Assert.IsNotNull(option.Underlying);
+            Assert.AreEqual(future, option.Underlying);
+        }
+
         class OldSymbol
         {
             public string Value { get; set; }

@@ -189,6 +189,50 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
+        /// AddData a new user defined data source including symbol properties and exchange hours,
+        /// all other vars are not required and will use defaults.
+        /// This overload reflects the C# equivalent for custom properties and market hours
+        /// </summary>
+        /// <param name="type">Data source type</param>
+        /// <param name="ticker">Key/Ticker for data</param>
+        /// <param name="properties">The properties of this new custom data</param>
+        /// <param name="exchangeHours">The Exchange hours of this symbol</param>
+        /// <param name="resolution">Resolution of the Data Required</param>
+        /// <param name="fillDataForward">When no data available on a tradebar, return the last data that was generated</param>
+        /// <param name="leverage">Custom leverage per security</param>
+        /// <returns>The new <see cref="Security"/></returns>
+        public Security AddData(PyObject type, string ticker, SymbolProperties properties, SecurityExchangeHours exchangeHours, Resolution? resolution = null, bool fillDataForward = false, decimal leverage = 1.0m)
+        {
+            // Get the right key for storage of base type symbols
+            var dataType = type.CreateType();
+            var key = SecurityIdentifier.GenerateBaseSymbol(dataType, ticker);
+
+            // Add entries to our Symbol Properties DB and MarketHours DB
+            SetDatabaseEntries(key, properties, exchangeHours);
+
+            // Then add the data
+            return AddData(dataType, ticker, resolution, null, fillDataForward, leverage);
+        }
+
+        /// <summary>
+        /// Creates and adds a new Future Option contract to the algorithm.
+        /// </summary>
+        /// <param name="symbol">The <see cref="Future"/> canonical symbol (i.e. Symbol returned from <see cref="AddFuture"/>)</param>
+        /// <param name="optionFilter">Filter to apply to option contracts loaded as part of the universe</param>
+        /// <returns>The new <see cref="Option"/> security, containing a <see cref="Future"/> as its underlying.</returns>
+        /// <exception cref="ArgumentException">The symbol provided is not canonical.</exception>
+        public void AddFutureOption(Symbol futureSymbol, PyObject optionFilter)
+        {
+            Func<OptionFilterUniverse, OptionFilterUniverse> optionFilterUniverse;
+            if (!optionFilter.TryConvertToDelegate(out optionFilterUniverse))
+            {
+                throw new ArgumentException("Option contract universe filter provided is not a function");
+            }
+
+            AddFutureOption(futureSymbol, optionFilterUniverse);
+        }
+
+        /// <summary>
         /// Adds the provided final Symbol with/without underlying set to the algorithm.
         /// This method is meant for custom data types that require a ticker, but have no underlying Symbol.
         /// Examples of data sources that meet this criteria are U.S. Treasury Yield Curve Rates and Trading Economics data
@@ -517,7 +561,7 @@ namespace QuantConnect.Algorithm
             catch
             {
 
-            }     
+            }
 
             // Finally, since above didn't work, just try it as a timespan
             // Issue #4668 Fix
@@ -532,7 +576,7 @@ namespace QuantConnect.Algorithm
                         RegisterIndicator(symbol, indicator, timeSpan, selector);
                     }
                 }
-                catch 
+                catch
                 {
                     throw new ArgumentException("Invalid third argument, should be either a valid consolidator or timedelta object");
                 }

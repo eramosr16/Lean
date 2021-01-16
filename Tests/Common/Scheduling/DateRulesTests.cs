@@ -16,11 +16,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using NodaTime;
 using NUnit.Framework;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
+using QuantConnect.Logging;
 using QuantConnect.Scheduling;
 using QuantConnect.Securities;
 
@@ -134,7 +136,7 @@ namespace QuantConnect.Tests.Common.Scheduling
                 Assert.AreNotEqual(DayOfWeek.Saturday, date.DayOfWeek);
                 Assert.AreNotEqual(DayOfWeek.Sunday, date.DayOfWeek);
                 Assert.IsTrue(date.Day <= 3);
-                Console.WriteLine(date.Day);
+                Log.Trace(date.Day.ToString(CultureInfo.InvariantCulture));
             }
 
             Assert.AreEqual(12, count);
@@ -154,19 +156,21 @@ namespace QuantConnect.Tests.Common.Scheduling
                 Assert.AreNotEqual(DayOfWeek.Saturday, date.DayOfWeek);
                 Assert.AreNotEqual(DayOfWeek.Sunday, date.DayOfWeek);
                 Assert.IsTrue(date.Day <= 3);
-                Console.WriteLine(date.Day);
+                Log.Trace(date.Day.ToString(CultureInfo.InvariantCulture));
             }
 
             Assert.AreEqual(11, count);
         }
 
-        [TestCase(Symbols.SymbolsKey.SPY, new[] { 10, 8, 8, 10, 8, 8 })]
-        [TestCase(Symbols.SymbolsKey.BTCUSD, new[] { 6, 6, 6, 6, 6, 6 })]
-        [TestCase(Symbols.SymbolsKey.EURUSD, new[] { 7, 7, 7, 7, 7, 7 })]
-        public void StartOfMonthWithSymbolWithOffset(Symbols.SymbolsKey symbolKey, int[] expectedDays)
+        [TestCase(Symbols.SymbolsKey.SPY, new[] { 10, 8, 8, 10, 8, 8 }, 5)]
+        [TestCase(Symbols.SymbolsKey.SPY, new[] { 20, 17, 17, 19, 17, 19 }, 12)] // Contains holiday 1/17
+        [TestCase(Symbols.SymbolsKey.SPY, new[] { 31, 29, 31, 28, 31, 30 }, 25)] // Always last trading day of the month (25 > than trading days)
+        [TestCase(Symbols.SymbolsKey.BTCUSD, new[] { 6, 6, 6, 6, 6, 6 }, 5)]
+        [TestCase(Symbols.SymbolsKey.EURUSD, new[] { 7, 7, 7, 7, 7, 7 }, 5)]
+        public void StartOfMonthWithSymbolWithOffset(Symbols.SymbolsKey symbolKey, int[] expectedDays, int offset)
         {
             var rules = GetDateRules();
-            var rule = rules.MonthStart(Symbols.Lookup(symbolKey), 5);
+            var rule = rules.MonthStart(Symbols.Lookup(symbolKey), offset);
             var dates = rule.GetDates(new DateTime(2000, 01, 01), new DateTime(2000, 6, 30)).ToList();
 
             // Assert we have as many dates as expected
@@ -227,19 +231,21 @@ namespace QuantConnect.Tests.Common.Scheduling
                 Assert.AreNotEqual(DayOfWeek.Saturday, date.DayOfWeek);
                 Assert.AreNotEqual(DayOfWeek.Sunday, date.DayOfWeek);
                 Assert.IsTrue(date.Day >= 28);
-                Console.WriteLine(date + " " + date.DayOfWeek);
+                Log.Trace(date + " " + date.DayOfWeek);
             }
 
             Assert.AreEqual(12, count);
         }
 
-        [TestCase(Symbols.SymbolsKey.SPY, new[] { 24, 22, 24, 20, 23, 23 })] // This case contains two Holidays 4/21 & 5/29
-        [TestCase(Symbols.SymbolsKey.BTCUSD, new[] { 26, 24, 26, 25, 26, 25 })]
-        [TestCase(Symbols.SymbolsKey.EURUSD, new[] { 25, 23, 26, 24, 25, 25 })]
-        public void EndOfMonthWithSymbolWithOffset(Symbols.SymbolsKey symbolKey, int[] expectedDays)
+        [TestCase(Symbols.SymbolsKey.SPY, new[] { 24, 22, 24, 20, 23, 23 }, 5)] // This case contains two Holidays 4/21 & 5/29
+        [TestCase(Symbols.SymbolsKey.SPY, new[] { 12, 10, 15, 11, 12, 14 }, 12)] // Contains holiday 1/17
+        [TestCase(Symbols.SymbolsKey.SPY, new[] { 3, 1, 1, 3, 1, 1 }, 25)] // Always first trading day of the month (25 > than trading days)
+        [TestCase(Symbols.SymbolsKey.BTCUSD, new[] { 26, 24, 26, 25, 26, 25 }, 5)]
+        [TestCase(Symbols.SymbolsKey.EURUSD, new[] { 25, 23, 26, 24, 25, 25 }, 5)]
+        public void EndOfMonthWithSymbolWithOffset(Symbols.SymbolsKey symbolKey, int[] expectedDays, int offset)
         {
             var rules = GetDateRules();
-            var rule = rules.MonthEnd(Symbols.Lookup(symbolKey), 5);
+            var rule = rules.MonthEnd(Symbols.Lookup(symbolKey), offset);
             var dates = rule.GetDates(new DateTime(2000, 01, 01), new DateTime(2000, 6, 30)).ToList();
 
             // Assert we have as many dates as expected
