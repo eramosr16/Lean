@@ -48,11 +48,10 @@ using QuantConnect.Securities;
 using QuantConnect.Util;
 using Timer = System.Timers.Timer;
 using static QuantConnect.StringExtensions;
-using Microsoft.IO;
 using QuantConnect.Data.Auxiliary;
-using QuantConnect.Securities.Future;
 using QuantConnect.Securities.FutureOption;
 using QuantConnect.Securities.Option;
+using Microsoft.IO;
 
 namespace QuantConnect
 {
