@@ -13,6 +13,8 @@ jobs:
 
     steps:
     - name: Generate build number
+      env:
+       ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
       uses: einaregilsson/build-number@v2 
       with:
         token: ${{secrets.github_token}}
@@ -23,10 +25,8 @@ jobs:
         dotnet-version: 5.0.100
     - name: Set Variables and build
       run: |
-        echo "DAY=$(date -d "$D" '+%-d')" >> $DAY
-        echo "MONTH=$(date -d "$D" '+%-m')" >> $MONTH
-        echo "YEAR=$(date -d "$D" '+%y')" >> $YEAR
-        echo "VERSION=1.$YEAR.$MONTH.$DAY$BUILD_NUMBER" >> $VERSION                
+        echo "TODAY=$(date +%y.%m.%d)" >> $TODAY
+        echo "VERSION=$TODAY$BUILD_NUMBER" >> $VERSION                
         dotnet build ./Logging/QuantConnect.Logging.csproj -p:Version=$VERSION --configuration Release
         dotnet build ./Configuration/QuantConnect.Configuration.csproj -p:Version=$VERSION --configuration Release
         dotnet build ./Common/QuantConnect.csproj -p:Version=$VERSION --configuration Release
