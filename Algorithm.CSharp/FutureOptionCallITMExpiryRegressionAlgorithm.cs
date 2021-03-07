@@ -16,7 +16,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
 using QuantConnect.Orders;
@@ -127,10 +126,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         private void AssertFutureOptionOrderExercise(OrderEvent orderEvent, Security future, Security optionContract)
         {
-            // For unknown reasons, the delisting happens two minutes after the market open. Most likely
-            // stems from the placement of the ProcessDelistedSymbols and HandleDelistedSymbols methods in relation
-            // to the algorithm time update and the brokerage ProcessSynchronousEvents.
-            var expectedLiquidationTimeUtc = new DateTime(2020, 6, 19, 4, 2, 0);
+            var expectedLiquidationTimeUtc = new DateTime(2020, 6, 19, 20, 0, 0);
 
             if (orderEvent.Direction == OrderDirection.Sell && future.Holdings.Quantity != 0)
             {
@@ -226,6 +222,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.191"},
             {"Treynor Ratio", "33.18"},
             {"Total Fees", "$7.40"},
+            {"Estimated Strategy Capacity", "$1300000.00"},
             {"Fitness Score", "0.008"},
             {"Kelly Criterion Estimate", "0"},
             {"Kelly Criterion Probability Value", "0"},
@@ -245,7 +242,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Mean Population Magnitude", "0%"},
             {"Rolling Averaged Population Direction", "0%"},
             {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "997674793"}
+            {"OrderListHash", "c59d790b89d76f1ad3bb7738b28567c9"}
         };
     }
 }

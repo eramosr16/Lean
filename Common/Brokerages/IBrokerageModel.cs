@@ -16,6 +16,7 @@
 
 using System;
 using System.Collections.Generic;
+using QuantConnect.Benchmarks;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Orders;
@@ -101,6 +102,13 @@ namespace QuantConnect.Brokerages
         /// <param name="security">The security's whose leverage we seek</param>
         /// <returns>The leverage for the specified security</returns>
         decimal GetLeverage(Security security);
+
+        /// <summary>
+        /// Get the benchmark for this model
+        /// </summary>
+        /// <param name="securities">SecurityService to create the security with if needed</param>
+        /// <returns>The benchmark for this brokerage</returns>
+        IBenchmark GetBenchmark(SecurityManager securities);
 
         /// <summary>
         /// Gets a new fill model that represents this brokerage's fill behavior
@@ -202,11 +210,14 @@ namespace QuantConnect.Brokerages
                 case BrokerageName.GDAX:
                     return new GDAXBrokerageModel(accountType);
 
-                case BrokerageName.Alpaca:
-                    return new AlpacaBrokerageModel(orderProvider, accountType);
-
                 case BrokerageName.AlphaStreams:
                     return new AlphaStreamsBrokerageModel(accountType);
+
+                case BrokerageName.Atreyu:
+                    return new AtreyuBrokerageModel(accountType);
+
+                case BrokerageName.TradingTechnologies:
+                    return new TradingTechnologiesBrokerageModel(accountType);
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(brokerage), brokerage, null);
