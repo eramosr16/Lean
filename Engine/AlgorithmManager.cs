@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -246,6 +246,7 @@ namespace QuantConnect.Lean.Engine
                     foreach (var security in timeSlice.SecurityChanges.AddedSecurities)
                     {
                         security.IsTradable = true;
+
                         // uses TryAdd, so don't need to worry about duplicates here
                         algorithm.Securities.Add(security);
                     }
@@ -294,15 +295,11 @@ namespace QuantConnect.Lean.Engine
                 }
 
                 // poke each cash object to update from the recent security data
-                foreach (var kvp in algorithm.Portfolio.CashBook)
+                foreach (var cash in algorithm.Portfolio.CashBook.Values.Where(x => x.CurrencyConversion != null))
                 {
-                    var cash = kvp.Value;
-                    var updateData = cash.ConversionRateSecurity?.GetLastData();
-                    if (updateData != null)
-                    {
-                        cash.Update(updateData);
-                    }
+                    cash.Update();
                 }
+
                 // security prices got updated
                 algorithm.Portfolio.InvalidateTotalPortfolioValue();
 
@@ -1058,18 +1055,8 @@ namespace QuantConnect.Lean.Engine
                     continue;
                 }
 
-                var orderType = OrderType.Market;
-                var tag = "Liquidate from delisting";
-                if (security.Type == SecurityType.Option || security.Type == SecurityType.FutureOption)
-                {
-                    // tx handler will determine auto exercise/assignment
-                    tag = "Option Expired";
-                    orderType = OrderType.OptionExercise;
-                }
-
                 // submit an order to liquidate on market close or exercise (for options)
-                var request = new SubmitOrderRequest(orderType, security.Type, security.Symbol,
-                    -security.Holdings.Quantity, 0, 0, algorithm.UtcTime, tag);
+                var request = security.CreateDelistedSecurityOrderRequest(algorithm.UtcTime);
 
                 delistings.RemoveAt(i);
                 algorithm.Transactions.ProcessRequest(request);
@@ -1144,7 +1131,7 @@ namespace QuantConnect.Lean.Engine
                         $", Active: {algorithm.UniverseManager.ActiveSecurities.Keys.Contains(split.Symbol)}");
                 }
 
-                var latestMarketOnCloseTimeRoundedDownByResolution = nextMarketClose.Subtract(MarketOnCloseOrder.DefaultSubmissionTimeBuffer)
+                var latestMarketOnCloseTimeRoundedDownByResolution = nextMarketClose.Subtract(MarketOnCloseOrder.SubmissionTimeBuffer)
                     .RoundDownInTimeZone(configs.GetHighestResolution().ToTimeSpan(), security.Exchange.TimeZone, configs.First().DataTimeZone);
 
                 // we don't need to do anyhing until the market closes
@@ -1152,7 +1139,7 @@ namespace QuantConnect.Lean.Engine
 
                 // fetch all option derivatives of the underlying with holdings (excluding the canonical security)
                 var derivatives = algorithm.Securities.Where(kvp => kvp.Key.HasUnderlying &&
-                    (kvp.Key.SecurityType == SecurityType.Option || kvp.Key.SecurityType == SecurityType.FutureOption) &&
+                    kvp.Key.SecurityType.IsOption() &&
                     kvp.Key.Underlying == security.Symbol &&
                     !kvp.Key.Underlying.IsCanonical() &&
                     kvp.Value.HoldStock

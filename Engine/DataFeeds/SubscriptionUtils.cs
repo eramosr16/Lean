@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -93,10 +93,23 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         }
 
                         var data = enumerator.Current;
+
+                        // Use our config filter to see if we should emit this
+                        // This currently catches Auxiliary data that we don't want to emit
+                        if (data != null && !config.ShouldEmitData(data))
+                        {
+                            continue;
+                        }
+
+                        // In the event we have "Raw" configuration, we will force our subscription data
+                        // to precalculate adjusted data. The data will still be emitted as raw, but
+                        // if the config is changed at any point it can emit adjusted data as well
+                        // See SubscriptionData.Create() and PrecalculatedSubscriptionData for more
                         var requestMode = config.DataNormalizationMode;
                         var mode = requestMode != DataNormalizationMode.Raw
                             ? requestMode
                             : DataNormalizationMode.Adjusted;
+
                         // We update our price scale factor when the date changes for non fill forward bars or if we haven't initialized yet.
                         // We don't take into account auxiliary data because we don't scale it and because the underlying price data could be fill forwarded
                         if (enablePriceScale && data?.Time.Date > lastTradableDate && data.DataType != MarketDataType.Auxiliary && (!data.IsFillForward || lastTradableDate == DateTime.MinValue))
@@ -136,7 +149,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return false;
             };
 
-            WeightedWorkScheduler.Instance.QueueWork(produce,
+            WeightedWorkScheduler.Instance.QueueWork(config.Symbol, produce,
                 // if the subscription finished we return 0, so the work is prioritized and gets removed
                 () =>
                 {

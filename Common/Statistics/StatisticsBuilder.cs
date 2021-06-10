@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -37,6 +37,7 @@ namespace QuantConnect.Statistics
         /// <param name="startingCapital">The algorithm starting capital</param>
         /// <param name="totalFees">The total fees</param>
         /// <param name="totalTransactions">The total number of transactions</param>
+        /// <param name="estimatedStrategyCapacity">The estimated capacity of this strategy</param>
         /// <returns>Returns a <see cref="StatisticsResults"/> object</returns>
         public static StatisticsResults Generate(
             List<Trade> trades,
@@ -47,7 +48,7 @@ namespace QuantConnect.Statistics
             decimal startingCapital,
             decimal totalFees,
             int totalTransactions,
-            decimal estimatedStrategyCapacity)
+            CapacityEstimate estimatedStrategyCapacity)
         {
             var equity = ChartPointToDictionary(pointsEquity);
 
@@ -56,7 +57,7 @@ namespace QuantConnect.Statistics
 
             var totalPerformance = GetAlgorithmPerformance(firstDate, lastDate, trades, profitLoss, equity, pointsPerformance, pointsBenchmark, startingCapital);
             var rollingPerformances = GetRollingPerformances(firstDate, lastDate, trades, profitLoss, equity, pointsPerformance, pointsBenchmark, startingCapital);
-            var summary = GetSummary(totalPerformance, totalFees, totalTransactions, estimatedStrategyCapacity);
+            var summary = GetSummary(totalPerformance, estimatedStrategyCapacity, totalFees, totalTransactions);
 
             return new StatisticsResults(totalPerformance, rollingPerformances, summary);
         }
@@ -165,8 +166,16 @@ namespace QuantConnect.Statistics
         /// <summary>
         /// Returns a summary of the algorithm performance as a dictionary
         /// </summary>
-        private static Dictionary<string, string> GetSummary(AlgorithmPerformance totalPerformance, decimal totalFees, int totalTransactions, decimal estimatedStrategyCapacity)
+        private static Dictionary<string, string> GetSummary(AlgorithmPerformance totalPerformance, CapacityEstimate estimatedStrategyCapacity, decimal totalFees, int totalTransactions)
         {
+            var capacity = 0m;
+            var lowestCapacitySymbol = Symbol.Empty;
+            if (estimatedStrategyCapacity != null)
+            {
+                capacity = estimatedStrategyCapacity.Capacity.Value;
+                lowestCapacitySymbol = estimatedStrategyCapacity.LowestCapacityAsset ?? Symbol.Empty;
+            }
+
             return new Dictionary<string, string>
             {
                 { "Total Trades", totalTransactions.ToStringInvariant() },
@@ -189,7 +198,8 @@ namespace QuantConnect.Statistics
                 { "Tracking Error", Math.Round((double)totalPerformance.PortfolioStatistics.TrackingError, 3).ToStringInvariant() },
                 { "Treynor Ratio", Math.Round((double)totalPerformance.PortfolioStatistics.TreynorRatio, 3).ToStringInvariant() },
                 { "Total Fees", "$" + totalFees.ToStringInvariant("0.00") },
-                { "Estimated Strategy Capacity", "$" + estimatedStrategyCapacity.RoundToSignificantDigits(2).ToStringInvariant() }
+                { "Estimated Strategy Capacity", "$" + capacity.RoundToSignificantDigits(2).ToStringInvariant() },
+                { "Lowest Capacity Asset", lowestCapacitySymbol != Symbol.Empty ? lowestCapacitySymbol.ID.ToString() : "" },
             };
         }
 

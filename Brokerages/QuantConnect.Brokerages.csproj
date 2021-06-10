@@ -1,11 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <RootNamespace>QuantConnect.Brokerages</RootNamespace>
     <AssemblyName>QuantConnect.Brokerages</AssemblyName>
-    <TargetFramework>net462</TargetFramework>
-    <LangVersion>6</LangVersion>
+    <TargetFramework>net5.0</TargetFramework>
+    <LangVersion>9</LangVersion>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <DefineConstants>NET45</DefineConstants>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
@@ -31,7 +31,7 @@
     <Message Text="SelectedOptimization $(SelectedOptimization)" Importance="high" />
   </Target>
   <ItemGroup>
-    <PackageReference Include="IKVM" Version="8.1.5717.0" />
+    <PackageReference Include="CsvHelper" Version="19.0.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="5.0.3">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -39,7 +39,7 @@
     <PackageReference Include="NETStandard.Library" Version="2.0.3" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageReference Include="NodaTime" Version="3.0.5" />
-    <PackageReference Include="QuantConnect.IBAutomater" Version="1.0.44" />
+    <PackageReference Include="QuantConnect.IBAutomater" Version="2.0.33" />
     <PackageReference Include="RestSharp" Version="106.6.10" />
     <PackageReference Include="System.ComponentModel.Composition" Version="5.0.0" />
     <PackageReference Include="System.Security.Cryptography.Algorithms" Version="4.3.0" />
@@ -51,15 +51,6 @@
     <Reference Include="CSharpAPI">
       <HintPath>InteractiveBrokers\CSharpAPI.dll</HintPath>
     </Reference>
-    <Reference Include="QuantConnect.Fxcm, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>Fxcm\QuantConnect.Fxcm.dll</HintPath>
-      <SpecificVersion>False</SpecificVersion>
-    </Reference>
-    <Reference Include="System.ComponentModel.DataAnnotations" />
-    <Reference Include="System.Web" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Common\Properties\SharedAssemblyInfo.cs" Link="Properties\SharedAssemblyInfo.cs" />
@@ -79,10 +70,5 @@
     <ProjectReference Include="..\Compression\QuantConnect.Compression.csproj" />
     <ProjectReference Include="..\Configuration\QuantConnect.Configuration.csproj" />
     <ProjectReference Include="..\Logging\QuantConnect.Logging.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Fxcm\QuantConnect.Fxcm.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 </Project>

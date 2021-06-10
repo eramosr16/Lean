@@ -159,12 +159,15 @@ namespace QuantConnect
         /// </summary>
         /// <param name="unixTimeStamp">Double unix timestamp (Time since Midnight Jan 1 1970) in milliseconds</param>
         /// <returns>C# date timeobject</returns>
-        public static DateTime UnixMillisecondTimeStampToDateTime(double unixTimeStamp)
+        public static DateTime UnixMillisecondTimeStampToDateTime(decimal unixTimeStamp)
         {
             DateTime time;
             try
             {
-                var ticks = unixTimeStamp * TimeSpan.TicksPerMillisecond;
+                // Any residual decimal numbers that remain are nanoseconds from [0, 100) nanoseconds.
+                // If we cast to (long), only the integer component of the decimal is taken, and can
+                // potentially result in look-ahead bias in increments of 100 nanoseconds, i.e. 1 DateTime tick.
+                var ticks = Math.Ceiling(unixTimeStamp * TimeSpan.TicksPerMillisecond);
                 time = EpochTime.AddTicks((long)ticks);
             }
             catch (Exception err)
@@ -552,6 +555,7 @@ namespace QuantConnect
         /// <param name="barSize">The length of each bar</param>
         /// <param name="barCount">The number of bars requested</param>
         /// <param name="extendedMarketHours">True to allow extended market hours bars, otherwise false for only normal market hours</param>
+        /// <param name="dataTimeZone">Timezone for this data</param>
         /// <returns>The start time that would provide the specified number of bars ending at the specified end time, rounded down by the requested bar size</returns>
         public static DateTime GetStartTimeForTradeBars(SecurityExchangeHours exchangeHours, DateTime end, TimeSpan barSize, int barCount, bool extendedMarketHours, DateTimeZone dataTimeZone)
         {

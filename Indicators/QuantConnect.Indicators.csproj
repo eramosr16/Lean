@@ -1,11 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <RootNamespace>QuantConnect.Indicators</RootNamespace>
     <AssemblyName>QuantConnect.Indicators</AssemblyName>
-    <TargetFramework>net462</TargetFramework>
-    <LangVersion>6</LangVersion>
+    <TargetFramework>net5.0</TargetFramework>
+    <LangVersion>9</LangVersion>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <OutputPath>bin\$(Configuration)\</OutputPath>
@@ -42,39 +42,12 @@
     <Message Text="SelectedOptimization $(SelectedOptimization)" Importance="high" />
   </Target>
   <ItemGroup>
+    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.3" />
     <PackageReference Include="MathNet.Numerics" Version="4.15.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="5.0.3">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="QuantConnect.pythonnet" Version="1.0.5.30" />
-  </ItemGroup>
-  <Choose>
-    <When Condition="$(IsWindows) AND '$(ForceLinuxBuild)' != 'true'">
-      <ItemGroup>
-        <Reference Include="Python.Runtime, Version=1.0.5.30, Culture=neutral, processorArchitecture=MSIL">
-          <HintPath>$(NuGetPackageRoot)\quantconnect.pythonnet\1.0.5.30\lib\win\Python.Runtime.dll</HintPath>
-        </Reference>
-      </ItemGroup>
-    </When>
-    <When Condition="$(IsLinux) OR '$(ForceLinuxBuild)' == 'true'">
-      <ItemGroup>
-        <Reference Include="Python.Runtime, Version=1.0.5.30, Culture=neutral, processorArchitecture=MSIL">
-          <HintPath>$(NuGetPackageRoot)\quantconnect.pythonnet\1.0.5.30\lib\linux\Python.Runtime.dll</HintPath>
-        </Reference>
-      </ItemGroup>
-    </When>
-    <When Condition="$(IsOSX) AND '$(ForceLinuxBuild)' != 'true'">
-      <ItemGroup>
-        <Reference Include="Python.Runtime, Version=1.0.5.30, Culture=neutral, processorArchitecture=MSIL">
-          <HintPath>$(NuGetPackageRoot)\quantconnect.pythonnet\1.0.5.30\lib\osx\Python.Runtime.dll</HintPath>
-        </Reference>
-      </ItemGroup>
-    </When>
-  </Choose>
-  <ItemGroup>
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Common\Properties\SharedAssemblyInfo.cs" Link="Properties\SharedAssemblyInfo.cs" />

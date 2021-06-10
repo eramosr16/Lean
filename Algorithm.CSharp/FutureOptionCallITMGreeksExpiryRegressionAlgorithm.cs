@@ -14,13 +14,11 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
-using QuantConnect.Orders;
 using QuantConnect.Securities;
+using System.Collections.Generic;
 using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp
@@ -33,7 +31,7 @@ namespace QuantConnect.Algorithm.CSharp
     {
         private bool _invested;
         private int _onDataCalls;
-        private Symbol _es19m20;
+        private Security _es19m20;
         private Option _esOption;
         private Symbol _expectedOptionContract;
 
@@ -47,10 +45,17 @@ namespace QuantConnect.Algorithm.CSharp
                     Futures.Indices.SP500EMini,
                     Market.CME,
                     new DateTime(2020, 6, 19)),
-                Resolution.Minute).Symbol;
+                Resolution.Minute);
+
+            // We must set the volatility model on the underlying, since the defaults are
+            // too strict to calculate greeks with when we only have data for a single day
+            _es19m20.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(
+                60, 
+                Resolution.Minute, 
+                TimeSpan.FromMinutes(1));
 
             // Select a future option expiring ITM, and adds it to the algorithm.
-            _esOption = AddFutureOptionContract(OptionChainProvider.GetOptionContractList(_es19m20, new DateTime(2020, 1, 5))
+            _esOption = AddFutureOptionContract(OptionChainProvider.GetOptionContractList(_es19m20.Symbol, new DateTime(2020, 1, 5))
                 .Where(x => x.ID.StrikePrice <= 3200m && x.ID.OptionRight == OptionRight.Call)
                 .OrderByDescending(x => x.ID.StrikePrice)
                 .Take(1)
@@ -58,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             _esOption.PriceModel = OptionPriceModels.BjerksundStensland();
 
-            _expectedOptionContract = QuantConnect.Symbol.CreateOption(_es19m20, Market.CME, OptionStyle.American, OptionRight.Call, 3200m, new DateTime(2020, 6, 19));
+            _expectedOptionContract = QuantConnect.Symbol.CreateOption(_es19m20.Symbol, Market.CME, OptionStyle.American, OptionRight.Call, 3200m, new DateTime(2020, 6, 19));
             if (_esOption.Symbol != _expectedOptionContract)
             {
                 throw new Exception($"Contract {_expectedOptionContract} was not found in the chain");
@@ -105,26 +110,28 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 throw new AggregateException("Option contract Gamma was equal to zero");
             }
-            //if (lambda.Any(l => l == 0))
-            //{
-            //    throw new AggregateException("Option contract Lambda was equal to zero");
-            //}
+            if (lambda.Any(l => l == 0))
+            {
+                throw new AggregateException("Option contract Lambda was equal to zero");
+            }
             if (rho.Any(r => r == 0))
             {
                 throw new AggregateException("Option contract Rho was equal to zero");
             }
-            //if (theta.Any(t => t == 0))
-            //{
-            //    throw new AggregateException("Option contract Theta was equal to zero");
-            //}
-            //if (vega.Any(v => v == 0))
-            //{
-            //    throw new AggregateException("Option contract Vega was equal to zero");
-            //}
+            if (theta.Any(t => t == 0))
+            {
+                throw new AggregateException("Option contract Theta was equal to zero");
+            }
+            if (vega.Any(v => v == 0))
+            {
+                throw new AggregateException("Option contract Vega was equal to zero");
+            }
 
             if (!_invested)
             {
-                SetHoldings(data.OptionChains.Values.First().Contracts.Values.First().Symbol, 1);
+                // the margin requirement for the FOPs is less than the one of the underlying so we can't allocate all our buying power
+                // into FOPs else we won't be able to exercise
+                SetHoldings(data.OptionChains.Values.First().Contracts.Values.First().Symbol, 0.25);
                 _invested = true;
             }
         }
@@ -161,32 +168,33 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "3"},
-            {"Average Win", "27.44%"},
-            {"Average Loss", "-62.81%"},
-            {"Compounding Annual Return", "-80.444%"},
-            {"Drawdown", "52.600%"},
-            {"Expectancy", "-0.282"},
-            {"Net Profit", "-52.604%"},
-            {"Sharpe Ratio", "-0.867"},
-            {"Probabilistic Sharpe Ratio", "0.021%"},
+            {"Average Win", "8.71%"},
+            {"Average Loss", "-34.89%"},
+            {"Compounding Annual Return", "-50.850%"},
+            {"Drawdown", "29.200%"},
+            {"Expectancy", "-0.375"},
+            {"Net Profit", "-29.224%"},
+            {"Sharpe Ratio", "-1.025"},
+            {"Probabilistic Sharpe Ratio", "0.019%"},
             {"Loss Rate", "50%"},
             {"Win Rate", "50%"},
-            {"Profit-Loss Ratio", "0.44"},
-            {"Alpha", "-0.611"},
-            {"Beta", "-0.033"},
-            {"Annual Standard Deviation", "0.695"},
-            {"Annual Variance", "0.484"},
-            {"Information Ratio", "-0.513"},
-            {"Tracking Error", "0.718"},
-            {"Treynor Ratio", "18.473"},
-            {"Total Fees", "$66.60"},
-            {"Estimated Strategy Capacity", "$1200000.00"},
-            {"Fitness Score", "0.162"},
+            {"Profit-Loss Ratio", "0.25"},
+            {"Alpha", "-0.387"},
+            {"Beta", "0.017"},
+            {"Annual Standard Deviation", "0.377"},
+            {"Annual Variance", "0.142"},
+            {"Information Ratio", "-0.751"},
+            {"Tracking Error", "0.548"},
+            {"Treynor Ratio", "-22.299"},
+            {"Total Fees", "$37.00"},
+            {"Estimated Strategy Capacity", "$33000000.00"},
+            {"Lowest Capacity Asset", "ES XFH59UK0MYO1"},
+            {"Fitness Score", "0.056"},
             {"Kelly Criterion Estimate", "0"},
             {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-0.136"},
-            {"Return Over Maximum Drawdown", "-1.529"},
-            {"Portfolio Turnover", "0.427"},
+            {"Sortino Ratio", "-0.155"},
+            {"Return Over Maximum Drawdown", "-1.741"},
+            {"Portfolio Turnover", "0.152"},
             {"Total Insights Generated", "0"},
             {"Total Insights Closed", "0"},
             {"Total Insights Analysis Completed", "0"},
@@ -200,7 +208,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Mean Population Magnitude", "0%"},
             {"Rolling Averaged Population Direction", "0%"},
             {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "a7f76d1e2d6f27651465217c92deea80"}
+            {"OrderListHash", "ca0898608da51d972723b1065a3f0d47"}
         };
     }
 }

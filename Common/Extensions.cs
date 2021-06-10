@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -63,6 +63,7 @@ namespace QuantConnect
     {
         private static RecyclableMemoryStreamManager MemoryManager = new RecyclableMemoryStreamManager();
         private static ConcurrentBag<Guid> Guids = new ConcurrentBag<Guid>();
+        private static readonly HashSet<string> _invalidSecurityTypes = new HashSet<string>();
 
         private static readonly Dictionary<IntPtr, PythonActivator> PythonActivators
             = new Dictionary<IntPtr, PythonActivator>();
@@ -85,6 +86,25 @@ namespace QuantConnect
         /// like future options the market close would match the delisted event time and would cancel all orders and mark the security
         /// as non tradable and delisted.</remarks>
         public static TimeSpan DelistingMarketCloseOffsetSpan { get; set; } = TimeSpan.FromMinutes(-15);
+
+        /// <summary>
+        /// Helper method to create an order request to liquidate a delisted asset
+        /// </summary>
+        public static SubmitOrderRequest CreateDelistedSecurityOrderRequest(this Security security, DateTime utcTime)
+        {
+            var orderType = OrderType.Market;
+            var tag = "Liquidate from delisting";
+            if (security.Type.IsOption())
+            {
+                // tx handler will determine auto exercise/assignment
+                tag = "Option Expired";
+                orderType = OrderType.OptionExercise;
+            }
+
+            // submit an order to liquidate on market close or exercise (for options)
+            return new SubmitOrderRequest(orderType, security.Type, security.Symbol,
+                -security.Holdings.Quantity, 0, 0, utcTime, tag);
+        }
 
         /// <summary>
         /// Safe multiplies a decimal by 100
@@ -435,6 +455,27 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Get a python methods arg count
+        /// </summary>
+        /// <param name="method">The Python method</param>
+        /// <returns>Count of arguments</returns>
+        public static int GetPythonArgCount(this PyObject method)
+        {
+            using (Py.GIL())
+            {
+                int argCount;
+                var pyArgCount = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
+                    "from inspect import signature\n" +
+                    "def GetArgCount(method):\n" +
+                    "   return len(signature(method).parameters)\n"
+                ).GetAttr("GetArgCount").Invoke(method);
+                pyArgCount.TryConvert(out argCount);
+
+                return argCount;
+            }
+        }
+
+        /// <summary>
         /// Returns an ordered enumerable where position reducing orders are executed first
         /// and the remaining orders are executed in decreasing order value.
         /// Will NOT return targets for securities that have no data yet.
@@ -449,20 +490,25 @@ namespace QuantConnect
             IAlgorithm algorithm,
             bool targetIsDelta = false)
         {
-            return targets.Select(x => new {
-                    PortfolioTarget = x,
-                    TargetQuantity = x.Quantity,
-                    ExistingQuantity = algorithm.Portfolio[x.Symbol].Quantity
-                                       + algorithm.Transactions.GetOpenOrderTickets(x.Symbol)
-                                           .Aggregate(0m, (d, t) => d + t.Quantity - t.QuantityFilled),
-                    Security = algorithm.Securities[x.Symbol]
+            return targets.Select(x =>
+                {
+                    var security = algorithm.Securities[x.Symbol];
+                    return new
+                    {
+                        PortfolioTarget = x,
+                        TargetQuantity = OrderSizing.AdjustByLotSize(security, x.Quantity),
+                        ExistingQuantity = security.Holdings.Quantity
+                            + algorithm.Transactions.GetOpenOrderTickets(x.Symbol)
+                                .Aggregate(0m, (d, t) => d + t.Quantity - t.QuantityFilled),
+                        Security = security
+                    };
                 })
                 .Where(x => x.Security.HasData
                             && (targetIsDelta ? Math.Abs(x.TargetQuantity) : Math.Abs(x.TargetQuantity - x.ExistingQuantity))
                             >= x.Security.SymbolProperties.LotSize
                 )
                 .Select(x => new {
-                    PortfolioTarget = x.PortfolioTarget,
+                    x.PortfolioTarget,
                     OrderValue = Math.Abs((targetIsDelta ? x.TargetQuantity : (x.TargetQuantity - x.ExistingQuantity)) * x.Security.Price),
                     IsReducingPosition = x.ExistingQuantity != 0
                                          && Math.Abs((targetIsDelta ? (x.TargetQuantity + x.ExistingQuantity) : x.TargetQuantity)) < Math.Abs(x.ExistingQuantity)
@@ -814,19 +860,6 @@ namespace QuantConnect
         /// <param name="d">Double we're rounding</param>
         /// <param name="digits">Number of significant figures</param>
         /// <returns>New double rounded to digits-significant figures</returns>
-        public static double RoundToSignificantDigits(this double d, int digits)
-        {
-            if (d == 0) return 0;
-            var scale = Math.Pow(10, Math.Floor(Math.Log10(Math.Abs(d))) + 1);
-            return scale * Math.Round(d / scale, digits);
-        }
-
-        /// <summary>
-        /// Extension method to round a double value to a fixed number of significant figures instead of a fixed decimal places.
-        /// </summary>
-        /// <param name="d">Double we're rounding</param>
-        /// <param name="digits">Number of significant figures</param>
-        /// <returns>New double rounded to digits-significant figures</returns>
         public static decimal RoundToSignificantDigits(this decimal d, int digits)
         {
             if (d == 0) return 0;
@@ -878,6 +911,29 @@ namespace QuantConnect
             }
 
             return $"{number - 5000000m:#,,,.##}B";
+        }
+
+        /// <summary>
+        /// Discretizes the <paramref name="value"/> to a maximum precision specified by <paramref name="quanta"/>. Quanta
+        /// can be an arbitrary positive number and represents the step size. Consider a quanta equal to 0.15 and rounding
+        /// a value of 1.0. Valid values would be 0.9 (6 quanta) and 1.05 (7 quanta) which would be rounded up to 1.05.
+        /// </summary>
+        /// <param name="value">The value to be rounded by discretization</param>
+        /// <param name="quanta">The maximum precision allowed by the value</param>
+        /// <param name="mode">Specifies how to handle the rounding of half value, defaulting to away from zero.</param>
+        /// <returns></returns>
+        public static decimal DiscretelyRoundBy(this decimal value, decimal quanta, MidpointRounding mode = MidpointRounding.AwayFromZero)
+        {
+            if (quanta == 0m)
+            {
+                return value;
+            }
+
+            // away from zero is the 'common sense' rounding.
+            // +0.5 rounded by 1 yields +1
+            // -0.5 rounded by 1 yields -1
+            var multiplicand = Math.Round(value / quanta, mode);
+            return quanta * multiplicand;
         }
 
         /// <summary>
@@ -955,7 +1011,7 @@ namespace QuantConnect
 
         /// <summary>
         /// Will remove any trailing zeros for the provided decimal and convert to string.
-        /// Uses <see cref="Normalize"/>.
+        /// Uses <see cref="Normalize(decimal)"/>.
         /// </summary>
         /// <param name="input">The <see cref="decimal"/> to convert to <see cref="string"/></param>
         /// <returns>Input converted to <see cref="string"/> with no trailing zeros</returns>
@@ -1577,6 +1633,32 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Attempts to convert the string into a <see cref="SecurityType"/> enum value
+        /// </summary>
+        /// <param name="value">string value to convert to SecurityType</param>
+        /// <param name="securityType">SecurityType output</param>
+        /// <param name="ignoreCase">Ignore casing</param>
+        /// <returns>true if parsed into a SecurityType successfully, false otherwise</returns>
+        /// <remarks>
+        /// Logs once if we've encountered an invalid SecurityType
+        /// </remarks>
+        public static bool TryParseSecurityType(this string value, out SecurityType securityType, bool ignoreCase = true)
+        {
+            if (Enum.TryParse(value, ignoreCase, out securityType))
+            {
+                return true;
+            }
+
+            if (_invalidSecurityTypes.Add(value))
+            {
+                Log.Error($"Extensions.TryParseSecurityType(): Attempted to parse unknown SecurityType: {value}");
+            }
+
+            return false;
+
+        }
+
+        /// <summary>
         /// Converts the specified string value into the specified type
         /// </summary>
         /// <typeparam name="T">The output type</typeparam>
@@ -1716,16 +1798,21 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Return the first in the series of names, or find the one that matches the configured algirithmTypeName
+        /// Return the first in the series of names, or find the one that matches the configured algorithmTypeName
         /// </summary>
         /// <param name="names">The list of class names</param>
         /// <param name="algorithmTypeName">The configured algorithm type name from the config</param>
         /// <returns>The name of the class being run</returns>
         public static string SingleOrAlgorithmTypeName(this List<string> names, string algorithmTypeName)
         {
-            // if there's only one use that guy
-            // if there's more than one then find which one we should use using the algorithmTypeName specified
-            return names.Count == 1 ? names.Single() : names.SingleOrDefault(x => x.EndsWith("." + algorithmTypeName));
+            // If there's only one name use that guy
+            if (names.Count == 1) { return names.Single(); }
+
+            // If we have multiple names we need to search the names based on the given algorithmTypeName
+            // If the given name already contains dots (fully named) use it as it is
+            // otherwise add a dot to the beginning to avoid matching any subsets of other names
+            var searchName = algorithmTypeName.Contains(".") ? algorithmTypeName : "." + algorithmTypeName;
+            return names.SingleOrDefault(x => x.EndsWith(searchName));
         }
 
         /// <summary>
@@ -1757,6 +1844,8 @@ namespace QuantConnect
                 case SecurityType.Future:
                 case SecurityType.Cfd:
                 case SecurityType.Crypto:
+                case SecurityType.Index:
+                case SecurityType.IndexOption:
                     return true;
                 default:
                     return false;
@@ -1764,9 +1853,76 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Determines if the provided SecurityType is a type of Option.
+        /// Valid option types are: Equity Options, Futures Options, and Index Options.
+        /// </summary>
+        /// <param name="securityType">The SecurityType to check if it's an option asset</param>
+        /// <returns>
+        /// true if the asset has the makings of an option (exercisable, expires, and is a derivative of some underlying),
+        /// false otherwise.
+        /// </returns>
+        public static bool IsOption(this SecurityType securityType)
+        {
+            switch (securityType)
+            {
+                case SecurityType.Option:
+                case SecurityType.FutureOption:
+                case SecurityType.IndexOption:
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Determines if the provided SecurityType has a matching option SecurityType, used to represent
+        /// the current SecurityType as a derivative.
+        /// </summary>
+        /// <param name="securityType">The SecurityType to check if it has options available</param>
+        /// <returns>true if there are options for the SecurityType, false otherwise</returns>
+        public static bool HasOptions(this SecurityType securityType)
+        {
+            switch (securityType)
+            {
+                case SecurityType.Equity:
+                case SecurityType.Future:
+                case SecurityType.Index:
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the default <see cref="OptionStyle"/> for the provided <see cref="SecurityType"/>
+        /// </summary>
+        /// <param name="securityType">SecurityType to get default OptionStyle for</param>
+        /// <returns>Default OptionStyle for the SecurityType</returns>
+        /// <exception cref="ArgumentException">The SecurityType has no options available for it or it is not an option</exception>
+        public static OptionStyle DefaultOptionStyle(this SecurityType securityType)
+        {
+            if (!securityType.HasOptions() && !securityType.IsOption())
+            {
+                throw new ArgumentException($"The SecurityType {securityType} has no default OptionStyle, because it has no options available for it");
+            }
+
+            switch (securityType)
+            {
+                case SecurityType.Index:
+                case SecurityType.IndexOption:
+                    return OptionStyle.European;
+
+                default:
+                    return OptionStyle.American;
+            }
+        }
+
+        /// <summary>
         /// Converts the specified <paramref name="optionRight"/> value to its corresponding string representation
         /// </summary>
-        /// <remarks>This method provides faster performance than enum <see cref="ToString"/></remarks>
+        /// <remarks>This method provides faster performance than enum <see cref="Object.ToString"/></remarks>
         /// <param name="optionRight">The optionRight value</param>
         /// <returns>A string representation of the specified OptionRight value</returns>
         public static string ToStringPerformance(this OptionRight optionRight)
@@ -1801,12 +1957,16 @@ namespace QuantConnect
                     return "option";
                 case SecurityType.FutureOption:
                     return "futureoption";
+                case SecurityType.IndexOption:
+                    return "indexoption";
                 case SecurityType.Commodity:
                     return "commodity";
                 case SecurityType.Forex:
                     return "forex";
                 case SecurityType.Future:
                     return "future";
+                case SecurityType.Index:
+                    return "index";
                 case SecurityType.Cfd:
                     return "cfd";
                 case SecurityType.Crypto:
@@ -1925,6 +2085,12 @@ namespace QuantConnect
             return orderTicket;
         }
 
+        /// <summary>
+        /// Process all items in collection through given handler
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="collection">Collection to process</param>
+        /// <param name="handler">Handler to process those items with</param>
         public static void ProcessUntilEmpty<T>(this IProducerConsumerCollection<T> collection, Action<T> handler)
         {
             T item;
@@ -2098,6 +2264,27 @@ namespace QuantConnect
                 locals.Dispose();
             }
             return false;
+        }
+
+        /// <summary>
+        /// Safely convert PyObject to ManagedObject using Py.GIL Lock
+        /// If no type is given it will convert the PyObject's Python Type to a ManagedObject Type
+        /// in a attempt to resolve the target type to convert to.
+        /// </summary>
+        /// <param name="pyObject">PyObject to convert to managed</param>
+        /// <param name="typeToConvertTo">The target type to convert to</param>
+        /// <returns>The resulting ManagedObject</returns>
+        public static dynamic SafeAsManagedObject(this PyObject pyObject, Type typeToConvertTo = null)
+        {
+            using (Py.GIL())
+            {
+                if (typeToConvertTo == null)
+                {
+                    typeToConvertTo = pyObject.GetPythonType().AsManagedObject(typeof(Type)) as Type;
+                }
+
+                return pyObject.AsManagedObject(typeToConvertTo);
+            }
         }
 
         /// <summary>
@@ -2446,6 +2633,8 @@ namespace QuantConnect
                     return OptionSymbol.GetLastDayOfTrading(symbol);
                 case SecurityType.FutureOption:
                     return FutureOptionSymbol.GetLastDayOfTrading(symbol);
+                case SecurityType.IndexOption:
+                    return symbol.ID.Date;
                 default:
                     return mapFile?.DelistingDate ?? SecurityIdentifier.DefaultDate;
             }
@@ -2490,7 +2679,12 @@ namespace QuantConnect
         /// <summary>
         /// Scale data based on factor function
         /// </summary>
-        public static BaseData Scale(this BaseData data, Func<decimal, decimal> factor)
+        /// <param name="data">Data to Adjust</param>
+        /// <param name="factor">Function to factor prices by</param>
+        /// <param name="volumeFactor">Factor to multiply volume/askSize/bidSize/quantity by</param>
+        /// <remarks>Volume values are rounded to the nearest integer, lot size purposefully not considered
+        /// as scaling only applies to equities</remarks>
+        public static BaseData Scale(this BaseData data, Func<decimal, decimal> factor, decimal volumeFactor)
         {
             switch (data.DataType)
             {
@@ -2502,14 +2696,14 @@ namespace QuantConnect
                         tradeBar.High = factor(tradeBar.High);
                         tradeBar.Low = factor(tradeBar.Low);
                         tradeBar.Close = factor(tradeBar.Close);
+                        tradeBar.Volume = Math.Round(tradeBar.Volume * volumeFactor);
                     }
                     break;
                 case MarketDataType.Tick:
                     var securityType = data.Symbol.SecurityType;
                     if (securityType != SecurityType.Equity &&
-                        securityType != SecurityType.Option &&
-                        securityType != SecurityType.FutureOption &&
-                        securityType != SecurityType.Future)
+                        securityType != SecurityType.Future &&
+                        !securityType.IsOption())
                     {
                         break;
                     }
@@ -2523,11 +2717,14 @@ namespace QuantConnect
                     if (tick.TickType == TickType.Trade)
                     {
                         tick.Value = factor(tick.Value);
+                        tick.Quantity = Math.Round(tick.Quantity * volumeFactor);
                         break;
                     }
 
                     tick.BidPrice = tick.BidPrice != 0 ? factor(tick.BidPrice) : 0;
+                    tick.BidSize = Math.Round(tick.BidSize * volumeFactor);
                     tick.AskPrice = tick.AskPrice != 0 ? factor(tick.AskPrice) : 0;
+                    tick.AskSize = Math.Round(tick.AskSize * volumeFactor);
 
                     if (tick.BidPrice == 0)
                     {
@@ -2561,6 +2758,8 @@ namespace QuantConnect
                             quoteBar.Bid.Close = factor(quoteBar.Bid.Close);
                         }
                         quoteBar.Value = quoteBar.Close;
+                        quoteBar.LastAskSize = Math.Round(quoteBar.LastAskSize * volumeFactor);
+                        quoteBar.LastBidSize = Math.Round(quoteBar.LastBidSize * volumeFactor);
                     }
                     break;
                 case MarketDataType.Auxiliary:
@@ -2582,7 +2781,7 @@ namespace QuantConnect
         /// <returns></returns>
         public static BaseData Normalize(this BaseData data, SubscriptionDataConfig config)
         {
-            return data?.Scale(p => config.GetNormalizedPrice(p));
+            return data?.Scale(p => config.GetNormalizedPrice(p), 1/config.PriceScaleFactor);
         }
 
         /// <summary>
@@ -2593,7 +2792,7 @@ namespace QuantConnect
         /// <returns></returns>
         public static BaseData Adjust(this BaseData data, decimal scale)
         {
-            return data?.Scale(p => p * scale);
+            return data?.Scale(p => p * scale, 1/scale);
         }
 
         /// <summary>
@@ -2664,7 +2863,7 @@ namespace QuantConnect
         /// <returns><see cref="OptionChainUniverse"/> for the given symbol</returns>
         public static OptionChainUniverse CreateOptionChain(this IAlgorithm algorithm, Symbol symbol, Func<OptionFilterUniverse, OptionFilterUniverse> filter, UniverseSettings universeSettings = null)
         {
-            if (symbol.SecurityType != SecurityType.Option && symbol.SecurityType != SecurityType.FutureOption)
+            if (!symbol.SecurityType.IsOption())
             {
                 throw new ArgumentException("CreateOptionChain requires an option symbol.");
             }
@@ -2683,7 +2882,7 @@ namespace QuantConnect
                 symbol = Symbol.CreateOption(
                     underlying,
                     market,
-                    default(OptionStyle),
+                    underlying.SecurityType.DefaultOptionStyle(),
                     default(OptionRight),
                     0m,
                     SecurityIdentifier.DefaultDate,
@@ -2746,6 +2945,167 @@ namespace QuantConnect
         public static bool Compare<T>(this ComparisonOperatorTypes op, T arg1, T arg2) where T : IComparable
         {
             return ComparisonOperator.Compare(op, arg1, arg2);
+        }
+
+        /// <summary>
+        /// Centralized logic used at the top of the subscription enumerator stacks to determine if we should emit base data points
+        /// based on the configuration for this subscription and the type of data we are handling.
+        /// 
+        /// Currently we only want to emit split/dividends/delisting events for non internal <see cref="TradeBar"/> configurations
+        /// this last part is because equities also have <see cref="QuoteBar"/> subscriptions which will also subscribe to the
+        /// same aux events and we don't want duplicate emits of these events in the TimeSliceFactory
+        /// </summary>
+        /// <remarks>The "TimeSliceFactory" does not allow for multiple dividends/splits per symbol in the same time slice
+        /// but we don't want to rely only on that to filter out duplicated aux data so we use this at the top of
+        /// our data enumerator stacks to define what subscription should emit this data.</remarks>
+        /// <remarks>We use this function to filter aux data at the top of the subscription enumerator stack instead of
+        /// stopping the subscription stack from subscribing to aux data at the bottom because of a
+        /// dependency with the FF enumerators requiring that they receive aux data to properly handle delistings.
+        /// Otherwise we would have issues with delisted symbols continuing to fill forward after expiry/delisting.
+        /// Reference PR #5485 and related issues for more.</remarks>
+        public static bool ShouldEmitData(this SubscriptionDataConfig config, BaseData data)
+        {
+            // For now we are only filtering Auxiliary data; so if its another type just return true
+            if (data.DataType != MarketDataType.Auxiliary)
+            {
+                return true;
+            }
+
+            // Check our config type first to be lazy about using data.GetType() unless required
+            var configTypeFilter = (config.Type == typeof(TradeBar) ||
+                config.Type == typeof(Tick) && config.TickType == TickType.Trade || config.IsCustomData);
+
+            if (!configTypeFilter)
+            {
+                return false;
+            }
+
+            // This filter does not apply to auxiliary data outside of delisting/splits/dividends so lets those emit
+            var type = data.GetType();
+            if (!(type == typeof(Delisting) || type == typeof(Split) || type == typeof(Dividend)))
+            {
+                return true;
+            }
+
+            // If we made it here then only filter it if its an InternalFeed
+            return !config.IsInternalFeed;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="OrderDirection"/> that corresponds to the specified <paramref name="side"/>
+        /// </summary>
+        /// <param name="side">The position side to be converted</param>
+        /// <returns>The order direction that maps from the provided position side</returns>
+        public static OrderDirection ToOrderDirection(this PositionSide side)
+        {
+            switch (side)
+            {
+                case PositionSide.Short: return OrderDirection.Sell;
+                case PositionSide.None: return OrderDirection.Hold;
+                case PositionSide.Long: return OrderDirection.Buy;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(side), side, null);
+            }
+        }
+
+        /// <summary>
+        /// Determines if an order with the specified <paramref name="direction"/> would close a position with the
+        /// specified <paramref name="side"/>
+        /// </summary>
+        /// <param name="direction">The direction of the order, buy/sell</param>
+        /// <param name="side">The side of the position, long/short</param>
+        /// <returns>True if the order direction would close the position, otherwise false</returns>
+        public static bool Closes(this OrderDirection direction, PositionSide side)
+        {
+            switch (side)
+            {
+                case PositionSide.Short:
+                    switch (direction)
+                    {
+                        case OrderDirection.Buy: return true;
+                        case OrderDirection.Sell: return false;
+                        case OrderDirection.Hold: return false;
+                        default:
+                            throw new ArgumentOutOfRangeException(nameof(direction), direction, null);
+                    }
+
+                case PositionSide.Long:
+                    switch (direction)
+                    {
+                        case OrderDirection.Buy: return false;
+                        case OrderDirection.Sell: return true;
+                        case OrderDirection.Hold: return false;
+                        default:
+                            throw new ArgumentOutOfRangeException(nameof(direction), direction, null);
+                    }
+
+                case PositionSide.None:
+                    return false;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(side), side, null);
+            }
+        }
+
+        /// <summary>
+        /// Determines if the two lists are equal, including all items at the same indices.
+        /// </summary>
+        /// <typeparam name="T">The element type</typeparam>
+        /// <param name="left">The left list</param>
+        /// <param name="right">The right list</param>
+        /// <returns>True if the two lists have the same counts and items at each index evaluate as equal</returns>
+        public static bool ListEquals<T>(this IReadOnlyList<T> left, IReadOnlyList<T> right)
+        {
+            var count = left.Count;
+            if (count != right.Count)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                if (!left[i].Equals(right[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Computes a deterministic hash code based on the items in the list. This hash code is dependent on the
+        /// ordering of items.
+        /// </summary>
+        /// <typeparam name="T">The element type</typeparam>
+        /// <param name="list">The list</param>
+        /// <returns>A hash code dependent on the ordering of elements in the list</returns>
+        public static int GetListHashCode<T>(this IReadOnlyList<T> list)
+        {
+            unchecked
+            {
+                var hashCode = 17;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    hashCode += (hashCode * 397) ^ list[i].GetHashCode();
+                }
+
+                return hashCode;
+            }
+        }
+
+        /// <summary>
+        /// Read all lines from a stream reader
+        /// </summary>
+        /// <param name="reader">Stream reader to read from</param>
+        /// <returns>Enumerable of lines in stream</returns>
+        public static IEnumerable<string> ReadAllLines(this StreamReader reader)
+        {
+            string line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                yield return line;
+            }
         }
     }
 }

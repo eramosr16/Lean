@@ -90,10 +90,10 @@ and [Python installation](https://github.com/QuantConnect/Lean/tree/master/Algor
  ```
     pip install quantconnect
 ```
- 3. **Linux and macOS:** Copy pythonnet binaries for jupyter
+ 3.  Install [pythonnet/clr-loader](https://github.com/pythonnet/clr-loader)
  ```
-  cp Lean/Launcher/bin/Debug/jupyter/* Lean/Launcher/bin/Debug
- ```
+    pip install clr-loader
+```
 **2. Run Jupyter:**
    1. Update the `config.json` file in `Lean/Launcher/bin/Debug/` folder
  ```

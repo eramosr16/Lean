@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,10 +15,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Fasterflect;
-using Newtonsoft.Json;
 using QuantConnect.AlgorithmFactory;
 using QuantConnect.Brokerages;
 using QuantConnect.Brokerages.InteractiveBrokers;
@@ -40,7 +40,12 @@ namespace QuantConnect.Lean.Engine.Setup
     /// </summary>
     public class BrokerageSetupHandler : ISetupHandler
     {
-        private bool _notifiedDefaultResolutionUsed;
+        private bool _notifiedUniverseSettingsUsed;
+
+        /// <summary>
+        /// Max allocation limit configuration variable name
+        /// </summary>
+        public static string MaxAllocationLimitConfig = "max-allocation-limit";
 
         /// <summary>
         /// The worker thread instance the setup handler should use
@@ -201,7 +206,7 @@ namespace QuantConnect.Lean.Engine.Setup
 
 
                 var accountCurrency = brokerage.AccountBaseCurrency;
-                if (liveJob.BrokerageData.ContainsKey("max-cash-limit"))
+                if (liveJob.BrokerageData.ContainsKey(MaxAllocationLimitConfig))
                 {
                     accountCurrency = Currencies.USD;
                     message += ". Allocation limited, will use 'USD' account currency";
@@ -234,7 +239,7 @@ namespace QuantConnect.Lean.Engine.Setup
 
                         //Set our parameters
                         algorithm.SetParameters(liveJob.Parameters);
-                        algorithm.SetAvailableDataTypes(GetConfiguredDataFeeds());
+                        algorithm.SetAvailableDataTypes(BaseSetupHandler.GetConfiguredDataFeeds());
 
                         //Algorithm is live, not backtesting:
                         algorithm.SetLiveMode(true);
@@ -298,12 +303,12 @@ namespace QuantConnect.Lean.Engine.Setup
                     return false;
                 }
 
-                if (!LoadCashBalance(liveJob, brokerage, algorithm))
+                if (!LoadCashBalance(brokerage, algorithm))
                 {
                     return false;
                 }
 
-                if (!LoadExistingHoldingsAndOrders(liveJob, brokerage, algorithm, parameters))
+                if (!LoadExistingHoldingsAndOrders(brokerage, algorithm, parameters))
                 {
                     return false;
                 }
@@ -316,6 +321,20 @@ namespace QuantConnect.Lean.Engine.Setup
                 if (algorithm.Portfolio.TotalPortfolioValue == 0)
                 {
                     algorithm.Debug("Warning: No cash balances or holdings were found in the brokerage account.");
+                }
+
+                string maxCashLimitStr;
+                if (liveJob.BrokerageData.TryGetValue(MaxAllocationLimitConfig, out maxCashLimitStr))
+                {
+                    var maxCashLimit = decimal.Parse(maxCashLimitStr, NumberStyles.Any, CultureInfo.InvariantCulture);
+                    
+                    // If allocation exceeded by more than $10,000; block deployment
+                    if (algorithm.Portfolio.TotalPortfolioValue > (maxCashLimit + 10000m))
+                    {
+                        var exceptionMessage = $"TotalPortfolioValue '{algorithm.Portfolio.TotalPortfolioValue}' exceeds allocation limit '{maxCashLimit}'";
+                        algorithm.Debug(exceptionMessage);
+                        throw new ArgumentException(exceptionMessage);
+                    }
                 }
 
                 //Set the starting portfolio value for the strategy to calculate performance:
@@ -341,49 +360,18 @@ namespace QuantConnect.Lean.Engine.Setup
             return Errors.Count == 0;
         }
 
-        private bool LoadCashBalance(LiveNodePacket liveJob, IBrokerage brokerage, IAlgorithm algorithm)
+        private bool LoadCashBalance(IBrokerage brokerage, IAlgorithm algorithm)
         {
             Log.Trace("BrokerageSetupHandler.Setup(): Fetching cash balance from brokerage...");
             try
             {
                 // set the algorithm's cash balance for each currency
                 var cashBalance = brokerage.GetCashBalance();
-                string maxCashLimitStr;
-                if (liveJob.BrokerageData.TryGetValue("max-cash-limit", out maxCashLimitStr))
+                foreach (var cash in cashBalance)
                 {
-                    var maxCashLimit = JsonConvert.DeserializeObject<HashSet<CashAmount>>(maxCashLimitStr);
+                    Log.Trace($"BrokerageSetupHandler.Setup(): Setting {cash.Currency} cash to {cash.Amount}");
 
-                    brokerage.DisableCashSync();
-
-                    Log.Trace("BrokerageSetupHandler.Setup(): will use job packet max cash limit. Disabled cash sync.");
-                    foreach (var cash in maxCashLimit)
-                    {
-                        var brokerageCash = cashBalance.FirstOrDefault(
-                            brokerageCashAmount => string.Equals(brokerageCashAmount.Currency, cash.Currency, StringComparison.InvariantCultureIgnoreCase));
-                        // we use the min amount between the brokerage and the job packet, if any
-                        if (brokerageCash != default(CashAmount))
-                        {
-                            Log.Trace($"BrokerageSetupHandler.Setup(): Job packet amount {cash.Currency} {cash.Amount}. Brokerage amount {brokerageCash.Amount}.");
-                            var cashToUse = new CashAmount(Math.Min(cash.Amount, brokerageCash.Amount), cash.Currency);
-
-                            algorithm.Debug($"Live deployment has been allocation limited to {cashToUse.Amount:C} {cashToUse.Currency}");
-
-                            algorithm.Portfolio.SetCash(cashToUse.Currency, cashToUse.Amount, 0);
-                        }
-                        else
-                        {
-                            Log.Trace($"BrokerageSetupHandler.Setup(): Skip setting {cash.Currency} brokerage does not have it.");
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (var cash in cashBalance)
-                    {
-                        Log.Trace($"BrokerageSetupHandler.Setup(): Setting {cash.Currency} cash to {cash.Amount}");
-
-                        algorithm.Portfolio.SetCash(cash.Currency, cash.Amount, 0);
-                    }
+                    algorithm.Portfolio.SetCash(cash.Currency, cash.Amount, 0);
                 }
             }
             catch (Exception err)
@@ -392,23 +380,14 @@ namespace QuantConnect.Lean.Engine.Setup
                 AddInitializationError("Error getting cash balance from brokerage: " + err.Message, err);
                 return false;
             }
-
             return true;
         }
 
-        private bool LoadExistingHoldingsAndOrders(LiveNodePacket liveJob, IBrokerage brokerage, IAlgorithm algorithm, SetupHandlerParameters parameters)
+        private bool LoadExistingHoldingsAndOrders(IBrokerage brokerage, IAlgorithm algorithm, SetupHandlerParameters parameters)
         {
-            string loadExistingHoldings;
-            if (liveJob.BrokerageData.TryGetValue("load-existing-holdings", out loadExistingHoldings) && !bool.Parse(loadExistingHoldings))
-            {
-                Log.Trace("BrokerageSetupHandler.Setup(): Ignoring brokerage holdings and orders");
-                algorithm.Debug("Live deployment skipping loading of existing assets from the brokerage per deployment settings.");
-                return true;
-            }
-
             var supportedSecurityTypes = new HashSet<SecurityType>
             {
-                SecurityType.Equity, SecurityType.Forex, SecurityType.Cfd, SecurityType.Option, SecurityType.Future, SecurityType.FutureOption, SecurityType.Crypto
+                SecurityType.Equity, SecurityType.Forex, SecurityType.Cfd, SecurityType.Option, SecurityType.Future, SecurityType.FutureOption, SecurityType.IndexOption, SecurityType.Crypto
             };
 
             Log.Trace("BrokerageSetupHandler.Setup(): Fetching open orders from brokerage...");
@@ -453,17 +432,27 @@ namespace QuantConnect.Lean.Engine.Setup
                     var exchangeTime = utcNow.ConvertFromUtc(security.Exchange.TimeZone);
 
                     security.Holdings.SetHoldings(holding.AveragePrice, holding.Quantity);
-                    security.SetMarketPrice(new TradeBar
+
+                    if (holding.MarketPrice == 0)
                     {
-                        Time = exchangeTime,
-                        Open = holding.MarketPrice,
-                        High = holding.MarketPrice,
-                        Low = holding.MarketPrice,
-                        Close = holding.MarketPrice,
-                        Volume = 0,
-                        Symbol = holding.Symbol,
-                        DataType = MarketDataType.TradeBar
-                    });
+                        // try warming current market price
+                        holding.MarketPrice = algorithm.GetLastKnownPrice(security)?.Price ?? 0;
+                    }
+
+                    if (holding.MarketPrice != 0)
+                    {
+                        security.SetMarketPrice(new TradeBar
+                        {
+                            Time = exchangeTime,
+                            Open = holding.MarketPrice,
+                            High = holding.MarketPrice,
+                            Low = holding.MarketPrice,
+                            Close = holding.MarketPrice,
+                            Volume = 0,
+                            Symbol = holding.Symbol,
+                            DataType = MarketDataType.TradeBar
+                        });
+                    }
                 }
             }
             catch (Exception err)
@@ -481,29 +470,34 @@ namespace QuantConnect.Lean.Engine.Setup
             if (!algorithm.Portfolio.ContainsKey(symbol))
             {
                 var resolution = algorithm.UniverseSettings.Resolution;
-                if (!_notifiedDefaultResolutionUsed)
+                var fillForward = algorithm.UniverseSettings.FillForward;
+                var leverage = algorithm.UniverseSettings.Leverage;
+                var extendedHours = algorithm.UniverseSettings.ExtendedMarketHours;
+
+                if (!_notifiedUniverseSettingsUsed)
                 {
                     // let's just send the message once
-                    _notifiedDefaultResolutionUsed = true;
-                    algorithm.Debug($"Will use UniverseSettings.Resolution value '{resolution}' for automatically added securities for open orders and holdings.");
+                    _notifiedUniverseSettingsUsed = true;
+                    algorithm.Debug($"Will use UniverseSettings for automatically added securities for open orders and holdings. UniverseSettings:" +
+                        $" Resolution = {resolution}; Leverage = {leverage}; FillForward = {fillForward}; ExtendedHours = {extendedHours}");
                 }
 
                 Log.Trace("BrokerageSetupHandler.Setup(): Adding unrequested security: " + symbol.Value);
 
-                if (symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.FutureOption)
+                if (symbol.SecurityType.IsOption())
                 {
                     // add current option contract to the system
-                    algorithm.AddOptionContract(symbol, resolution, true, 1.0m);
+                    algorithm.AddOptionContract(symbol, resolution, fillForward, leverage);
                 }
                 else if (symbol.SecurityType == SecurityType.Future)
                 {
                     // add current future contract to the system
-                    algorithm.AddFutureContract(symbol, resolution, true, 1.0m);
+                    algorithm.AddFutureContract(symbol, resolution, fillForward, leverage);
                 }
                 else
                 {
                     // for items not directly requested set leverage to 1 and at the min resolution
-                    algorithm.AddSecurity(symbol.SecurityType, symbol.Value, resolution, symbol.ID.Market, true, 1.0m, false);
+                    algorithm.AddSecurity(symbol.SecurityType, symbol.Value, resolution, symbol.ID.Market, fillForward, leverage, extendedHours);
                 }
             }
         }
@@ -546,23 +540,6 @@ namespace QuantConnect.Lean.Engine.Setup
 
                 AddUnrequestedSecurity(algorithm, order.Symbol);
             }
-        }
-
-        /// <summary>
-        /// Get the available data feeds from config.json,
-        /// If none available, throw an error
-        /// </summary>
-        private static Dictionary<SecurityType, List<TickType>> GetConfiguredDataFeeds()
-        {
-            var dataFeedsConfigString = Config.Get("security-data-feeds");
-
-            Dictionary<SecurityType, List<TickType>> dataFeeds = new Dictionary<SecurityType, List<TickType>>();
-            if (dataFeedsConfigString != string.Empty)
-            {
-                dataFeeds = JsonConvert.DeserializeObject<Dictionary<SecurityType, List<TickType>>>(dataFeedsConfigString);
-            }
-
-            return dataFeeds;
         }
 
         /// <summary>

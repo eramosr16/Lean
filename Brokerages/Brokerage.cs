@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,15 +14,16 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json;
 using System.Threading;
-using System.Threading.Tasks;
 using QuantConnect.Data;
-using QuantConnect.Interfaces;
-using QuantConnect.Logging;
 using QuantConnect.Orders;
+using QuantConnect.Logging;
+using System.Threading.Tasks;
+using QuantConnect.Interfaces;
 using QuantConnect.Securities;
+using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages
 {
@@ -37,11 +38,6 @@ namespace QuantConnect.Brokerages
         private readonly object _performCashSyncReentranceGuard = new object();
         private bool _syncedLiveBrokerageCashToday = true;
         private long _lastSyncTimeTicks = DateTime.UtcNow.Ticks;
-
-        /// <summary>
-        /// True if cash sync should be performed
-        /// </summary>
-        protected bool CashSyncEnabled { get; set; } = true;
 
         /// <summary>
         /// Event that fires each time an order is filled
@@ -169,11 +165,6 @@ namespace QuantConnect.Brokerages
         {
             try
             {
-                if (!CashSyncEnabled)
-                {
-                    Log.Trace($"Brokerage.OnAccountChanged(): {e}. Skipping cash sync disabled");
-                    return;
-                }
                 Log.Trace($"Brokerage.OnAccountChanged(): {e}");
 
                 AccountChanged?.Invoke(this, e);
@@ -207,6 +198,56 @@ namespace QuantConnect.Brokerages
             {
                 Log.Error(err);
             }
+        }
+
+        /// <summary>
+        /// Helper method that will try to get the live holdings from the provided brokerage data collection else will default to the algorithm state
+        /// </summary>
+        /// <remarks>Holdings will removed from the provided collection on the first call, since this method is expected to be called only
+        /// once on initialize, after which the algorithm should use Lean accounting</remarks>
+        protected virtual List<Holding> GetAccountHoldings(Dictionary<string, string> brokerageData, IEnumerable<Security> securities)
+        {
+            if (Log.DebuggingEnabled)
+            {
+                Log.Debug("Brokerage.GetAccountHoldings(): starting...");
+            }
+
+            if (brokerageData.Remove("live-holdings", out var value) && !string.IsNullOrEmpty(value))
+            {
+                // remove the key, we really only want to return the cached value on the first request
+                var result = JsonConvert.DeserializeObject<List<Holding>>(value);
+
+                Log.Trace($"Brokerage.GetAccountHoldings(): sourcing holdings from provided brokerage data, found {result.Count} entries");
+                return result;
+            }
+
+            return securities?.Where(security => security.Holdings.AbsoluteQuantity > 0)
+                .OrderBy(security => security.Symbol)
+                .Select(security => new Holding(security)).ToList() ?? new List<Holding>();
+        }
+
+        /// <summary>
+        /// Helper method that will try to get the live cash balance from the provided brokerage data collection else will default to the algorithm state
+        /// </summary>
+        /// <remarks>Cash balance will removed from the provided collection on the first call, since this method is expected to be called only
+        /// once on initialize, after which the algorithm should use Lean accounting</remarks>
+        protected virtual List<CashAmount> GetCashBalance(Dictionary<string, string> brokerageData, CashBook cashBook)
+        {
+            if (Log.DebuggingEnabled)
+            {
+                Log.Debug("Brokerage.GetCashBalance(): starting...");
+            }
+
+            if (brokerageData.Remove("live-cash-balance", out var value) && !string.IsNullOrEmpty(value))
+            {
+                // remove the key, we really only want to return the cached value on the first request
+                var result = JsonConvert.DeserializeObject<List<CashAmount>>(value);
+
+                Log.Trace($"Brokerage.GetCashBalance(): sourcing cash balance from provided brokerage data, found {result.Count} entries");
+                return result;
+            }
+
+            return cashBook?.Select(x => new CashAmount(x.Value.Amount, x.Value.Symbol)).ToList() ?? new List<CashAmount>();
         }
 
         /// <summary>
@@ -267,11 +308,6 @@ namespace QuantConnect.Brokerages
         /// <returns>True if the cash sync should be performed</returns>
         public virtual bool ShouldPerformCashSync(DateTime currentTimeUtc)
         {
-            if (!CashSyncEnabled)
-            {
-                return false;
-            }
-
             // every morning flip this switch back
             var currentTimeNewYork = currentTimeUtc.ConvertFromUtc(TimeZones.NewYork);
             if (_syncedLiveBrokerageCashToday && currentTimeNewYork.Date != LastSyncDate)
@@ -280,14 +316,6 @@ namespace QuantConnect.Brokerages
             }
 
             return !_syncedLiveBrokerageCashToday && currentTimeNewYork.TimeOfDay >= LiveBrokerageCashSyncTime;
-        }
-
-        /// <summary>
-        /// Disable cash sync entirely
-        /// </summary>
-        public void DisableCashSync()
-        {
-            CashSyncEnabled = false;
         }
 
         /// <summary>

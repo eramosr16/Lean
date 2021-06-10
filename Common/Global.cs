@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -36,6 +36,7 @@ namespace QuantConnect
     /// </remarks>
     public enum PrimaryExchange : byte
     {
+#pragma warning disable 1591
         UNKNOWN=0,
         NASDAQ=81,
         BATS=90,
@@ -59,6 +60,7 @@ namespace QuantConnect
         MIAX,
         ISE_GEMINI,
         ISE_MERCURY,
+#pragma warning restore 1591
     }
 
     /// <summary>
@@ -90,7 +92,7 @@ namespace QuantConnect
         public const string Forex = "yyyyMMdd HH:mm:ss.ffff";
         /// Date format of FIX Protocol UTC Timestamp without milliseconds
         public const string FIX = "yyyyMMdd-HH:mm:ss";
-        /// Date format of FIX Protocol UTC Timestamp with milliseconds 
+        /// Date format of FIX Protocol UTC Timestamp with milliseconds
         public const string FIXWithMillisecond = "yyyyMMdd-HH:mm:ss.fff";
         /// YYYYMM Year and Month Character Date Representation (used for futures)
         public const string YearMonth = "yyyyMM";
@@ -106,7 +108,8 @@ namespace QuantConnect
         public Symbol Symbol = Symbol.Empty;
 
         /// Type of the security
-        public SecurityType Type;
+        [JsonIgnore]
+        public SecurityType Type => Symbol.SecurityType;
 
         /// The currency symbol of the holding, such as $
         public string CurrencySymbol;
@@ -151,14 +154,13 @@ namespace QuantConnect
             var holding = security.Holdings;
 
             Symbol = holding.Symbol;
-            Type = holding.Type;
             Quantity = holding.Quantity;
             MarketValue = holding.HoldingsValue;
             CurrencySymbol = Currencies.GetCurrencySymbol(security.QuoteCurrency.Symbol);
             ConversionRate = security.QuoteCurrency.ConversionRate;
 
             var rounding = 2;
-            if (holding.Type == SecurityType.Forex || holding.Type == SecurityType.Cfd)
+            if (holding.Type == SecurityType.Forex || holding.Type == SecurityType.Cfd || holding.Type == SecurityType.Index)
             {
                 rounding = 5;
             }
@@ -184,7 +186,6 @@ namespace QuantConnect
             {
                 AveragePrice = AveragePrice,
                 Symbol = Symbol,
-                Type = Type,
                 Quantity = Quantity,
                 MarketPrice = MarketPrice,
                 MarketValue = MarketValue,
@@ -367,7 +368,20 @@ namespace QuantConnect
         /// The contract multiplier for Futures Options plays a big part in determining the premium
         /// of the option, which can also differ from the underlying future's multiplier.
         /// </remarks>
-        FutureOption
+        FutureOption,
+
+        /// <summary>
+        /// Index Security Type.
+        /// </summary>
+        Index,
+
+        /// <summary>
+        /// Index Option Security Type.
+        /// </summary>
+        /// <remarks>
+        /// For index options traded on American markets, they tend to be European-style options and are Cash-settled.
+        /// </remarks>
+        IndexOption,
     }
 
     /// <summary>
@@ -733,7 +747,7 @@ namespace QuantConnect
         {
             return string.IsNullOrEmpty(exchange) ? null : ((char)exchange.GetPrimaryExchange()).ToString();
         }
-        
+
         /// <summary>
         /// Returns the main Exchange from the single character encoding.
         /// </summary>
@@ -752,11 +766,11 @@ namespace QuantConnect
         public static PrimaryExchange GetPrimaryExchange(this string exchange)
         {
             var primaryExchange = PrimaryExchange.UNKNOWN;
-            if (string.IsNullOrEmpty(exchange) || Enum.TryParse(exchange, true, out primaryExchange))
+            if (string.IsNullOrEmpty(exchange))
             {
                 return primaryExchange;
             }
-            
+
             switch (exchange.LazyToUpper())
             {
                 case "T":
@@ -821,10 +835,13 @@ namespace QuantConnect
                     return PrimaryExchange.ISE_GEMINI;
                 case "ISE_MERCURY":
                     return PrimaryExchange.ISE_MERCURY;
-                default:
                 case "UNKNOWN":
                     return PrimaryExchange.UNKNOWN;
+                default:
+                    break;
             }
+
+            return Enum.TryParse(exchange, true, out primaryExchange) ? primaryExchange : PrimaryExchange.UNKNOWN;
         }
     }
 

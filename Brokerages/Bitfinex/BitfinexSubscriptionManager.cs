@@ -170,6 +170,11 @@ namespace QuantConnect.Brokerages.Bitfinex
             return states.All(s => s);
         }
 
+        /// <summary>
+        /// Get channel name for a given <see cref="TickType"/>
+        /// </summary>
+        /// <param name="tickType"></param>
+        /// <returns>Channel name <see cref="string"/></returns>
         protected override string ChannelNameFromTickType(TickType tickType)
         {
             string channelName;
@@ -685,7 +690,7 @@ namespace QuantConnect.Brokerages.Bitfinex
         {
             try
             {
-                var time = Time.UnixMillisecondTimeStampToDateTime(double.Parse(entries[1], NumberStyles.Float, CultureInfo.InvariantCulture));
+                var time = Time.UnixMillisecondTimeStampToDateTime(decimal.Parse(entries[1], NumberStyles.Float, CultureInfo.InvariantCulture));
                 var amount = decimal.Parse(entries[2], NumberStyles.Float, CultureInfo.InvariantCulture);
                 var price = decimal.Parse(entries[3], NumberStyles.Float, CultureInfo.InvariantCulture);
 

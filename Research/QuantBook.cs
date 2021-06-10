@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -110,7 +110,6 @@ namespace QuantConnect.Research
                     SetStartDate(newYorkTime - TimeSpan.FromDays(1));
                 }
 
-
                 // Sets PandasConverter
                 SetPandasConverter();
 
@@ -118,6 +117,7 @@ namespace QuantConnect.Research
                 var composer = new Composer();
                 var algorithmHandlers = LeanEngineAlgorithmHandlers.FromConfiguration(composer);
                 var systemHandlers = LeanEngineSystemHandlers.FromConfiguration(composer);
+
                 // init the API
                 systemHandlers.Initialize();
                 systemHandlers.LeanManager.Initialize(systemHandlers,
@@ -178,8 +178,8 @@ namespace QuantConnect.Research
                     )
                 );
 
-                SetOptionChainProvider(new CachingOptionChainProvider(new BacktestingOptionChainProvider()));
-                SetFutureChainProvider(new CachingFutureChainProvider(new BacktestingFutureChainProvider()));
+                SetOptionChainProvider(new CachingOptionChainProvider(new BacktestingOptionChainProvider(_dataProvider)));
+                SetFutureChainProvider(new CachingFutureChainProvider(new BacktestingFutureChainProvider(_dataProvider)));
             }
             catch (Exception exception)
             {
@@ -322,7 +322,7 @@ namespace QuantConnect.Research
             }
 
             // Load a canonical option Symbol if the user provides us with an underlying Symbol
-            if (symbol.SecurityType != SecurityType.Option && symbol.SecurityType != SecurityType.FutureOption)
+            if (!symbol.SecurityType.IsOption())
             {
                 var option = AddOption(symbol, resolution, symbol.ID.Market);
 
@@ -804,7 +804,7 @@ namespace QuantConnect.Research
         {
             //SubscriptionRequest does not except nullable DateTimes, so set a startTime and endTime
             var startTime = start.HasValue ? (DateTime)start : QuantConnect.Time.BeginningOfTime;
-            var endTime = end.HasValue ? (DateTime)end : QuantConnect.Time.EndOfTime;
+            var endTime = end.HasValue ? (DateTime) end : DateTime.UtcNow.Date;
 
             //Collection to store our results
             var data = new Dictionary<DateTime, DataDictionary<dynamic>>();

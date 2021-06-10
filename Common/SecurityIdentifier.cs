@@ -40,7 +40,7 @@ namespace QuantConnect
     /// </remarks>
     [JsonConverter(typeof(SecurityIdentifierJsonConverter))]
     [ProtoContract(SkipConstructor = true)]
-    public class SecurityIdentifier : IEquatable<SecurityIdentifier>
+    public class SecurityIdentifier : IEquatable<SecurityIdentifier>, IComparable<SecurityIdentifier>, IComparable
     {
         #region Empty, DefaultDate Fields
 
@@ -176,12 +176,14 @@ namespace QuantConnect
                         case SecurityType.Equity:
                         case SecurityType.Option:
                         case SecurityType.Future:
+                        case SecurityType.Index:
                         case SecurityType.FutureOption:
+                        case SecurityType.IndexOption:
                             var oadate = ExtractFromProperties(DaysOffset, DaysWidth);
                             _date = DateTime.FromOADate(oadate);
                             return _date.Value;
                         default:
-                            throw new InvalidOperationException("Date is only defined for SecurityType.Equity, SecurityType.Option, SecurityType.Future, SecurityType.FutureOption, and SecurityType.Base");
+                            throw new InvalidOperationException("Date is only defined for SecurityType.Equity, SecurityType.Option, SecurityType.Future, SecurityType.FutureOption, SecurityType.IndexOption, and SecurityType.Base");
                     }
                 }
             }
@@ -238,9 +240,9 @@ namespace QuantConnect
                 }
                 catch (InvalidOperationException)
                 {
-                    if (SecurityType != SecurityType.Option && SecurityType != SecurityType.FutureOption)
+                    if (!SecurityType.IsOption())
                     {
-                        throw new InvalidOperationException("StrikePrice is only defined for SecurityType.Option and SecurityType.FutureOption");
+                        throw new InvalidOperationException("StrikePrice is only defined for SecurityType.Option, SecurityType.FutureOption, and SecurityType.IndexOption");
                     }
 
                     // performance: lets calculate strike price once
@@ -279,9 +281,9 @@ namespace QuantConnect
                 }
                 catch (InvalidOperationException)
                 {
-                    if (SecurityType != SecurityType.Option && SecurityType != SecurityType.FutureOption)
+                    if (!SecurityType.IsOption())
                     {
-                        throw new InvalidOperationException("OptionRight is only defined for SecurityType.Option and SecurityType.FutureOption");
+                        throw new InvalidOperationException("OptionRight is only defined for SecurityType.Option, SecurityType.FutureOption, and SecurityType.IndexOption");
                     }
                     _optionRight = (OptionRight)ExtractFromProperties(PutCallOffset, PutCallWidth);
                     return _optionRight.Value;
@@ -305,9 +307,9 @@ namespace QuantConnect
                 }
                 catch (InvalidOperationException)
                 {
-                    if (SecurityType != SecurityType.Option && SecurityType != SecurityType.FutureOption)
+                    if (!SecurityType.IsOption())
                     {
-                        throw new InvalidOperationException("OptionStyle is only defined for SecurityType.Option and SecurityType.FutureOption");
+                        throw new InvalidOperationException("OptionStyle is only defined for SecurityType.Option, SecurityType.FutureOption, and SecurityType.IndexOption");
                     }
 
                     _optionStyle = (OptionStyle)(ExtractFromProperties(OptionStyleOffset, OptionStyleWidth));
@@ -540,6 +542,17 @@ namespace QuantConnect
         public static SecurityIdentifier GenerateCfd(string symbol, string market)
         {
             return Generate(DefaultDate, symbol, SecurityType.Cfd, market);
+        }
+
+        /// <summary>
+        /// Generates a new <see cref="SecurityIdentifier"/> for a INDEX security
+        /// </summary>
+        /// <param name="symbol">The Index contract symbol</param>
+        /// <param name="market">The security's market</param>
+        /// <returns>A new <see cref="SecurityIdentifier"/> representing the specified INDEX security</returns>
+        public static SecurityIdentifier GenerateIndex(string symbol, string market)
+        {
+            return Generate(DefaultDate, symbol, SecurityType.Index, market);
         }
 
         /// <summary>
@@ -862,7 +875,7 @@ namespace QuantConnect
         /// <summary>
         /// Extracts the embedded value from _otherData
         /// </summary>
-        /// <remarks>Static so it can be used in <see cref="_lazySecurityType"/> initialization</remarks>
+        /// <remarks>Static so it can be used in <see cref="SecurityIdentifier"/> initialization</remarks>
         private static ulong ExtractFromProperties(ulong offset, ulong width, ulong properties)
         {
             return (properties / offset) % width;
@@ -871,6 +884,49 @@ namespace QuantConnect
         #endregion
 
         #region Equality members and ToString
+
+        /// <summary>Compares the current instance with another object of the same type and returns an integer that indicates whether the current instance precedes, follows, or occurs in the same position in the sort order as the other object. </summary>
+        /// <param name="other">An object to compare with this instance. </param>
+        /// <returns>A value that indicates the relative order of the objects being compared. The return value has these meanings: Value Meaning Less than zero This instance precedes <paramref name="other" /> in the sort order.  Zero This instance occurs in the same position in the sort order as <paramref name="other" />. Greater than zero This instance follows <paramref name="other" /> in the sort order. </returns>
+        public int CompareTo(SecurityIdentifier other)
+        {
+            if (ReferenceEquals(this, other))
+            {
+                return 0;
+            }
+
+            if (ReferenceEquals(null, other))
+            {
+                return 1;
+            }
+
+            return string.Compare(ToString(), other.ToString(), StringComparison.Ordinal);
+        }
+
+        /// <summary>Compares the current instance with another object of the same type and returns an integer that indicates whether the current instance precedes, follows, or occurs in the same position in the sort order as the other object.</summary>
+        /// <param name="obj">An object to compare with this instance. </param>
+        /// <returns>A value that indicates the relative order of the objects being compared. The return value has these meanings: Value Meaning Less than zero This instance precedes <paramref name="obj" /> in the sort order. Zero This instance occurs in the same position in the sort order as <paramref name="obj" />. Greater than zero This instance follows <paramref name="obj" /> in the sort order. </returns>
+        /// <exception cref="T:System.ArgumentException">
+        /// <paramref name="obj" /> is not the same type as this instance. </exception>
+        public int CompareTo(object obj)
+        {
+            if (ReferenceEquals(null, obj))
+            {
+                return 1;
+            }
+
+            if (ReferenceEquals(this, obj))
+            {
+                return 0;
+            }
+
+            if (!(obj is SecurityIdentifier))
+            {
+                throw new ArgumentException($"Object must be of type {nameof(SecurityIdentifier)}");
+            }
+
+            return CompareTo((SecurityIdentifier) obj);
+        }
 
         /// <summary>
         /// Indicates whether the current object is equal to another object of the same type.
@@ -948,6 +1004,7 @@ namespace QuantConnect
                 props = props.Length == 0 ? "0" : props;
                 _stringRep = HasUnderlying ? $"{_symbol} {props}|{_underlying}" : $"{_symbol} {props}";
             }
+
             return _stringRep;
         }
 

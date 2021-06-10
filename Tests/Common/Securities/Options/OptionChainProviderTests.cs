@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -32,7 +32,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
         [Test]
         public void BacktestingOptionChainProviderLoadsEquityOptionChain()
         {
-            var provider = new BacktestingOptionChainProvider();
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
             var twxOptionChain = provider.GetOptionContractList(Symbol.Create("TWX", SecurityType.Equity, Market.USA), new DateTime(2014, 6, 5))
                 .ToList();
 
@@ -44,7 +44,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
         [Test]
         public void BacktestingOptionChainProviderLoadsFutureOptionChain()
         {
-            var provider = new BacktestingOptionChainProvider();
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
             var esOptionChain = provider.GetOptionContractList(
                 Symbol.CreateFuture(
                     QuantConnect.Securities.Futures.Indices.SP500EMini,
@@ -92,9 +92,12 @@ namespace QuantConnect.Tests.Common.Securities.Options
 
             foreach (var symbol in new[] { Symbols.SPY, Symbols.AAPL, Symbols.MSFT })
             {
-                var result = provider.GetOptionContractList(symbol, DateTime.Today);
+                var result = provider.GetOptionContractList(symbol, DateTime.Today).ToList();
+                var countCall = result.Count(x => x.ID.OptionRight == OptionRight.Call);
+                var countPut = result.Count(x => x.ID.OptionRight == OptionRight.Put);
 
-                Assert.IsTrue(result.Any());
+                Assert.Greater(countCall, 0);
+                Assert.Greater(countPut, 0);
             }
         }
 
@@ -109,7 +112,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
             Assert.IsFalse(result.Any());
         }
 
-        [Test]
+        [Test, Ignore("Failing due to timeout, track issue at #5645")]
         public void LiveOptionChainProviderReturnsFutureOptionData()
         {
             var now = DateTime.Now;
@@ -142,7 +145,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
             }
         }
 
-        [Test]
+        [Test, Ignore("Failing due to timeout, track issue at #5645")]
         public void LiveOptionChainProviderReturnsNoDataForOldFuture()
         {
             var now = DateTime.Now;
@@ -176,7 +179,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
                 strike,
                 expiry);
 
-            var provider = new BacktestingOptionChainProvider();
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
             var contracts = provider.GetOptionContractList(underlying, new DateTime(2020, 1, 5))
                 .ToHashSet();
 

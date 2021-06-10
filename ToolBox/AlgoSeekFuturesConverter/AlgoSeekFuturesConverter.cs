@@ -102,7 +102,9 @@ namespace QuantConnect.ToolBox.AlgoSeekFuturesConverter
 
                         Log.Trace("AlgoSeekFuturesConverter.Convert(): Extracting " + file);
 
-                        Compression.Extract7ZipArchive(file.FullName, _source.FullName);
+                        // Never time out extracting an archive; they can be pretty big
+                        // and take a while to extract depending on the computer running this application
+                        Compression.Extract7ZipArchive(file.FullName, _source.FullName, -1);
                     }
 
                     // setting up local processors
@@ -217,11 +219,8 @@ namespace QuantConnect.ToolBox.AlgoSeekFuturesConverter
         /// <returns></returns>
         private Dictionary<string, decimal> LoadSymbolMultipliers()
         {
-            const int columnsCount = 4;
             const int columnUnderlying = 0;
-            const int columnProductName = 1;
             const int columnMultipleFactor = 2;
-            const int columnInfo = 3;
 
             return File.ReadAllLines("AlgoSeekFuturesConverter/AlgoSeek.US.Futures.PriceMultipliers.1.1.csv")
                     .Select(line => line.ToCsvData())

@@ -19,6 +19,7 @@ using System.Linq;
 using QuantConnect.Algorithm.Selection;
 using QuantConnect.Data;
 using QuantConnect.Data.Fundamental;
+using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Future;
@@ -36,6 +37,8 @@ namespace QuantConnect.Algorithm
         private readonly List<Universe> _pendingUniverseAdditions = new List<Universe>();
         // this is so that later during 'UniverseSelection.CreateUniverses' we wont remove these user universes from the UniverseManager
         private readonly HashSet<Symbol> _userAddedUniverses = new HashSet<Symbol>();
+        private ConcurrentSet<Symbol> _rawNormalizationWarningSymbols = new ConcurrentSet<Symbol>();
+        private readonly int _rawNormalizationWarningSymbolsMaxCount = 10;
 
         /// <summary>
         /// Gets universe manager which holds universes keyed by their symbol
@@ -167,6 +170,16 @@ namespace QuantConnect.Algorithm
 
                 _pendingUniverseAdditions.Clear();
                 _pendingUserDefinedUniverseSecurityAdditions.Clear();
+            }
+
+            if (!_rawNormalizationWarningSymbols.IsNullOrEmpty())
+            {
+                // Log our securities being set to raw price mode
+                Debug($"Warning: The following securities were set to raw price normalization mode to work with options: " +
+                    $"{string.Join(", ", _rawNormalizationWarningSymbols.Take(_rawNormalizationWarningSymbolsMaxCount).Select(x => x.Value))}...");
+
+                // Set our warning list to null to stop emitting these warnings after its done once
+                _rawNormalizationWarningSymbols = null;
             }
         }
 
@@ -351,7 +364,7 @@ namespace QuantConnect.Algorithm
             var exchangeTimeZone = marketHoursDbEntry.ExchangeHours.TimeZone;
             var symbol = QuantConnect.Symbol.Create(name, securityType, market, baseDataType: typeof(T));
             var config = new SubscriptionDataConfig(typeof(T), symbol, resolution, dataTimeZone, exchangeTimeZone, false, false, true, true, isFilteredSubscription: false);
-            return AddUniverse(new FuncUniverse(config, universeSettings, SecurityInitializer, d => selector(d.OfType<T>())));
+            return AddUniverse(new FuncUniverse(config, universeSettings, d => selector(d.OfType<T>())));
         }
 
         /// <summary>
@@ -371,7 +384,7 @@ namespace QuantConnect.Algorithm
             var exchangeTimeZone = marketHoursDbEntry.ExchangeHours.TimeZone;
             var symbol = QuantConnect.Symbol.Create(name, securityType, market, baseDataType: typeof(T));
             var config = new SubscriptionDataConfig(typeof(T), symbol, resolution, dataTimeZone, exchangeTimeZone, false, false, true, true, isFilteredSubscription: false);
-            return AddUniverse(new FuncUniverse(config, universeSettings, SecurityInitializer,
+            return AddUniverse(new FuncUniverse(config, universeSettings,
                 d => selector(d.OfType<T>()).Select(x => QuantConnect.Symbol.Create(x, securityType, market, baseDataType: typeof(T))))
             );
         }
@@ -383,7 +396,7 @@ namespace QuantConnect.Algorithm
         /// <param name="selector">Defines an initial coarse selection</param>
         public Universe AddUniverse(Func<IEnumerable<CoarseFundamental>, IEnumerable<Symbol>> selector)
         {
-            return AddUniverse(new CoarseFundamentalUniverse(UniverseSettings, SecurityInitializer, selector));
+            return AddUniverse(new CoarseFundamentalUniverse(UniverseSettings, selector));
         }
 
         /// <summary>
@@ -394,7 +407,7 @@ namespace QuantConnect.Algorithm
         /// <param name="fineSelector">Defines a more detailed selection with access to more data</param>
         public Universe AddUniverse(Func<IEnumerable<CoarseFundamental>, IEnumerable<Symbol>> coarseSelector, Func<IEnumerable<FineFundamental>, IEnumerable<Symbol>> fineSelector)
         {
-            var coarse = new CoarseFundamentalUniverse(UniverseSettings, SecurityInitializer, coarseSelector);
+            var coarse = new CoarseFundamentalUniverse(UniverseSettings, coarseSelector);
 
             return AddUniverse(new FineFundamentalFilteredUniverse(coarse, fineSelector));
         }
@@ -587,7 +600,13 @@ namespace QuantConnect.Algorithm
                 .GetSubscriptionDataConfigs(security.Symbol);
             if (configs.DataNormalizationMode() != DataNormalizationMode.Raw)
             {
-                Debug($"Warning: The {security.Symbol.Value} equity security was set the raw price normalization mode to work with options.");
+                // Add this symbol to our set of raw normalization warning symbols to alert the user at the end
+                // Set a hard limit to avoid growing this collection unnecessarily large
+                if (_rawNormalizationWarningSymbols != null && _rawNormalizationWarningSymbols.Count <= _rawNormalizationWarningSymbolsMaxCount)
+                {
+                    _rawNormalizationWarningSymbols.Add(security.Symbol);
+                }
+
                 configs.SetDataNormalizationMode(DataNormalizationMode.Raw);
                 // For backward compatibility we need to refresh the security DataNormalizationMode Property
                 security.RefreshDataNormalizationModeProperty();
@@ -596,7 +615,32 @@ namespace QuantConnect.Algorithm
             // ensure a volatility model has been set on the underlying
             if (security.VolatilityModel == VolatilityModel.Null)
             {
-                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: 30);
+                var config = configs.FirstOrDefault();
+                var bar = config?.Type.GetBaseDataInstance() ?? typeof(TradeBar).GetBaseDataInstance();
+                bar.Symbol = security.Symbol;
+                
+                var maxSupportedResolution = bar.SupportedResolutions().Max();
+
+                var updateFrequency = maxSupportedResolution.ToTimeSpan();
+                int periods;
+                switch (maxSupportedResolution)
+                {
+                    case Resolution.Tick:
+                    case Resolution.Second:
+                        periods = 600;
+                        break;
+                    case Resolution.Minute:
+                        periods = 60 * 24;
+                        break;
+                    case Resolution.Hour:
+                        periods = 24 * 30;
+                        break;
+                    default:
+                        periods = 30;
+                        break;
+                }
+                
+                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods, maxSupportedResolution, updateFrequency);
             }
         }
 

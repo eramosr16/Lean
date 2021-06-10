@@ -202,8 +202,8 @@ namespace QuantConnect.Lean.Engine.Results
                         runtimeStatistics.Add(pair.Key, pair.Value);
                     }
                 }
-                var summary = GenerateStatisticsResults(performanceCharts, estimatedStrategyCapacity: _capacityEstimate.Capacity).Summary;
-                GetAlgorithmRuntimeStatistics(summary, runtimeStatistics, _capacityEstimate.Capacity);
+                var summary = GenerateStatisticsResults(performanceCharts, estimatedStrategyCapacity: _capacityEstimate).Summary;
+                GetAlgorithmRuntimeStatistics(summary, runtimeStatistics, _capacityEstimate);
 
                 var progress = (decimal)_daysProcessed / _jobDays;
                 if (progress > 0.999m) progress = 0.999m;
@@ -347,8 +347,8 @@ namespace QuantConnect.Lean.Engine.Results
                     var charts = new Dictionary<string, Chart>(Charts);
                     var orders = new Dictionary<int, Order>(TransactionHandler.Orders);
                     var profitLoss = new SortedDictionary<DateTime, decimal>(Algorithm.Transactions.TransactionRecord);
-                    var statisticsResults = GenerateStatisticsResults(charts, profitLoss, _capacityEstimate.Capacity);
-                    var runtime = GetAlgorithmRuntimeStatistics(statisticsResults.Summary, capacityEstimate: _capacityEstimate.Capacity);
+                    var statisticsResults = GenerateStatisticsResults(charts, profitLoss, _capacityEstimate);
+                    var runtime = GetAlgorithmRuntimeStatistics(statisticsResults.Summary, capacityEstimate: _capacityEstimate);
 
                     FinalStatistics = statisticsResults.Summary;
 
@@ -456,6 +456,10 @@ namespace QuantConnect.Lean.Engine.Results
             AddToLogStore(message);
         }
 
+        /// <summary>
+        /// Add message to LogStore
+        /// </summary>
+        /// <param name="message">Message to add</param>
         protected override void AddToLogStore(string message)
         {
             lock (LogStore)
@@ -682,6 +686,10 @@ namespace QuantConnect.Lean.Engine.Results
             }
         }
 
+        /// <summary>
+        /// Handle order event
+        /// </summary>
+        /// <param name="newEvent">Event to process</param>
         public override void OrderEvent(OrderEvent newEvent)
         {
             _capacityEstimate?.OnOrderEvent(newEvent);

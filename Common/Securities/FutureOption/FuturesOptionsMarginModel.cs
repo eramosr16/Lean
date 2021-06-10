@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using System;
 using QuantConnect.Securities.Future;
 
 namespace QuantConnect.Securities.Option
@@ -24,7 +25,27 @@ namespace QuantConnect.Securities.Option
     /// </summary>
     public class FuturesOptionsMarginModel : FutureMarginModel
     {
-        private const decimal FixedMarginMultiplier = 1.5m;
+        private readonly Option _futureOption;
+
+        /// <summary>
+        /// Initial Overnight margin requirement for the contract effective from the date of change
+        /// </summary>
+        public override decimal InitialOvernightMarginRequirement => GetMarginRequirement(_futureOption, base.InitialOvernightMarginRequirement);
+
+        /// <summary>
+        /// Maintenance Overnight margin requirement for the contract effective from the date of change
+        /// </summary>
+        public override decimal MaintenanceOvernightMarginRequirement => GetMarginRequirement(_futureOption, base.MaintenanceOvernightMarginRequirement);
+
+        /// <summary>
+        /// Initial Intraday margin for the contract effective from the date of change
+        /// </summary>
+        public override decimal InitialIntradayMarginRequirement => GetMarginRequirement(_futureOption, base.InitialIntradayMarginRequirement);
+
+        /// <summary>
+        /// Maintenance Intraday margin requirement for the contract effective from the date of change
+        /// </summary>
+        public override decimal MaintenanceIntradayMarginRequirement => GetMarginRequirement(_futureOption, base.MaintenanceIntradayMarginRequirement);
 
         /// <summary>
         /// Creates an instance of FutureOptionMarginModel
@@ -33,12 +54,13 @@ namespace QuantConnect.Securities.Option
         /// <param name="futureOption">Option Security containing a Future security as the underlying</param>
         public FuturesOptionsMarginModel(decimal requiredFreeBuyingPowerPercent = 0, Option futureOption = null) : base(requiredFreeBuyingPowerPercent, futureOption?.Underlying)
         {
+            _futureOption = futureOption;
         }
 
         /// <summary>
         /// Gets the margin currently alloted to the specified holding.
         /// </summary>
-        /// <param name="security">The option to compute maintenance margin for</param>
+        /// <param name="parameters">An object containing the security</param>
         /// <returns>The maintenance margin required for the option</returns>
         /// <remarks>
         /// We fix the option to 1.5x the maintenance because of its close coupling with the underlying.
@@ -46,15 +68,17 @@ namespace QuantConnect.Securities.Option
         /// run when it comes to calculating the different market scenarios attempting to simulate VaR, resulting
         /// in a margin greater than the underlying's margin.
         /// </remarks>
-        protected override decimal GetMaintenanceMargin(Security security)
+        public override MaintenanceMargin GetMaintenanceMargin(MaintenanceMarginParameters parameters)
         {
-            return base.GetMaintenanceMargin(((Option)security).Underlying) * FixedMarginMultiplier;
+            var underlyingRequirement = base.GetMaintenanceMargin(parameters.ForUnderlying(parameters.Quantity));
+            var positionSide = parameters.Quantity > 0 ? PositionSide.Long : PositionSide.Short;
+            return GetMarginRequirement(_futureOption, underlyingRequirement, positionSide);
         }
 
         /// <summary>
         /// The margin that must be held in order to increase the position by the provided quantity
         /// </summary>
-        /// <param name="security">The option to compute the initial margin for</param>
+        /// <param name="parameters">An object containing the security and quantity of shares</param>
         /// <returns>The initial margin required for the option (i.e. the equity required to enter a position for this option)</returns>
         /// <remarks>
         /// We fix the option to 1.5x the initial because of its close coupling with the underlying.
@@ -62,9 +86,73 @@ namespace QuantConnect.Securities.Option
         /// run when it comes to calculating the different market scenarios attempting to simulate VaR, resulting
         /// in a margin greater than the underlying's margin.
         /// </remarks>
-        protected override decimal GetInitialMarginRequirement(Security security, decimal quantity)
+        public override InitialMargin GetInitialMarginRequirement(InitialMarginParameters parameters)
         {
-            return base.GetInitialMarginRequirement(((Option)security).Underlying, quantity) * FixedMarginMultiplier;
+            var underlyingRequirement = base.GetInitialMarginRequirement(parameters.ForUnderlying()).Value;
+            var positionSide = parameters.Quantity > 0 ? PositionSide.Long : PositionSide.Short;
+
+            return new InitialMargin(GetMarginRequirement(_futureOption, underlyingRequirement, positionSide));
+        }
+
+        /// <summary>
+        /// Get's the margin requirement for a future option based on the underlying future margin requirement and the position side to trade.
+        /// FOPs margin requirement is an 'S' curve based on the underlying requirement around it's current price, see https://en.wikipedia.org/wiki/Logistic_function
+        /// </summary>
+        /// <param name="option">The future option contract to trade</param>
+        /// <param name="underlyingRequirement">The underlying future associated margin requirement</param>
+        /// <param name="positionSide">The position side to trade, long by default. This is because short positions require higher margin requirements</param>
+        public static int GetMarginRequirement(Option option, decimal underlyingRequirement, PositionSide positionSide = PositionSide.Long)
+        {
+            var maximumValue = underlyingRequirement;
+            var curveGrowthRate = -7.8m;
+            var underlyingPrice = option.Underlying.Price;
+
+            if (positionSide == PositionSide.Short)
+            {
+                if (option.Right == OptionRight.Call)
+                {
+                    // going short the curve growth rate is slower
+                    curveGrowthRate = -4m;
+                    // curve shifted to the right -> causes a margin requirement increase
+                    underlyingPrice *= 1.5m;
+                }
+                else
+                {
+                    // higher max requirements
+                    maximumValue *= 1.25m;
+                    // puts are inverter from calls
+                    curveGrowthRate = 2.4m;
+                    // curve shifted to the left -> causes a margin requirement increase
+                    underlyingPrice *= 0.30m;
+                }
+            }
+            else
+            {
+                if (option.Right == OptionRight.Put)
+                {
+                    // fastest change rate
+                    curveGrowthRate = 9m;
+                }
+                else
+                {
+                    maximumValue *= 1.20m;
+                }
+            }
+
+            // we normalize the curve growth rate by dividing by the underlyings price
+            // this way, contracts with different order of magnitude price and strike (like CL & ES) share this logic
+            var denominator = Math.Pow(Math.E, (double) (-curveGrowthRate * (option.StrikePrice - underlyingPrice) / underlyingPrice));
+
+            if (double.IsInfinity(denominator))
+            {
+                return 0;
+            }
+            if (denominator.IsNaNOrZero())
+            {
+                return (int) maximumValue;
+            }
+
+            return (int) (maximumValue / (1 + denominator).SafeDecimalCast());
         }
     }
 }
