@@ -44,7 +44,7 @@ namespace QuantConnect.Tests.ToolBox
             var leanDataReader = new LeanDataReader(dataPath);
             var data = leanDataReader.Parse().ToList();
 
-            Assert.AreEqual(5580, data.Count);
+            Assert.AreEqual(5849, data.Count);
             Assert.IsTrue(data.All(baseData => baseData.Symbol == Symbols.AAPL && baseData is TradeBar));
         }
 
@@ -179,7 +179,8 @@ namespace QuantConnect.Tests.ToolBox
             //load future chain first
             var config = new SubscriptionDataConfig(typeof(ZipEntryName), baseFuture, res,
                                                     TimeZones.NewYork, TimeZones.NewYork, false, false, false, false, tickType);
-            var factory = new ZipEntryNameSubscriptionDataSourceReader(TestGlobals.DataProvider, config, date, false);
+            using var cacheProvider = new ZipDataCacheProvider(TestGlobals.DataProvider);
+            var factory = new ZipEntryNameSubscriptionDataSourceReader(cacheProvider, config, date, false);
 
             var result = factory.Read(new SubscriptionDataSource(filePath, SubscriptionTransportMedium.LocalFile, FileFormat.ZipEntryName))
                           .Select(s => s.Symbol).ToList();
@@ -316,7 +317,7 @@ namespace QuantConnect.Tests.ToolBox
 
 
         [Test, TestCaseSource(nameof(OptionAndFuturesCases))]
-        public void ReadLeanFutureAndOptionDataFromFilePath(string composedFilePath, Symbol symbol,  int rowsInfile, double sumValue)
+        public void ReadLeanFutureAndOptionDataFromFilePath(string composedFilePath, Symbol symbol, int rowsInfile, double sumValue)
         {
             // Act
             var ldr = new LeanDataReader(composedFilePath);
@@ -414,6 +415,36 @@ namespace QuantConnect.Tests.ToolBox
                                                 "20151224_goog_minute_openinterest_american_call_3000000_20160115.csv"),
                 1,
                 38
+            },
+
+            new object[]
+            {
+                "../../../Data/option/usa/daily/aapl_2014_openinterest_american.zip#aapl_openinterest_american_call_1950000_20150117.csv",
+                LeanData.ReadSymbolFromZipEntry(Symbol.Create("AAPL", SecurityType.Option, Market.USA),
+                    Resolution.Daily,
+                    "aapl_openinterest_american_call_1950000_20150117.csv"),
+                2,
+                824
+            },
+
+            new object[]
+            {
+            "../../../Data/option/usa/daily/aapl_2014_trade_american.zip#aapl_trade_american_call_5400000_20141018.csv",
+            LeanData.ReadSymbolFromZipEntry(Symbol.Create("AAPL", SecurityType.Option, Market.USA),
+                Resolution.Daily,
+                "aapl_trade_american_call_5400000_20141018.csv"),
+            1,
+            109.9
+            },
+
+            new object[]
+            {
+                "../../../Data/option/usa/daily/aapl_2014_quote_american.zip#aapl_quote_american_call_307100_20150117.csv",
+                LeanData.ReadSymbolFromZipEntry(Symbol.Create("AAPL", SecurityType.Option, Market.USA),
+                    Resolution.Daily,
+                    "aapl_quote_american_call_307100_20150117.csv"),
+                1,
+                63.3
             }
         };
 
@@ -440,11 +471,11 @@ namespace QuantConnect.Tests.ToolBox
         public static object[] SpotMarketCases =
         {
             //TODO: generate Low resolution sample data for equities
-            new object[] {"equity", "usa", "daily", "aig", "aig.zip", 5580, 331752.9901},
-            new object[] {"equity", "usa", "minute", "aapl", "20140605_trade.zip", 658, 425067.37},
-            new object[] {"equity", "usa", "minute", "ibm", "20131010_quote.zip", 584, 107061.28},
-            new object[] {"equity", "usa", "second", "ibm", "20131010_trade.zip", 2878, 528701.39},
-            new object[] {"equity", "usa", "tick", "bac", "20131011_trade.zip", 108505, 1539443.26},
+            new object[] {"equity", "usa", "daily", "aig", "aig.zip", 5849, 340770.5801},
+            new object[] {"equity", "usa", "minute", "aapl", "20140605_trade.zip", 686, 443184.58},
+            new object[] {"equity", "usa", "minute", "ibm", "20131010_quote.zip", 584, 107061.125},
+            new object[] {"equity", "usa", "second", "ibm", "20131010_trade.zip", 5060, 929385.34},
+            new object[] {"equity", "usa", "tick", "bac", "20131011_trade.zip", 112177, 1591680.73},
             new object[] {"forex", "oanda", "minute", "eurusd", "20140502_quote.zip", 1222, 1693.578875},
             new object[] {"forex", "oanda", "second", "nzdusd", "20140514_quote.zip", 18061, 15638.724575},
             new object[] {"forex", "oanda", "tick", "eurusd", "20140507_quote.zip", 41367, 57598.54664},

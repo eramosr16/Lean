@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -23,16 +23,23 @@ using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace QuantConnect.Optimizer.Launcher
 {
     public class Program
     {
-        public static void Main()
+        public static void Main(string[] args)
         {
-            var endedEvent = new ManualResetEvent(false);
-            
+            // Parse report arguments and merge with config to use in the optimizer
+            if (args.Length > 0)
+            {
+                Config.MergeCommandLineArgumentsWithConfiguration(OptimizerArgumentParser.ParseArguments(args));
+            }
+
+            using var endedEvent = new ManualResetEvent(false);
+
             try
             {
                 Log.DebuggingEnabled = Config.GetBool("debug-mode");
@@ -41,28 +48,43 @@ namespace QuantConnect.Optimizer.Launcher
 
                 var optimizationStrategyName = Config.Get("optimization-strategy",
                     "QuantConnect.Optimizer.GridSearchOptimizationStrategy");
+                var channel = Config.Get("data-channel");
+                var optimizationId = Config.Get("optimization-id", Guid.NewGuid().ToString());
                 var packet = new OptimizationNodePacket
                 {
-                    OptimizationId = Guid.NewGuid().ToString(),
+                    OptimizationId = optimizationId,
                     OptimizationStrategy = optimizationStrategyName,
                     OptimizationStrategySettings = (OptimizationStrategySettings)JsonConvert.DeserializeObject(Config.Get(
-                        "optimization-strategy-settings", 
+                        "optimization-strategy-settings",
                         "{\"$type\":\"QuantConnect.Optimizer.Strategies.OptimizationStrategySettings, QuantConnect.Optimizer\"}"), new JsonSerializerSettings(){TypeNameHandling = TypeNameHandling.All}),
                     Criterion = JsonConvert.DeserializeObject<Target>(Config.Get("optimization-criterion", "{\"target\":\"Statistics.TotalProfit\", \"extremum\": \"max\"}")),
                     Constraints = JsonConvert.DeserializeObject<List<Constraint>>(Config.Get("constraints", "[]")).AsReadOnly(),
                     OptimizationParameters = JsonConvert.DeserializeObject<HashSet<OptimizationParameter>>(Config.Get("parameters", "[]")),
-                    MaximumConcurrentBacktests = Config.GetInt("maximum-concurrent-backtests", Environment.ProcessorCount / 2)
+                    MaximumConcurrentBacktests = Config.GetInt("maximum-concurrent-backtests", Math.Max(1, Environment.ProcessorCount / 2)),
+                    Channel = channel,
                 };
 
-                var optimizer = new ConsoleLeanOptimizer(packet);
+                var optimizerType = Config.Get("optimization-launcher", typeof(ConsoleLeanOptimizer).Name);
+                var optimizer = (LeanOptimizer)Activator.CreateInstance(Composer.Instance.GetExportedTypes<LeanOptimizer>().Single(x => x.Name == optimizerType), packet);
 
-                optimizer.Start();
-
-                optimizer.Ended += (s, e) =>
+                if (Config.GetBool("estimate", false))
                 {
+                    var backtestsCount = optimizer.GetCurrentEstimate();
+                    Log.Trace($"Optimization estimate: {backtestsCount}");
+
                     optimizer.DisposeSafely();
                     endedEvent.Set();
-                };
+                }
+                else
+                {
+                    optimizer.Start();
+
+                    optimizer.Ended += (s, e) =>
+                    {
+                        optimizer.DisposeSafely();
+                        endedEvent.Set();
+                    };
+                }
             }
             catch (Exception e)
             {

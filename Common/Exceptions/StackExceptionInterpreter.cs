@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,10 +14,10 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using QuantConnect.Logging;
+using System.Collections.Generic;
 
 namespace QuantConnect.Exceptions
 {
@@ -27,6 +27,12 @@ namespace QuantConnect.Exceptions
     public class StackExceptionInterpreter : IExceptionInterpreter
     {
         private readonly List<IExceptionInterpreter> _interpreters;
+
+        /// <summary>
+        /// Stack interpreter instance
+        /// </summary>
+        public static readonly Lazy<StackExceptionInterpreter> Instance = new Lazy<StackExceptionInterpreter>(
+            () => StackExceptionInterpreter.CreateFromAssemblies(AppDomain.CurrentDomain.GetAssemblies()));
 
         /// <summary>
         /// Determines the order that an instance of this class should be called
@@ -66,7 +72,7 @@ namespace QuantConnect.Exceptions
         /// configured in the <see cref="StackExceptionInterpreter"/>. Individual implementations *may* ignore
         /// this value if required.</param>
         /// <returns>The interpreted exception</returns>
-        public Exception Interpret(Exception exception, IExceptionInterpreter innerInterpreter)
+        public Exception Interpret(Exception exception, IExceptionInterpreter innerInterpreter = null)
         {
             if (exception == null)
             {
@@ -128,7 +134,7 @@ namespace QuantConnect.Exceptions
 
             foreach (var interpreter in stackExceptionInterpreter.Interpreters)
             {
-                Log.Debug($"Loaded ExceptionInterpreter: {interpreter.GetType().Name}");
+                Log.Debug(Messages.StackExceptionInterpreter.LoadedExceptionInterpreter(interpreter));
             }
 
             return stackExceptionInterpreter;

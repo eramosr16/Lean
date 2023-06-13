@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -18,6 +18,7 @@ using Python.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.Market;
 using QuantConnect.Logging;
 using QuantConnect.Research;
@@ -71,13 +72,15 @@ namespace QuantConnect.Tests.Research
             // Expected end date should be either today if tradable, or last tradable day
             var aapl = _qb.AddEquity("AAPL");
             var now = DateTime.UtcNow.Date;
-            var expectedDate = aapl.Exchange.Hours.IsDateOpen(now) ? now : aapl.Exchange.Hours.GetPreviousTradingDay(now);
+            var expectedEndDate = aapl.Exchange.Hours.IsDateOpen(now) ? now : aapl.Exchange.Hours.GetPreviousTradingDay(now);
+            expectedEndDate = expectedEndDate.AddDays(1);
 
-            IEnumerable<DataDictionary<dynamic>> data = _qb.GetFundamental("AAPL", "ValuationRatios.PERatio", startDate);
+            IEnumerable<DataDictionary<dynamic>> data = _qb.GetFundamental("AAPL", "", startDate);
 
             // Check that the last day in the collection is as expected
             var lastDay = data.Last();
-            Assert.AreEqual(expectedDate, lastDay.Time);
+            Assert.AreEqual(expectedEndDate, lastDay.Time);
+            Assert.AreEqual(expectedEndDate, lastDay[aapl.Symbol].EndTime);
         }
 
         [TestCaseSource(nameof(DataTestCases))]
@@ -91,8 +94,8 @@ namespace QuantConnect.Tests.Research
                 // Should not be empty
                 Assert.IsFalse(dataFrame.empty.AsManagedObject(typeof(bool)));
 
-                // Get the test row
-                var testRow = dataFrame.loc[_startDate.ToPython()];
+                // Get the test row (plus 1 day since data is time-stamped with the base data's end time)
+                var testRow = dataFrame.loc[_startDate.AddDays(1).ToPython()];
                 Assert.IsFalse(testRow.empty.AsManagedObject(typeof(bool)));
 
                 // Check the length
@@ -101,8 +104,16 @@ namespace QuantConnect.Tests.Research
 
                 // Verify the data value
                 var index = testRow.index[0];
-                var value = testRow.at[index].AsManagedObject(input[2].GetType());
-                Assert.AreEqual(input[2], value);
+                if (input.Length == 4)
+                {
+                    var fine = testRow.at[index].AsManagedObject(typeof(FineFundamental));
+                    Assert.AreEqual(input[2], input[3](fine));
+                }
+                else
+                {
+                    var value = testRow.at[index].AsManagedObject(input[2].GetType());
+                    Assert.AreEqual(input[2], value);
+                }
             }
         }
 
@@ -110,13 +121,24 @@ namespace QuantConnect.Tests.Research
         public void CSharpFundamentalData(dynamic input)
         {
             var data = _qb.GetFundamental(input[0], input[1], _startDate, _endDate);
+            var currentDate = _startDate;
 
             foreach (var day in data)
             {
+                // plus 1 day since data is time-stamped with the base data's end time
+                currentDate = currentDate.AddDays(1);
+
                 foreach (var value in day.Values)
                 {
-                    Assert.AreEqual(input[2], value);
-                    Assert.AreEqual(_startDate, day.Time);
+                    if (input.Length == 4)
+                    {
+                        Assert.AreEqual(input[2], input[3](value));
+                    }
+                    else
+                    {
+                        Assert.AreEqual(input[2], value);
+                    }
+                    Assert.AreEqual(currentDate, day.Time);
                 }
             }
         }
@@ -128,7 +150,7 @@ namespace QuantConnect.Tests.Research
             {
                 var testModule = _module.FundamentalHistoryTest();
                 var data = testModule.getFundamentals(input[0], input[1], input[2], input[3]);
-                Assert.IsEmpty(data);
+                Assert.AreEqual(true, (bool)data.empty);
             }
         }
 
@@ -139,9 +161,41 @@ namespace QuantConnect.Tests.Research
             Assert.IsEmpty(data);
         }
 
+        [TestCaseSource(nameof(FundamentalEndTimeTestCases))]
+        public void FundamentalDataEndTime(DateTime startDate, DateTime endDate)
+        {
+            var originalQBEndDate = _qb.EndDate;
+            _qb.SetEndDate(endDate);
+
+            var security = _qb.AddEquity("AAPL");
+
+            var history = _qb.History(Symbols.AAPL, startDate, endDate, Resolution.Daily).ToList();
+            Assert.IsNotEmpty(history);
+
+            var fundamental = (_qb.GetFundamental("AAPL", "", startDate, endDate) as IEnumerable<DataDictionary<dynamic>>).ToList();
+
+            var isEndDateOpen = security.Exchange.Hours.IsDateOpen(endDate);
+            var expectedFundamentalCount = 10;
+            var expectedHistoryCount = isEndDateOpen ? expectedFundamentalCount - 1 : expectedFundamentalCount;
+
+            Assert.AreEqual(expectedFundamentalCount, fundamental.Count);
+            Assert.AreEqual(expectedHistoryCount, history.Count);
+
+            var historyTimes = history.Select(x => x.EndTime);
+            var fundamentalTimes = fundamental.Select(x => x.Time).SkipLast(isEndDateOpen ? 1 : 0);
+
+            CollectionAssert.AreEqual(historyTimes, fundamentalTimes);
+
+            Assert.IsTrue(fundamental.All(x => x.Time == x.Values.Cast<FineFundamental>().Single().EndTime));
+
+            _qb.RemoveSecurity(security.Symbol);
+            _qb.SetEndDate(originalQBEndDate);
+        }
+
         // Different requests and their expected values
         private static readonly object[] DataTestCases =
         {
+            new object[] {new List<string> {"AAPL"}, null, 13.2725m, new Func<FineFundamental, decimal>(fundamental => fundamental.ValuationRatios.PERatio) },
             new object[] {new List<string> {"AAPL"}, "ValuationRatios.PERatio", 13.2725m},
             new object[] {Symbol.Create("IBM", SecurityType.Equity, Market.USA), "ValuationRatios.BookValuePerShare", 22.5177},
             new object[] {new List<Symbol> {Symbol.Create("AIG", SecurityType.Equity, Market.USA)}, "FinancialStatements.NumberOfShareHolders", 36319}
@@ -153,6 +207,14 @@ namespace QuantConnect.Tests.Research
         {
             new object[] {Symbol.Create("AIG", SecurityType.Equity, Market.USA), "ValuationRatios.PERatio", new DateTime(1972, 4, 1),  new DateTime(1972, 4, 1)},
             new object[] {Symbol.Create("IBM", SecurityType.Equity, Market.USA), "ValuationRatios.BookValuePerShare", new DateTime(2014, 4, 1), new DateTime(2014, 3, 31)},
+        };
+
+        private static readonly TestCaseData[] FundamentalEndTimeTestCases =
+        {
+            // monday,friday
+            new TestCaseData(new DateTime(2014, 3, 31), new DateTime(2014, 4, 11)),
+            // monday,saturday
+            new TestCaseData(new DateTime(2014, 3, 31), new DateTime(2014, 4, 12))
         };
     }
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -35,6 +35,23 @@ namespace QuantConnect.Tests.Algorithm
         private const BrokerageName BrokerageName = QuantConnect.Brokerages.BrokerageName.FxcmBrokerage;
         private const int RoundingPrecision = 20;
         private readonly MarketOrder _order = new MarketOrder { Quantity = 1000 };
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void Validates_SetEndTime(bool explicitSet)
+        {
+            var algorithm = GetAlgorithm();
+
+            // We initialize the algorithm with `now` in the algorithm default time zone
+            var end = DateTime.UtcNow.ConvertFromUtc(algorithm.TimeZone);
+
+            if (explicitSet)
+            {
+                algorithm.SetEndDate(end);
+            }
+            var excepted = end.RoundDown(TimeSpan.FromDays(1)).AddTicks(-1);
+            Assert.AreEqual(algorithm.EndDate, excepted);
+        }
 
         [Test]
         public void Validates_SetBrokerageModel_AddForex()

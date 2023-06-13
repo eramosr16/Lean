@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,24 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("NodaTime")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Common")
-
-from System import *
-from NodaTime import DateTimeZone
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Brokerages import *
-from QuantConnect.Securities import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Data.Consolidators import *
-
-from datetime import timedelta
-from math import floor
+from AlgorithmImports import *
 
 ### <summary>
 ### Regression algorithm for fractional forex pair
@@ -45,7 +28,7 @@ class FractionalQuantityRegressionAlgorithm(QCAlgorithm):
         self.SetCash(100000)
         self.SetBrokerageModel(BrokerageName.GDAX, AccountType.Cash)
 
-        self.SetTimeZone(DateTimeZone.Utc)
+        self.SetTimeZone(TimeZones.Utc)
 
         security = self.AddSecurity(SecurityType.Crypto, "BTCUSD", Resolution.Daily, Market.GDAX, False, 1, True)
 
@@ -53,13 +36,13 @@ class FractionalQuantityRegressionAlgorithm(QCAlgorithm):
         ### Since this test algorithm uses leverage we need to set a buying power model with margin.
         security.SetBuyingPowerModel(SecurityMarginModel(3.3))
 
-        con = TradeBarConsolidator(timedelta(1))
+        con = TradeBarConsolidator(1)
         self.SubscriptionManager.AddConsolidator("BTCUSD", con)
         con.DataConsolidated += self.DataConsolidated
         self.SetBenchmark(security.Symbol)
 
     def DataConsolidated(self, sender, bar):
-        quantity = floor((self.Portfolio.Cash + self.Portfolio.TotalFees) / abs(bar.Value + 1))
+        quantity = math.floor((self.Portfolio.Cash + self.Portfolio.TotalFees) / abs(bar.Value + 1))
         btc_qnty = float(self.Portfolio["BTCUSD"].Quantity)
 
         if not self.Portfolio.Invested:

@@ -11,17 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License
 
-from datetime import datetime
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Indicators import *
-from QuantConnect import *
-
+from AlgorithmImports import *
 
 class BasicTemplateIndexAlgorithm(QCAlgorithm):
     def Initialize(self) -> None:
         self.SetStartDate(2021, 1, 4)
-        self.SetEndDate(2021, 1, 15)
+        self.SetEndDate(2021, 1, 18)
         self.SetCash(1000000)
 
         # Use indicator for signal; but it cannot be traded

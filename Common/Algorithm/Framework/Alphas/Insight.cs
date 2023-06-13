@@ -15,12 +15,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Newtonsoft.Json;
 using QuantConnect.Algorithm.Framework.Alphas.Serialization;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Algorithm.Framework.Alphas
 {
@@ -120,7 +118,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         /// <summary>
         /// Gets the estimated value of this insight in the account currency
         /// </summary>
-        public decimal EstimatedValue { get; protected internal set; }
+        public decimal EstimatedValue { get; set; }
 
         /// <summary>
         /// Determines whether or not this insight is considered expired at the specified <paramref name="utcTime"/>
@@ -140,6 +138,28 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         public bool IsActive(DateTime utcTime)
         {
             return !IsExpired(utcTime);
+        }
+
+        /// <summary>
+        /// Expire this insight
+        /// </summary>
+        /// <param name="utcTime">The algorithm's current time in UTC. See <see cref="IAlgorithm.UtcTime"/></param>
+        public void Expire(DateTime utcTime)
+        {
+            if (IsActive(utcTime))
+            {
+                CloseTimeUtc = utcTime.Add(-Time.OneSecond);
+                Period = CloseTimeUtc - GeneratedTimeUtc;
+            }
+        }
+
+        /// <summary>
+        /// Cancel this insight
+        /// </summary>
+        /// <param name="utcTime">The algorithm's current time in UTC. See <see cref="IAlgorithm.UtcTime"/></param>
+        public void Cancel(DateTime utcTime)
+        {
+            Expire(utcTime);
         }
 
         /// <summary>
@@ -277,8 +297,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         {
             if (GeneratedTimeUtc == default(DateTime))
             {
-                throw new InvalidOperationException($"The insight's '{nameof(GeneratedTimeUtc)}' " +
-                    $"property must be set before calling {nameof(SetPeriodAndCloseTime)}.");
+                throw new InvalidOperationException(Messages.Insight.GeneratedTimeUtcNotSet(this));
             }
 
             _periodSpecification.SetPeriodAndCloseTime(this, exchangeHours);
@@ -320,7 +339,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         {
             if (barCount < 1)
             {
-                throw new ArgumentOutOfRangeException(nameof(barCount), "Insight barCount must be greater than zero.");
+                throw new ArgumentOutOfRangeException(nameof(barCount), Messages.Insight.InvalidBarCount);
             }
 
             var spec = new ResolutionBarCountPeriodSpecification(resolution, barCount);
@@ -360,7 +379,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         {
             if (period < Time.OneSecond)
             {
-                throw new ArgumentOutOfRangeException(nameof(period), "Insight period must be greater than or equal to 1 second.");
+                throw new ArgumentOutOfRangeException(nameof(period), Messages.Insight.InvalidPeriod);
             }
 
             var spec = period == Time.EndOfTimeTimeSpan ? (IPeriodSpecification)
@@ -400,7 +419,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
             {
                 if (insight.GroupId.HasValue)
                 {
-                    throw new InvalidOperationException($"Unable to set group id on insight {insight} because it has already been assigned to a group.");
+                    throw new InvalidOperationException(Messages.Insight.InsightAlreadyAssignedToAGroup(insight));
                 }
 
                 insight.GroupId = groupId;
@@ -477,7 +496,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         {
             if (barCount < 1)
             {
-                throw new ArgumentOutOfRangeException(nameof(barCount), "Insight barCount must be greater than zero.");
+                throw new ArgumentOutOfRangeException(nameof(barCount), Messages.Insight.InvalidBarCount);
             }
 
             // remap ticks to seconds
@@ -507,7 +526,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         {
             if (period < Time.OneSecond)
             {
-                throw new ArgumentOutOfRangeException(nameof(period), "Insight periods must be greater than or equal to 1 second.");
+                throw new ArgumentOutOfRangeException(nameof(period), Messages.Insight.InvalidPeriod);
             }
 
             var barSize = period.ToHigherResolutionEquivalent(false);
@@ -547,78 +566,13 @@ namespace QuantConnect.Algorithm.Framework.Alphas
 
             return closeTimeUtc;
         }
-
-        /// <summary>
-        /// Computes the insight period from the given generated and close times
-        /// </summary>
-        /// <param name="exchangeHours">The exchange hours of the insight's security</param>
-        /// <param name="generatedTimeUtc">The insight's generated time in utc</param>
-        /// <param name="closeTimeUtc">The insight's close time in utc</param>
-        /// <returns>The insight's period</returns>
-        public static TimeSpan ComputePeriod(SecurityExchangeHours exchangeHours, DateTime generatedTimeUtc, DateTime closeTimeUtc)
-        {
-            if (generatedTimeUtc > closeTimeUtc)
-            {
-                throw new ArgumentOutOfRangeException(nameof(closeTimeUtc), "Insight closeTimeUtc must be greater than generatedTimeUtc.");
-            }
-
-            var generatedTimeLocal = generatedTimeUtc.ConvertFromUtc(exchangeHours.TimeZone);
-            var closeTimeLocal = closeTimeUtc.ConvertFromUtc(exchangeHours.TimeZone);
-
-            if (generatedTimeLocal.Date == closeTimeLocal.Date)
-            {
-                return closeTimeLocal - generatedTimeLocal;
-            }
-
-            var choices = new[]
-            {
-                // don't use hourly since it causes issues with non-round open/close times
-                new {barSize = Time.OneDay, count = 0, delta = TimeSpan.MaxValue},
-                new {barSize = Time.OneMinute, count = 0, delta = TimeSpan.MaxValue}
-            };
-
-            for (int i = 0; i < choices.Length; i++)
-            {
-                var barSize = choices[i].barSize;
-                var count = Time.GetNumberOfTradeBarsInInterval(exchangeHours, generatedTimeLocal, closeTimeLocal, barSize);
-                var closeTime = Time.GetEndTimeForTradeBars(exchangeHours, generatedTimeLocal, barSize, count, false);
-                var delta = (closeTimeLocal - closeTime).Abs();
-
-                if (delta == TimeSpan.Zero)
-                {
-                    // exact match found
-                    return barSize.Multiply(count);
-                }
-
-                choices[i] = new {barSize, count, delta};
-            }
-
-            // no exact match, return the one with the least error
-            var choiceWithLeastError = choices.OrderBy(c => c.delta).First();
-            return choiceWithLeastError.barSize.Multiply(choiceWithLeastError.count);
-        }
-
+        
         /// <summary>Returns a string that represents the current object.</summary>
         /// <returns>A string that represents the current object.</returns>
         /// <filterpriority>2</filterpriority>
         public override string ToString()
         {
-            var str = Invariant($"{Id:N}: {Symbol} {Type} {Direction} within {Period}");
-
-            if (Magnitude.HasValue)
-            {
-                str += Invariant($" by {Magnitude.Value}%");
-            }
-            if (Confidence.HasValue)
-            {
-                str += Invariant($" with {Math.Round(100 * Confidence.Value, 1)}% confidence");
-            }
-            if (Weight.HasValue)
-            {
-                str += Invariant($" and {Math.Round(100 * Weight.Value, 1)}% weight");
-            }
-
-            return str;
+            return Messages.Insight.ToString(this);
         }
 
         /// <summary>
@@ -627,22 +581,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         /// <returns>A string that represents the current object.</returns>
         public string ShortToString()
         {
-            var str = Invariant($"{Symbol.Value} {Type} {Direction} {Period}");
-
-            if (Magnitude.HasValue)
-            {
-                str += Invariant($" M:{Magnitude.Value}%");
-            }
-            if (Confidence.HasValue)
-            {
-                str += Invariant($" C:{Math.Round(100 * Confidence.Value, 1)}%");
-            }
-            if (Weight.HasValue)
-            {
-                str += Invariant($" W:{Math.Round(100 * Weight.Value, 1)}%");
-            }
-
-            return str;
+            return Messages.Insight.ShortToString(this);
         }
 
 
@@ -709,8 +648,8 @@ namespace QuantConnect.Algorithm.Framework.Alphas
 
             public void SetPeriodAndCloseTime(Insight insight, SecurityExchangeHours exchangeHours)
             {
-                insight.Period = Resolution.ToTimeSpan().Multiply(BarCount);
                 insight.CloseTimeUtc = ComputeCloseTime(exchangeHours, insight.GeneratedTimeUtc, Resolution, BarCount);
+                insight.Period = insight.CloseTimeUtc - insight.GeneratedTimeUtc;
             }
         }
 
@@ -728,13 +667,19 @@ namespace QuantConnect.Algorithm.Framework.Alphas
 
             public void SetPeriodAndCloseTime(Insight insight, SecurityExchangeHours exchangeHours)
             {
-                insight.CloseTimeUtc = CloseTimeLocal.ConvertToUtc(exchangeHours.TimeZone);
+                // Prevent close time to be defined to a date/time in closed market
+                var closeTimeLocal = exchangeHours.IsOpen(CloseTimeLocal, false)
+                    ? CloseTimeLocal
+                    : exchangeHours.GetNextMarketOpen(CloseTimeLocal, false);
+
+                insight.CloseTimeUtc = closeTimeLocal.ConvertToUtc(exchangeHours.TimeZone);
+
                 if (insight.GeneratedTimeUtc > insight.CloseTimeUtc)
                 {
                     throw new ArgumentOutOfRangeException("closeTimeLocal", $"Insight closeTimeLocal must not be in the past.");
                 }
 
-                insight.Period = ComputePeriod(exchangeHours, insight.GeneratedTimeUtc, insight.CloseTimeUtc);
+                insight.Period = insight.CloseTimeUtc - insight.GeneratedTimeUtc;
             }
         }
 

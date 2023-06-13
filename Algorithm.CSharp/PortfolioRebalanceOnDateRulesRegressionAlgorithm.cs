@@ -37,6 +37,14 @@ namespace QuantConnect.Algorithm.CSharp
         {
             UniverseSettings.Resolution = Resolution.Daily;
 
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
+
+            // let's use 0 minimum order margin percentage so we can assert trades are only submitted immediately after rebalance on Wednesday
+            // if not, due to TPV variations happening every day we might no cross the minimum on wednesday but yes another day of the week
+            Settings.MinimumOrderMarginPortfolioPercentage = 0m;
+
             SetStartDate(2015, 1, 1);
             SetEndDate(2017, 1, 1);
 
@@ -75,52 +83,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 6075;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "298"},
+            {"Total Trades", "359"},
             {"Average Win", "0.06%"},
-            {"Average Loss", "-0.04%"},
-            {"Compounding Annual Return", "11.475%"},
+            {"Average Loss", "-0.03%"},
+            {"Compounding Annual Return", "11.414%"},
             {"Drawdown", "18.200%"},
-            {"Expectancy", "1.111"},
-            {"Net Profit", "24.266%"},
-            {"Sharpe Ratio", "0.693"},
-            {"Probabilistic Sharpe Ratio", "29.798%"},
-            {"Loss Rate", "19%"},
-            {"Win Rate", "81%"},
-            {"Profit-Loss Ratio", "1.60"},
-            {"Alpha", "0.106"},
-            {"Beta", "0.007"},
-            {"Annual Standard Deviation", "0.154"},
-            {"Annual Variance", "0.024"},
-            {"Information Ratio", "0.221"},
-            {"Tracking Error", "0.201"},
-            {"Treynor Ratio", "16.212"},
-            {"Total Fees", "$298.88"},
-            {"Estimated Strategy Capacity", "$78000000.00"},
+            {"Expectancy", "1.289"},
+            {"Net Profit", "24.130%"},
+            {"Sharpe Ratio", "0.626"},
+            {"Probabilistic Sharpe Ratio", "24.886%"},
+            {"Loss Rate", "23%"},
+            {"Win Rate", "77%"},
+            {"Profit-Loss Ratio", "1.98"},
+            {"Alpha", "0.035"},
+            {"Beta", "1.019"},
+            {"Annual Standard Deviation", "0.141"},
+            {"Annual Variance", "0.02"},
+            {"Information Ratio", "0.505"},
+            {"Tracking Error", "0.072"},
+            {"Treynor Ratio", "0.087"},
+            {"Total Fees", "$363.83"},
+            {"Estimated Strategy Capacity", "$71000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.002"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "1"},
-            {"Sortino Ratio", "0.953"},
-            {"Return Over Maximum Drawdown", "0.629"},
-            {"Portfolio Turnover", "0.003"},
-            {"Total Insights Generated", "2028"},
-            {"Total Insights Closed", "2024"},
-            {"Total Insights Analysis Completed", "2024"},
-            {"Long Insight Count", "2028"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "23efc9f10d431a80342fe330226e8f46"}
+            {"Portfolio Turnover", "0.33%"},
+            {"OrderListHash", "b68c4ff099d47d44455c5b4627b16902"}
         };
     }
 }

@@ -94,6 +94,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 37;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 60;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -101,45 +111,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "6"},
             {"Average Win", "6.02%"},
             {"Average Loss", "-2.40%"},
-            {"Compounding Annual Return", "915.480%"},
+            {"Compounding Annual Return", "1497.266%"},
             {"Drawdown", "5.500%"},
-            {"Expectancy", "1.338"},
-            {"Net Profit", "11.400%"},
-            {"Sharpe Ratio", "9.507"},
-            {"Probabilistic Sharpe Ratio", "76.768%"},
+            {"Expectancy", "1.339"},
+            {"Net Profit", "13.775%"},
+            {"Sharpe Ratio", "3.309"},
+            {"Probabilistic Sharpe Ratio", "61.758%"},
             {"Loss Rate", "33%"},
             {"Win Rate", "67%"},
             {"Profit-Loss Ratio", "2.51"},
             {"Alpha", "0"},
             {"Beta", "0"},
-            {"Annual Standard Deviation", "0.507"},
-            {"Annual Variance", "0.257"},
-            {"Information Ratio", "9.507"},
-            {"Tracking Error", "0.507"},
+            {"Annual Standard Deviation", "0.379"},
+            {"Annual Variance", "0.144"},
+            {"Information Ratio", "3.309"},
+            {"Tracking Error", "0.379"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$2651.01"},
+            {"Total Fees", "$2650.41"},
             {"Estimated Strategy Capacity", "$30000.00"},
             {"Lowest Capacity Asset", "BTCUSD XJ"},
-            {"Fitness Score", "0.467"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "53.455"},
-            {"Return Over Maximum Drawdown", "165.408"},
-            {"Portfolio Turnover", "0.468"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "2b3ac55337ce5619fc0388ccdac72c54"}
+            {"Portfolio Turnover", "46.79%"},
+            {"OrderListHash", "38a7cd7f03f62a8ac4ecd907dd2a1084"}
         };
     }
 }

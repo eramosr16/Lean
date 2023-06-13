@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -249,15 +249,12 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
         {
             var targets = new Dictionary<Insight, double>();
 
-            double[,] P;
-            double[] Q;
-            if (TryGetViews(lastActiveInsights, out P, out Q))
+            if (TryGetViews(lastActiveInsights, out var P, out var Q))
             {
                 // Updates the ReturnsSymbolData with insights
                 foreach (var insight in lastActiveInsights)
                 {
-                    ReturnsSymbolData symbolData;
-                    if (_symbolDataDict.TryGetValue(insight.Symbol, out symbolData))
+                    if (_symbolDataDict.TryGetValue(insight.Symbol, out var symbolData))
                     {
                         if (insight.Magnitude == null)
                         {
@@ -272,8 +269,7 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
                 var returns = _symbolDataDict.FormReturnsMatrix(symbols);
 
                 // Calculate posterior estimate of the mean and uncertainty in the mean
-                double[,] Σ;
-                var Π = GetEquilibriumReturns(returns, out Σ);
+                var Π = GetEquilibriumReturns(returns, out var Σ);
 
                 ApplyBlackLittermanMasterFormula(ref Π, ref Σ, P, Q);
 
@@ -306,7 +302,7 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
         protected override List<Insight> GetTargetInsights()
         {
             // Get insight that haven't expired of each symbol that is still in the universe
-            var activeInsights = InsightCollection.GetActiveInsights(Algorithm.UtcTime);
+            var activeInsights = Algorithm.Insights.GetActiveInsights(Algorithm.UtcTime).Where(ShouldCreateTargetForInsight);
 
             // Get the last generated active insight for each symbol
             return (from insight in activeInsights
@@ -378,10 +374,12 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
         /// <param name="insights">Array of insight that represent the investors' views</param>
         /// <param name="P">A matrix that identifies the assets involved in the views (size: K x N)</param>
         /// <param name="Q">A view vector (size: K x 1)</param>
-        private bool TryGetViews(ICollection<Insight> insights, out double[,] P, out double[] Q)
+        protected bool TryGetViews(ICollection<Insight> insights, out double[,] P, out double[] Q)
         {
             try
             {
+                var symbols = insights.Select(insight => insight.Symbol).ToHashSet();
+
                 var tmpQ = insights.GroupBy(insight => insight.SourceModel)
                     .Select(values =>
                     {
@@ -402,7 +400,7 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
                             return value / q;
                         });
                         // Add zero for other symbols that are listed but active insight
-                        foreach (var symbol in _symbolDataDict.Keys)
+                        foreach (var symbol in symbols)
                         {
                             if (!results.ContainsKey(symbol))
                             {
@@ -451,9 +449,6 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
                 // Compute posterior estimate of the uncertainty in the mean
                 var M = Στ.Subtract(A.Dot(P).Dot(Στ));
                 Σ = Σ.Add(M).Multiply(_delta);
-
-                // Compute posterior weights based on uncertainty in mean
-                var W = Π.Dot(Σ.Inverse());
             }
         }
     }

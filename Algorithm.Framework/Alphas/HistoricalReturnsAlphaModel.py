@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,15 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("QuantConnect.Algorithm.Framework")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Common")
-
-from QuantConnect import *
-from QuantConnect.Indicators import *
-from QuantConnect.Algorithm.Framework.Alphas import *
-from datetime import timedelta
+from AlgorithmImports import *
 
 class HistoricalReturnsAlphaModel(AlphaModel):
     '''Uses Historical returns to create insights.'''
@@ -33,6 +25,7 @@ class HistoricalReturnsAlphaModel(AlphaModel):
         self.resolution = kwargs['resolution'] if 'resolution' in kwargs else Resolution.Daily
         self.predictionInterval = Time.Multiply(Extensions.ToTimeSpan(self.resolution), self.lookback)
         self.symbolDataBySymbol = {}
+        self.insightCollection = InsightCollection()
 
     def Update(self, algorithm, data):
         '''Updates this alpha model with the latest data from the algorithm.
@@ -51,9 +44,14 @@ class HistoricalReturnsAlphaModel(AlphaModel):
                 magnitude = symbolData.Return
                 if magnitude > 0: direction = InsightDirection.Up
                 if magnitude < 0: direction = InsightDirection.Down
+                
+                if direction == InsightDirection.Flat:
+                    self.CancelInsights(algorithm, symbol)
+                    continue
 
                 insights.append(Insight.Price(symbol, self.predictionInterval, direction, magnitude, None))
 
+        self.insightCollection.AddRange(insights)
         return insights
 
     def OnSecuritiesChanged(self, algorithm, changes):
@@ -67,6 +65,7 @@ class HistoricalReturnsAlphaModel(AlphaModel):
             symbolData = self.symbolDataBySymbol.pop(removed.Symbol, None)
             if symbolData is not None:
                 symbolData.RemoveConsolidators(algorithm)
+            self.CancelInsights(algorithm, removed.Symbol)
 
         # initialize data for added securities
         symbols = [ x.Symbol for x in changes.AddedSecurities ]
@@ -82,6 +81,13 @@ class HistoricalReturnsAlphaModel(AlphaModel):
                 self.symbolDataBySymbol[symbol] = symbolData
                 symbolData.RegisterIndicators(algorithm, self.resolution)
                 symbolData.WarmUpIndicators(history.loc[ticker])
+
+    def CancelInsights(self, algorithm, symbol):
+        if not self.insightCollection.ContainsKey(symbol):
+            return
+        insights = self.insightCollection[symbol]
+        algorithm.Insights.Cancel(insights)
+        self.insightCollection.Clear([ symbol ]);
 
 
 class SymbolData:

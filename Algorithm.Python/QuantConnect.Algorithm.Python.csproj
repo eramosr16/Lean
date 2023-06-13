@@ -4,8 +4,7 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <RootNamespace>QuantConnect.Algorithm.Python</RootNamespace>
     <AssemblyName>QuantConnect.Algorithm.Python</AssemblyName>
-    <TargetFramework>net5.0</TargetFramework>
-    <LangVersion>9</LangVersion>
+    <TargetFramework>net6.0</TargetFramework>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
@@ -26,14 +25,6 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup>
-    <IsWindows>false</IsWindows>
-    <IsWindows Condition="'$(OS)' == 'Windows_NT'">true</IsWindows>
-    <IsOSX>false</IsOSX>
-    <IsOSX Condition="'$(IsWindows)' != 'true' AND '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">true</IsOSX>
-    <IsLinux>false</IsLinux>
-    <IsLinux Condition="'$(IsWindows)' != 'true' AND '$(IsOSX)' != 'true' AND '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">true</IsLinux>
-  </PropertyGroup>
-  <PropertyGroup>
     <PostBuildEvent Condition="'$(OS)' == 'Windows_NT' ">
       build
     </PostBuildEvent>
@@ -41,29 +32,26 @@
       ./build.sh
     </PostBuildEvent>
   </PropertyGroup>
-  <Target Name="PrintRID" BeforeTargets="Build">
-    <Message Text="IsWindows $(IsWindows)" Importance="high" />
-    <Message Text="IsOSX $(IsOSX)" Importance="high" />
-    <Message Text="IsLinux $(IsLinux)" Importance="high" />
-    <Message Text="ForceLinuxBuild $(ForceLinuxBuild)" Importance="high" />
-  </Target>
+  <ItemGroup>
+    <None Remove="CustomDataTypeHistoryAlgorithm.py" />
+  </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Common\Properties\SharedAssemblyInfo.cs" Link="Properties\SharedAssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.3" />
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="5.0.3">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.18" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="AccumulativeInsightPortfolioRegressionAlgorithm.py" />
+    <Content Include="CustomDataTypeHistoryAlgorithm.py" />
+    <Content Include="CorrectConsolidatedBarTypeForTickTypesAlgorithm.py" />
+    <Content Include="IndustryStandardSecurityIdentifiersRegressionAlgorithm.py" />
     <Content Include="AddAlphaModelAlgorithm.py" />
     <Content Include="AddFutureOptionContractDataStreamingRegressionAlgorithm.py" />
     <Content Include="AddFutureOptionSingleOptionChainSelectedInUniverseFilterRegressionAlgorithm.py" />
     <Content Include="AddOptionContractExpiresRegressionAlgorithm.py" />
     <Content Include="AddOptionContractFromUniverseRegressionAlgorithm.py" />
+    <Content Include="CustomMarginInterestRateModelAlgorithm.py" />
     <Content Include="AddRiskManagementAlgorithm.py" />
     <Content Include="AddUniverseSelectionModelAlgorithm.py" />
     <Content Include="Alphas\ContingentClaimsAnalysisDefaultPredictionAlpha.py" />
@@ -79,14 +67,6 @@
     <Content Include="Alphas\ShareClassMeanReversionAlpha.py" />
     <Content Include="Alphas\TripleLeverageETFPairVolatilityDecayAlpha.py" />
     <Content Include="Alphas\VIXDualThrustAlpha.py" />
-    <Content Include="AltData\CachedAlternativeDataAlgorithm.py" />
-    <Content Include="AltData\BenzingaNewsAlgorithm.py" />
-    <Content Include="AltData\QuiverWallStreetBetsDataAlgorithm.py" />
-    <Content Include="AltData\SECReport8KAlgorithm.py" />
-    <Content Include="AltData\SmartInsiderTransactionAlgorithm.py" />
-    <Content Include="AltData\USTreasuryYieldCurveRateAlgorithm.py" />
-    <Content Include="AltData\TradingEconomicsAlgorithm.py" />
-    <Content Include="AltData\TiingoNewsAlgorithm.py" />
     <Content Include="BasicCSharpIntegrationTemplateAlgorithm.py" />
     <Content Include="BasicSetAccountCurrencyAlgorithm.py" />
     <None Include="..\LICENSE">
@@ -94,28 +74,22 @@
       <PackagePath></PackagePath>
     </None>
     <None Include="InceptionDateSelectionRegressionAlgorithm.py" />
-    <None Include="USTreasuryYieldCurveDataAlgorithm.py" />
-    <None Include="SmartInsiderDataAlgorithm.py" />
     <None Include="PandasDataFrameHistoryAlgorithm.py" />
-    <None Include="CustomDataAddDataRegressionAlgorithm.py" />
+    <None Include="CustomDataIconicTypesAddDataRegressionAlgorithm.py" />
     <None Include="TrainingExampleAlgorithm.py" />
     <None Include="LongOnlyAlphaStreamAlgorithm.py" />
     <None Include="CustomPartialFillModelAlgorithm.py" />
-    <Content Include="BasicTemplateConstituentUniverseAlgorithm.py" />
     <Content Include="BasicTemplateOptionsConsolidationAlgorithm.py" />
     <None Include="BasicTemplateOptionsPriceModel.py" />
-    <Content Include="Benchmarks\SECReportBenchmarkAlgorithm.py" />
-    <Content Include="Benchmarks\SmartInsiderEventBenchmarkAlgorithm.py" />
     <Content Include="CoarseFineOptionUniverseChainRegressionAlgorithm.py" />
-    <Content Include="CoarseTiingoNewsUniverseSelectionAlgorithm.py" />
     <Content Include="ConsolidateRegressionAlgorithm.py" />
     <Content Include="CustomConsolidatorRegressionAlgorithm.py" />
-    <Content Include="CustomDataAddDataOnSecuritiesChangedRegressionAlgorithm.py" />
-    <Content Include="CustomDataAddDataCoarseSelectionRegressionAlgorithm.py" />
+    <Content Include="CustomDataLinkedIconicTypeAddDataOnSecuritiesChangedRegressionAlgorithm.py" />
+    <Content Include="CustomDataLinkedIconicTypeAddDataCoarseSelectionRegressionAlgorithm.py" />
     <None Include="CustomBuyingPowerModelAlgorithm.py" />
     <Content Include="CustomDataPropertiesRegressionAlgorithm.py" />
-    <Content Include="DynamicSecurityDataAlgorithm.py" />
     <Content Include="ConfidenceWeightedFrameworkAlgorithm.py" />
+    <Content Include="DynamicSecurityDataRegressionAlgorithm.py" />
     <Content Include="ExtendedMarketTradingRegressionAlgorithm.py" />
     <Content Include="FilterUniverseRegressionAlgorithm.py" />
     <Content Include="FineFundamentalFilteredUniverseRegressionAlgorithm.py" />
@@ -145,12 +119,9 @@
     <Content Include="SliceGetByTypeRegressionAlgorithm.py" />
     <Content Include="StringToSymbolImplicitConversionRegressionAlgorithm.py" />
     <Content Include="TalibIndicatorsAlgorithm.py" />
-    <Content Include="TradingEconomicsCalendarIndicatorAlgorithm.py" />
     <Content Include="OnEndOfDayRegressionAlgorithm.py" />
-    <Content Include="SECReportDataAlgorithm.py" />
     <None Include="TrainingInitializeRegressionAlgorithm.py" />
     <Content Include="UniverseUnchangedRegressionAlgorithm.py" />
-    <Content Include="USEnergyInformationAdministrationAlgorithm.py" />
     <None Include="NLTKSentimentTradingAlgorithm.py" />
     <None Include="PytorchNeuralNetworkAlgorithm.py" />
     <None Include="RawPricesUniverseRegressionAlgorithm.py" />
@@ -170,6 +141,8 @@
     <None Include="TensorFlowNeuralNetworkAlgorithm.py" />
     <None Include="TiingoPriceAlgorithm.py" />
     <None Include="PearsonCorrelationPairsTradingAlphaModelFrameworkAlgorithm.py" />
+    <None Include="UniverseSelectionDefinitionsAlgorithm.py" />
+    <None Include="ConstituentsQC500GeneratorAlgorithm.py" />
   </ItemGroup>
   <ItemGroup>
     <None Include="AddRemoveSecurityRegressionAlgorithm.py" />
@@ -201,7 +174,6 @@
     <None Include="CoarseFineFundamentalRegressionAlgorithm.py" />
     <None Include="CoarseFundamentalTop3Algorithm.py" />
     <None Include="CompositeAlphaModelFrameworkAlgorithm.py" />
-    <None Include="ConstituentsQC500GeneratorAlgorithm.py" />
     <None Include="CustomBenchmarkAlgorithm.py" />
     <None Include="CustomChartingAlgorithm.py" />
     <None Include="CustomDataBitcoinAlgorithm.py" />
@@ -221,6 +193,7 @@
     <None Include="DropboxBaseDataUniverseSelectionAlgorithm.py" />
     <None Include="DropboxUniverseSelectionAlgorithm.py" />
     <None Include="DropboxCoarseFineAlgorithm.py" />
+    <None Include="EmaCrossAlphaModelFrameworkRegressionAlgorithm.py" />
     <None Include="EmaCrossFuturesFrontMonthAlgorithm.py" />
     <None Include="EmaCrossUniverseSelectionAlgorithm.py" />
     <None Include="EmaCrossUniverseSelectionFrameworkAlgorithm.py" />
@@ -240,7 +213,7 @@
     <None Include="MarginCallEventsAlgorithm.py" />
     <None Include="MarketOnOpenOnCloseAlgorithm.py" />
     <None Include="MarketOnCloseOrderBufferRegressionAlgorithm.py" />
-    <None Include="MaximumPortfolioDrawdownFrameworkAlgorithm.py" />
+    <None Include="MaximumDrawdownPercentPortfolioFrameworkRegressionAlgorithm.py" />
     <None Include="MeanVarianceOptimizationFrameworkAlgorithm.py" />
     <None Include="MovingAverageCrossAlgorithm.py" />
     <None Include="MultipleSymbolConsolidationAlgorithm.py" />
@@ -252,13 +225,11 @@
     <None Include="OptionSplitRegressionAlgorithm.py" />
     <None Include="OrderTicketDemoAlgorithm.py" />
     <None Include="ParameterizedAlgorithm.py" />
-    <None Include="QuandlFuturesDataAlgorithm.py" />
-    <None Include="QuandlImporterAlgorithm.py" />
     <None Include="readme.md" />
     <None Include="RawPricesCoarseUniverseAlgorithm.py" />
     <None Include="RegressionAlgorithm.py" />
     <None Include="RegressionChannelAlgorithm.py" />
-    <None Include="RenkoConsolidatorAlgorithm.py" />
+    <None Include="ClassicRenkoConsolidatorAlgorithm.py" />
     <None Include="RollingWindowAlgorithm.py" />
     <None Include="ScheduledEventsAlgorithm.py" />
     <None Include="ScheduledQueuingAlgorithm.py" />
@@ -266,9 +237,8 @@
     <None Include="SectorExposureRiskFrameworkAlgorithm.py" />
     <None Include="StandardDeviationExecutionModelRegressionAlgorithm.py" />
     <None Include="TimeInForceAlgorithm.py" />
-    <None Include="TrailingStopRiskFrameworkAlgorithm.py" />
+    <None Include="TrailingStopRiskFrameworkRegressionAlgorithm.py" />
     <None Include="UncorrelatedUniverseSelectionFrameworkAlgorithm.py" />
-    <None Include="UniverseSelectionDefinitionsAlgorithm.py" />
     <None Include="UniverseSelectionRegressionAlgorithm.py" />
     <None Include="UpdateOrderRegressionAlgorithm.py" />
     <None Include="UserDefinedUniverseAlgorithm.py" />

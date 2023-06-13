@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,12 +15,11 @@
 */
 
 using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using NodaTime;
+using System.Linq;
+using System.Globalization;
 using QuantConnect.Securities;
-using QuantConnect.Util;
+using System.Collections.Generic;
 
 namespace QuantConnect.Scheduling
 {
@@ -29,7 +28,7 @@ namespace QuantConnect.Scheduling
     /// </summary>
     public class DateRules
     {
-        private readonly DateTimeZone _timeZone;
+        private DateTimeZone _timeZone;
         private readonly SecurityManager _securities;
 
         /// <summary>
@@ -41,6 +40,15 @@ namespace QuantConnect.Scheduling
         {
             _timeZone = timeZone;
             _securities = securities;
+        }
+
+        /// <summary>
+        /// Sets the default time zone
+        /// </summary>
+        /// <param name="timeZone">The time zone to use for helper methods that can't resolve a time zone</param>
+        public void SetDefaultTimeZone(DateTimeZone timeZone)
+        {
+            _timeZone = timeZone;
         }
 
         /// <summary>
@@ -73,7 +81,9 @@ namespace QuantConnect.Scheduling
         /// using _securities.UtcTime instead of 'start' since ScheduleManager backs it up a day
         /// </summary>
         public IDateRule Today => new FuncDateRule("TodayOnly",
-            (start, e) => new[] {_securities.UtcTime.ConvertFromUtc(_timeZone).Date}
+            (start, e) => {
+                return new[] { _securities.UtcTime.ConvertFromUtc(_timeZone).Date };
+            }
         );
 
         /// <summary>
@@ -355,7 +365,12 @@ namespace QuantConnect.Scheduling
                 securitySchedule = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
             }
 
-            foreach (var date in Time.EachDay(start, end))
+            // Iterate all days between the beginning of "start" month, through end of "end" month.
+            // Necessary to ensure we schedule events in the month we start and end.
+            var beginningOfStartMonth = new DateTime(start.Year, start.Month, 1);
+            var endOfEndMonth = new DateTime(end.Year, end.Month, DateTime.DaysInMonth(end.Year, end.Month));
+
+            foreach (var date in Time.EachDay(beginningOfStartMonth, endOfEndMonth))
             {
                 var daysInMonth = DateTime.DaysInMonth(date.Year, date.Month);
 
@@ -404,8 +419,17 @@ namespace QuantConnect.Scheduling
                 weeklyBoundaryDay = searchForward ? weeklySchedule.Last().DayOfWeek : weeklySchedule.First().DayOfWeek;
             }
 
+            // Iterate all days between the beginning of "start" week, through end of "end" week.
+            // Necessary to ensure we schedule events in the week we start and end. 
+            // Also if we have a sunday for start/end we need to adjust for it being the front of the week when we want it as the end of the week.
+            var startAdjustment = start.DayOfWeek == DayOfWeek.Sunday ? -7 : 0;
+            var beginningOfStartWeek = start.AddDays(-(int)start.DayOfWeek + 1 + startAdjustment); // Date - DayOfWeek + 1
+
+            var endAdjustment = end.DayOfWeek == DayOfWeek.Sunday ? -7 : 0;
+            var endOfEndWeek = end.AddDays(-(int)end.DayOfWeek + 7 + endAdjustment); // Date - DayOfWeek + 7 
+
             // Determine the schedule for each week in this range
-            foreach (var date in Time.EachDay(start, end).Where(x => x.DayOfWeek == weeklyBaseDay))
+            foreach (var date in Time.EachDay(beginningOfStartWeek, endOfEndWeek).Where(x => x.DayOfWeek == weeklyBaseDay))
             {
                 var boundary = date.AddDays(weeklyBoundaryDay - weeklyBaseDay);
                 var scheduledDay = GetScheduledDay(securitySchedule, date, offset, searchForward, boundary);

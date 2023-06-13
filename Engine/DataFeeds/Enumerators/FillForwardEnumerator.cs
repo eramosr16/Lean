@@ -183,13 +183,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
             }
 
             var underlyingCurrent = _enumerator.Current;
-            if (_previous == null)
-            {
-                // first data point we dutifully emit without modification
-                Current = underlyingCurrent;
-                return true;
-            }
-
             if (underlyingCurrent != null && underlyingCurrent.DataType == MarketDataType.Auxiliary)
             {
                 var delisting = underlyingCurrent as Delisting;
@@ -199,8 +192,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
                 }
             }
 
+            if (_previous == null)
+            {
+                // first data point we dutifully emit without modification
+                Current = underlyingCurrent;
+                return true;
+            }
+
             if (RequiresFillForwardData(_fillForwardResolution.Value, _previous, underlyingCurrent, out fillForward))
             {
+                if (_previous.EndTime >= _subscriptionEndTime)
+                {
+                    // we passed the end of subscription, we're finished
+                    return false;
+                }
                 // we require fill forward data because the _enumerator.Current is too far in future
                 _isFillingForward = true;
                 Current = fillForward;
@@ -306,11 +311,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
                 // potentialBarEndTime should be calculated in the same way as bar.EndTime, i.e. Time + resolution
                 var potentialBarEndTime = RoundDown(item.ReferenceDateTime, item.Interval).ConvertToUtc(Exchange.TimeZone) + item.Interval;
 
+                var period = _dataResolution;
+                if (next.Time == next.EndTime)
+                {
+                    // we merge corporate event data points (mapping, delisting, splits, dividend) which do not have
+                    // a period or resolution
+                    period = TimeSpan.Zero;
+                }
+
                 // to avoid duality it's necessary to compare potentialBarEndTime with
                 // next.EndTime calculated as Time + resolution,
                 // and both should be based on the same TZ (for example UTC)
-                var nextEndTimeUTC = next.Time.ConvertToUtc(Exchange.TimeZone) + _dataResolution;
-                if (potentialBarEndTime < nextEndTimeUTC)
+                var nextEndTimeUTC = next.Time.ConvertToUtc(Exchange.TimeZone) + period;
+                if (potentialBarEndTime < nextEndTimeUTC
+                    // let's fill forward based on previous (which isn't auxiliary) if next is auxiliary and they share the end time
+                    // we do allow emitting both an auxiliary data point and a Filled Forwared data for the same end time
+                    || next.DataType == MarketDataType.Auxiliary && potentialBarEndTime == nextEndTimeUTC)
                 {
                     // to check open hours we need to convert potential
                     // bar EndTime into exchange time zone

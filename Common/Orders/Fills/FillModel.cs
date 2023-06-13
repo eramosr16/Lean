@@ -16,7 +16,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Python;
 using QuantConnect.Orders.Fees;
@@ -61,49 +60,195 @@ namespace QuantConnect.Orders.Fills
             // consumed by the different XxxxFill() implementations
             Parameters = parameters;
 
-            var order = parameters.Order;
-            OrderEvent orderEvent;
-            switch (order.Type)
+            var orderEvents = new List<OrderEvent>(1);
+            switch (parameters.Order.Type)
             {
                 case OrderType.Market:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.MarketFill(parameters.Security, parameters.Order as MarketOrder)
-                        : MarketFill(parameters.Security, parameters.Order as MarketOrder);
+                        : MarketFill(parameters.Security, parameters.Order as MarketOrder));
                     break;
                 case OrderType.Limit:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.LimitFill(parameters.Security, parameters.Order as LimitOrder)
-                        : LimitFill(parameters.Security, parameters.Order as LimitOrder);
+                        : LimitFill(parameters.Security, parameters.Order as LimitOrder));
                     break;
                 case OrderType.LimitIfTouched:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.LimitIfTouchedFill(parameters.Security, parameters.Order as LimitIfTouchedOrder)
-                        : LimitIfTouchedFill(parameters.Security, parameters.Order as LimitIfTouchedOrder);
+                        : LimitIfTouchedFill(parameters.Security, parameters.Order as LimitIfTouchedOrder));
                     break;
                 case OrderType.StopMarket:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.StopMarketFill(parameters.Security, parameters.Order as StopMarketOrder)
-                        : StopMarketFill(parameters.Security, parameters.Order as StopMarketOrder);
+                        : StopMarketFill(parameters.Security, parameters.Order as StopMarketOrder));
                     break;
                 case OrderType.StopLimit:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.StopLimitFill(parameters.Security, parameters.Order as StopLimitOrder)
-                        : StopLimitFill(parameters.Security, parameters.Order as StopLimitOrder);
+                        : StopLimitFill(parameters.Security, parameters.Order as StopLimitOrder));
                     break;
                 case OrderType.MarketOnOpen:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.MarketOnOpenFill(parameters.Security, parameters.Order as MarketOnOpenOrder)
-                        : MarketOnOpenFill(parameters.Security, parameters.Order as MarketOnOpenOrder);
+                        : MarketOnOpenFill(parameters.Security, parameters.Order as MarketOnOpenOrder));
                     break;
                 case OrderType.MarketOnClose:
-                    orderEvent = PythonWrapper != null
+                    orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.MarketOnCloseFill(parameters.Security, parameters.Order as MarketOnCloseOrder)
-                        : MarketOnCloseFill(parameters.Security, parameters.Order as MarketOnCloseOrder);
+                        : MarketOnCloseFill(parameters.Security, parameters.Order as MarketOnCloseOrder));
+                    break;
+                case OrderType.ComboMarket:
+                    orderEvents = ComboMarketFill(parameters.Order, parameters);
+                    break;
+                case OrderType.ComboLimit:
+                    orderEvents = ComboLimitFill(parameters.Order, parameters);
+                    break;
+                case OrderType.ComboLegLimit:
+                    orderEvents = ComboLegLimitFill(parameters.Order, parameters);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
-            return new Fill(orderEvent);
+            return new Fill(orderEvents);
+        }
+
+
+        /// <summary>
+        /// Default combo market fill model for the base security class. Fills at the last traded price for each leg.
+        /// </summary>
+        /// <param name="order">Order to fill</param>
+        /// <param name="parameters">Fill parameters for the order</param>
+        /// <returns>Order fill information detailing the average price and quantity filled for each leg. If any of the fills fails, none of the orders will be filled and the returned list will be empty</returns>
+        public virtual List<OrderEvent> ComboMarketFill(Order order, FillModelParameters parameters)
+        {
+            var fills = new List<OrderEvent>(parameters.SecuritiesForOrders.Count);
+            foreach (var kvp in parameters.SecuritiesForOrders.OrderBy(x => x.Key.Id))
+            {
+                var targetOrder = kvp.Key;
+                var security = kvp.Value;
+                var fill = InternalMarketFill(security, targetOrder, targetOrder.Quantity);
+                if (fill.Status != OrderStatus.Filled)
+                {
+                    return new List<OrderEvent>();
+                }
+
+                fills.Add(fill);
+            }
+
+            return fills;
+        }
+
+        /// <summary>
+        /// Default combo limit fill model for the base security class. Fills at the sum of prices for the assets of every leg.
+        /// </summary>
+        /// <param name="order">Order to fill</param>
+        /// <param name="parameters">Fill parameters for the order</param>
+        /// <returns>Order fill information detailing the average price and quantity filled for each leg. If any of the fills fails, none of the orders will be filled and the returned list will be empty</returns>
+        public virtual List<OrderEvent> ComboLimitFill(Order order, FillModelParameters parameters)
+        {
+            // aggregate the prices from all the securities
+            var fillParameters = new List<ComboLimitOrderLegParameters>(parameters.SecuritiesForOrders.Count);
+            foreach (var kvp in parameters.SecuritiesForOrders.OrderBy(x => x.Key.Id))
+            {
+                var targetOrder = kvp.Key;
+                var security = kvp.Value;
+                var prices = GetPricesCheckingPythonWrapper(security, targetOrder.Direction);
+
+                if (prices.EndTime.ConvertToUtc(security.Exchange.TimeZone) < targetOrder.Time)
+                {
+                    // do not fill on stale data
+                    return new List<OrderEvent>();
+                }
+
+                fillParameters.Add(new ComboLimitOrderLegParameters
+                {
+                    Security = security,
+                    Order = targetOrder,
+                    Prices = prices
+                });
+            }
+
+            var currentPrice = fillParameters.Aggregate(0m, (accumulatedPrice, p) => accumulatedPrice + p.Price);
+            var limitPrice = order.GroupOrderManager.LimitPrice;
+
+            var fills = new List<OrderEvent>(fillParameters.Count);
+
+            switch (order.GroupOrderManager.Direction)
+            {
+                case OrderDirection.Buy:
+                    //Buy limit seeks lowest price
+                    if (currentPrice < limitPrice)
+                    {
+                        for (var i = 0; i < fillParameters.Count; i++)
+                        {
+                            var targetParameters = fillParameters[i];
+                            var utcTime = targetParameters.Security.LocalTime.ConvertToUtc(targetParameters.Security.Exchange.TimeZone);
+                            var fill = new OrderEvent(targetParameters.Order, utcTime, OrderFee.Zero);
+
+                            //Set order fill:
+                            fill.Status = OrderStatus.Filled;
+                            fill.FillPrice = targetParameters.Prices.Low;
+                            // assume the order completely filled
+                            fill.FillQuantity = targetParameters.Order.Quantity;
+
+                            fills.Add(fill);
+                        }
+                    }
+                    break;
+
+                case OrderDirection.Sell:
+                    //Sell limit seeks highest price possible
+                    if (currentPrice > limitPrice)
+                    {
+                        for (var i = 0; i < fillParameters.Count; i++)
+                        {
+                            var targetParameters = fillParameters[i];
+                            var utcTime = targetParameters.Security.LocalTime.ConvertToUtc(targetParameters.Security.Exchange.TimeZone);
+                            var fill = new OrderEvent(targetParameters.Order, utcTime, OrderFee.Zero);
+
+                            //Set order fill:
+                            fill.Status = OrderStatus.Filled;
+                            fill.FillPrice = targetParameters.Prices.High;
+                            // assume the order completely filled
+                            fill.FillQuantity = targetParameters.Order.Quantity;
+
+                            fills.Add(fill);
+                        }
+                    }
+                    break;
+            }
+
+            return fills;
+        }
+
+        /// <summary>
+        /// Default combo limit fill model for the base security class. Fills at the limit price for each leg
+        /// </summary>
+        /// <param name="order">Order to fill</param>
+        /// <param name="parameters">Fill parameters for the order</param>
+        /// <returns>Order fill information detailing the average price and quantity filled for each leg. If any of the fills fails, none of the orders will be filled and the returned list will be empty</returns>
+        public virtual List<OrderEvent> ComboLegLimitFill(Order order, FillModelParameters parameters)
+        {
+            var fills = new List<OrderEvent>(order.GroupOrderManager.OrderIds.Count);
+
+            foreach (var kvp in parameters.SecuritiesForOrders.OrderBy(x => x.Key.Id))
+            {
+                var targetOrder = kvp.Key;
+                var security = kvp.Value;
+
+                var fill = InternalLimitFill(security, targetOrder, (targetOrder as ComboLegLimitOrder).LimitPrice,
+                    targetOrder.Quantity);
+
+                if (fill.Status != OrderStatus.Filled)
+                {
+                    return new List<OrderEvent>();
+                }
+
+                fills.Add(fill);
+            }
+
+            return fills;
         }
 
         /// <summary>
@@ -114,6 +259,15 @@ namespace QuantConnect.Orders.Fills
         /// <returns>Order fill information detailing the average price and quantity filled.</returns>
         public virtual OrderEvent MarketFill(Security asset, MarketOrder order)
         {
+            return InternalMarketFill(asset, order, order.Quantity);
+        }
+
+
+        /// <summary>
+        /// Default market fill model for the base security class. Fills at the last traded price.
+        /// </summary>
+        private OrderEvent InternalMarketFill(Security asset, Order order, decimal quantity)
+        {
             //Default order event to return.
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
             var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
@@ -123,13 +277,14 @@ namespace QuantConnect.Orders.Fills
             // make sure the exchange is open/normal market hours before filling
             if (!IsExchangeOpen(asset, false)) return fill;
 
-            var prices = GetPricesCheckingPythonWrapper(asset, order.Direction);
+            var orderDirection = order.Direction;
+            var prices = GetPricesCheckingPythonWrapper(asset, orderDirection);
             var pricesEndTimeUtc = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
 
             // if the order is filled on stale (fill-forward) data, set a warning message on the order event
             if (pricesEndTimeUtc.Add(Parameters.StalePriceTimeSpan) < order.Time)
             {
-                fill.Message = $"Warning: fill at stale price ({prices.EndTime.ToStringInvariant()} {asset.Exchange.TimeZone})";
+                fill.Message = Messages.FillModel.FilledAtStalePrice(asset, prices);
             }
 
             //Order [fill]price for a market order model is the current security price
@@ -140,7 +295,7 @@ namespace QuantConnect.Orders.Fills
             var slip = asset.SlippageModel.GetSlippageApproximation(asset, order);
 
             //Apply slippage
-            switch (order.Direction)
+            switch (orderDirection)
             {
                 case OrderDirection.Buy:
                     fill.FillPrice += slip;
@@ -151,7 +306,7 @@ namespace QuantConnect.Orders.Fills
             }
 
             // assume the order completely filled
-            fill.FillQuantity = order.Quantity;
+            fill.FillQuantity = quantity;
 
             return fill;
         }
@@ -240,11 +395,7 @@ namespace QuantConnect.Orders.Fills
             if (order.Status == OrderStatus.Canceled) return fill;
 
             // make sure the exchange is open before filling -- allow pre/post market fills to occur
-            if (!IsExchangeOpen(
-                asset,
-                Parameters.ConfigProvider
-                    .GetSubscriptionDataConfigs(asset.Symbol)
-                    .IsExtendedMarketHours()))
+            if (!IsExchangeOpen(asset))
             {
                 return fill;
             }
@@ -326,25 +477,22 @@ namespace QuantConnect.Orders.Fills
             if (order.Status == OrderStatus.Canceled) return fill;
 
             // Fill only if open or extended
-            if (!IsExchangeOpen(asset,
-                Parameters.ConfigProvider
-                    .GetSubscriptionDataConfigs(asset.Symbol)
-                    .IsExtendedMarketHours()))
+            if (!IsExchangeOpen(asset))
             {
                 return fill;
             }
-            
+
             // Get the range of prices in the last bar:
             var tradeHigh = 0m;
             var tradeLow = 0m;
             var pricesEndTime = DateTime.MinValue;
-            
+
             var subscribedTypes = GetSubscribedTypes(asset);
 
             if (subscribedTypes.Contains(typeof(Tick)))
             {
                 var trade = GetPricesCheckingPythonWrapper(asset, order.Direction);
-                
+
                 if (trade != null)
                 {
                     tradeHigh = trade.Current;
@@ -352,7 +500,7 @@ namespace QuantConnect.Orders.Fills
                     pricesEndTime = trade.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
                 }
             }
-            
+
             else if (subscribedTypes.Contains(typeof(TradeBar)))
             {
                 var tradeBar = asset.Cache.GetData<TradeBar>();
@@ -373,12 +521,12 @@ namespace QuantConnect.Orders.Fills
                     if (tradeHigh >= order.TriggerPrice || order.TriggerTouched)
                     {
                         order.TriggerTouched = true;
-                        
+
                         //-> 1.1 Limit surpassed: Sell.
                         if (GetAskPrice(asset, out pricesEndTime) >= order.LimitPrice)
                         {
                             fill.Status = OrderStatus.Filled;
-                            fill.FillPrice = order.LimitPrice;                            
+                            fill.FillPrice = order.LimitPrice;
                             // assume the order completely filled
                             fill.FillQuantity = order.Quantity;
                         }
@@ -394,7 +542,7 @@ namespace QuantConnect.Orders.Fills
                         if (GetBidPrice(asset, out pricesEndTime) <= order.LimitPrice)
                         {
                             fill.Status = OrderStatus.Filled;
-                            fill.FillPrice = order.LimitPrice;                            
+                            fill.FillPrice = order.LimitPrice;
                             // assume the order completely filled
                             fill.FillQuantity = order.Quantity;
                         }
@@ -415,6 +563,14 @@ namespace QuantConnect.Orders.Fills
         /// <seealso cref="MarketFill(Security, MarketOrder)"/>
         public virtual OrderEvent LimitFill(Security asset, LimitOrder order)
         {
+            return InternalLimitFill(asset, order, order.LimitPrice, order.Quantity);
+        }
+
+        /// <summary>
+        /// Default limit order fill model in the base security class.
+        /// </summary>
+        private OrderEvent InternalLimitFill(Security asset, Order order, decimal limitPrice, decimal quantity)
+        {
             //Initialise;
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
             var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
@@ -423,46 +579,44 @@ namespace QuantConnect.Orders.Fills
             if (order.Status == OrderStatus.Canceled) return fill;
 
             // make sure the exchange is open before filling -- allow pre/post market fills to occur
-            if (!IsExchangeOpen(asset,
-                Parameters.ConfigProvider
-                    .GetSubscriptionDataConfigs(asset.Symbol)
-                    .IsExtendedMarketHours()))
+            if (!IsExchangeOpen(asset))
             {
                 return fill;
             }
             //Get the range of prices in the last bar:
-            var prices = GetPricesCheckingPythonWrapper(asset, order.Direction);
+            var orderDirection = order.Direction;
+            var prices = GetPricesCheckingPythonWrapper(asset, orderDirection);
             var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
 
             // do not fill on stale data
             if (pricesEndTime <= order.Time) return fill;
 
             //-> Valid Live/Model Order:
-            switch (order.Direction)
+            switch (orderDirection)
             {
                 case OrderDirection.Buy:
                     //Buy limit seeks lowest price
-                    if (prices.Low < order.LimitPrice)
+                    if (prices.Low < limitPrice)
                     {
                         //Set order fill:
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits
                         // to be executed properly
-                        fill.FillPrice = Math.Min(prices.High, order.LimitPrice);
+                        fill.FillPrice = Math.Min(prices.High, limitPrice);
                         // assume the order completely filled
-                        fill.FillQuantity = order.Quantity;
+                        fill.FillQuantity = quantity;
                     }
                     break;
                 case OrderDirection.Sell:
                     //Sell limit seeks highest price possible
-                    if (prices.High > order.LimitPrice)
+                    if (prices.High > limitPrice)
                     {
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits
                         // to be executed properly
-                        fill.FillPrice = Math.Max(prices.Low, order.LimitPrice);
+                        fill.FillPrice = Math.Max(prices.Low, limitPrice);
                         // assume the order completely filled
-                        fill.FillQuantity = order.Quantity;
+                        fill.FillQuantity = quantity;
                     }
                     break;
             }
@@ -478,6 +632,11 @@ namespace QuantConnect.Orders.Fills
         /// <returns>Order fill information detailing the average price and quantity filled.</returns>
         public virtual OrderEvent MarketOnOpenFill(Security asset, MarketOnOpenOrder order)
         {
+            if (asset.Exchange.Hours.IsMarketAlwaysOpen)
+            {
+                throw new InvalidOperationException(Messages.FillModel.MarketNeverCloses(asset, OrderType.MarketOnOpen));
+            }
+
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
             var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
 
@@ -534,6 +693,11 @@ namespace QuantConnect.Orders.Fills
         /// <returns>Order fill information detailing the average price and quantity filled.</returns>
         public virtual OrderEvent MarketOnCloseFill(Security asset, MarketOnCloseOrder order)
         {
+            if (asset.Exchange.Hours.IsMarketAlwaysOpen)
+            {
+                throw new InvalidOperationException(Messages.FillModel.MarketNeverCloses(asset, OrderType.MarketOnClose));
+            }
+
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
             var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
 
@@ -629,7 +793,7 @@ namespace QuantConnect.Orders.Fills
                 }
             }
 
-            throw new InvalidOperationException($"Cannot get ask price to perform fill for {asset.Symbol} because no market data subscription were found.");
+            throw new InvalidOperationException(Messages.FillModel.NoMarketDataToGetAskPriceForFilling(asset));
         }
 
         /// <summary>
@@ -688,33 +852,75 @@ namespace QuantConnect.Orders.Fills
                 }
             }
 
-            throw new InvalidOperationException($"Cannot get bid price to perform fill for {asset.Symbol} because no market data subscription were found.");
+            throw new InvalidOperationException(Messages.FillModel.NoMarketDataToGetBidPriceForFilling(asset));
         }
 
         /// <summary>
         /// Get data types the Security is subscribed to
         /// </summary>
         /// <param name="asset">Security which has subscribed data types</param>
-        private HashSet<Type> GetSubscribedTypes(Security asset)
+        protected virtual HashSet<Type> GetSubscribedTypes(Security asset)
         {
             var subscribedTypes = Parameters
                 .ConfigProvider
-                .GetSubscriptionDataConfigs(asset.Symbol)
+                // even though data from internal configurations are not sent to the algorithm.OnData they still drive security cache and data
+                // this is specially relevant for the continuous contract underlying mapped contracts which are internal configurations
+                .GetSubscriptionDataConfigs(asset.Symbol, includeInternalConfigs: true)
                 .ToHashSet(x => x.Type);
 
             if (subscribedTypes.Count == 0)
             {
-                throw new InvalidOperationException($"Cannot perform fill for {asset.Symbol} because no data subscription were found.");
+                throw new InvalidOperationException(Messages.FillModel.NoDataSubscriptionFoundForFilling(asset));
             }
 
             return subscribedTypes;
         }
-        
+
+        /// <summary>
+        /// Helper method to determine if the exchange is open before filling. Will allow pre/post market fills to occur based on configuration
+        /// </summary>
+        /// <param name="asset">Security which has subscribed data types</param>
+        private bool IsExchangeOpen(Security asset)
+        {
+            // even though data from internal configurations are not sent to the algorithm.OnData they still drive security cache and data
+            // this is specially relevant for the continuous contract underlying mapped contracts which are internal configurations
+            var configs = Parameters.ConfigProvider.GetSubscriptionDataConfigs(asset.Symbol, includeInternalConfigs: true);
+            if (configs.Count == 0)
+            {
+                throw new InvalidOperationException(Messages.FillModel.NoDataSubscriptionFoundForFilling(asset));
+            }
+
+            var hasNonInternals = false;
+            var exchangeOpenNonInternals = false;
+            var exchangeOpenInternals = false;
+            for (int i = 0; i < configs.Count; i++)
+            {
+                var config = configs[i];
+
+                if (config.IsInternalFeed)
+                {
+                    exchangeOpenInternals |= config.ExtendedMarketHours;
+                }
+                else
+                {
+                    hasNonInternals = true;
+                    exchangeOpenNonInternals |= config.ExtendedMarketHours;
+                }
+            }
+
+            if (hasNonInternals)
+            {
+                // give priority to non internals if any
+                return IsExchangeOpen(asset, exchangeOpenNonInternals);
+            }
+            return IsExchangeOpen(asset, exchangeOpenInternals);
+        }
+
         /// <summary>
         /// This is required due to a limitation in PythonNet to resolved
         /// overriden methods. <see cref="GetPrices"/>
         /// </summary>
-        private Prices GetPricesCheckingPythonWrapper(Security asset, OrderDirection direction)
+        protected virtual Prices GetPricesCheckingPythonWrapper(Security asset, OrderDirection direction)
         {
             if (PythonWrapper != null)
             {
@@ -743,9 +949,7 @@ namespace QuantConnect.Orders.Fills
             }
 
             // Only fill with data types we are subscribed to
-            var subscriptionTypes = Parameters.ConfigProvider
-                .GetSubscriptionDataConfigs(asset.Symbol)
-                .Select(x => x.Type).ToList();
+            var subscriptionTypes = GetSubscribedTypes(asset);
             // Tick
             var tick = asset.Cache.GetData<Tick>();
             if (tick != null && subscriptionTypes.Contains(typeof(Tick)))
@@ -790,17 +994,35 @@ namespace QuantConnect.Orders.Fills
         /// </summary>
         protected static bool IsExchangeOpen(Security asset, bool isExtendedMarketHours)
         {
-            if (!asset.Exchange.DateTimeIsOpen(asset.LocalTime))
+            return asset.IsMarketOpen(isExtendedMarketHours);
+        }
+
+        private class ComboLimitOrderLegParameters
+        {
+            public Security Security { get; set; }
+            public Order Order { get; set; }
+            public Prices Prices { get; set; }
+
+            /// <summary>
+            /// Gets the current price that would be paid/received for this leg based on the security price and the leg quantity
+            /// </summary>
+            public decimal Price
             {
-                // if we're not open at the current time exactly, check the bar size, this handle large sized bars (hours/days)
-                var currentBar = asset.GetLastData();
-                if (asset.LocalTime.Date != currentBar.EndTime.Date
-                    || !asset.Exchange.IsOpenDuringBar(currentBar.Time, currentBar.EndTime, isExtendedMarketHours))
+                get
                 {
-                    return false;
+                    // we use the same, either low or high, for every leg depending on the combo direction
+                    var price = Order.GroupOrderManager.Direction == OrderDirection.Buy ? Prices.Low : Prices.High;
+
+                    // the limit price should be calculated using the ratios instead of the group quantities, like IB does
+                    var quantity = Order.Quantity.GetOrderLegRatio(Order.GroupOrderManager);
+                    if (Security.Symbol.SecurityType == SecurityType.Equity)
+                    {
+                        quantity /= 100;
+                    }
+
+                    return price * quantity;
                 }
             }
-            return true;
         }
     }
 }

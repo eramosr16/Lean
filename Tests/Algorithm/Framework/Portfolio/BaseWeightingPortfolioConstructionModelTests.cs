@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -18,13 +18,13 @@ using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Algorithm.Framework.Alphas;
 using QuantConnect.Algorithm.Framework.Portfolio;
-using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Tests.Engine.DataFeeds;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Tests.Common.Data.UniverseSelection;
 
 namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
 {
@@ -43,6 +43,9 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
             Algorithm = new QCAlgorithm();
             Algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(Algorithm));
         }
+        [TearDown]
+        public void TearDown() => Algorithm.Insights.Clear(Algorithm.Securities.Keys.ToArray());
+
 
         [Test]
         [TestCase(Language.CSharp)]
@@ -82,7 +85,7 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
             var targets = Algorithm.PortfolioConstruction.CreateTargets(Algorithm, insights).ToList();
             Assert.AreEqual(1, targets.Count);
 
-            var changes = SecurityChanges.Removed(Algorithm.Securities[Symbols.SPY]);
+            var changes = SecurityChangesTests.RemovedNonInternal(Algorithm.Securities[Symbols.SPY]);
             Algorithm.PortfolioConstruction.OnSecuritiesChanged(Algorithm, changes);
 
             var expectedTargets = new List<IPortfolioTarget> { new PortfolioTarget(Symbols.SPY, 0) };
@@ -231,7 +234,7 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
             Algorithm.Portfolio.SetCash(StartingCash);
             SetUtcTime(new DateTime(2018, 7, 31));
 
-            var changes = SecurityChanges.Added(Algorithm.Securities.Values.ToArray());
+            var changes = SecurityChangesTests.AddedNonInternal(Algorithm.Securities.Values.ToArray());
             Algorithm.PortfolioConstruction.OnSecuritiesChanged(Algorithm, changes);
         }
 

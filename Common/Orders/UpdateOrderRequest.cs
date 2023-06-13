@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,8 +14,6 @@
 */
 
 using System;
-using System.Collections.Generic;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Orders
 {
@@ -76,25 +74,17 @@ namespace QuantConnect.Orders
         /// <filterpriority>2</filterpriority>
         public override string ToString()
         {
-            var updates = new List<string>();
-            if (Quantity.HasValue)
-            {
-                updates.Add(Invariant($"Quantity: {Quantity.Value}"));
-            }
-            if (LimitPrice.HasValue)
-            {
-                updates.Add(Invariant($"LimitPrice: {LimitPrice.Value.SmartRounding()}"));
-            }
-            if (StopPrice.HasValue)
-            {
-                updates.Add(Invariant($"StopPrice: {StopPrice.Value.SmartRounding()}"));
-            }
-            if (TriggerPrice.HasValue)
-            {
-                updates.Add(Invariant($"TriggerPrice: {TriggerPrice.Value.SmartRounding()}"));
-            }
+            return Messages.UpdateOrderRequest.ToString(this);
+        }
 
-            return Invariant($"{Time} UTC: Update Order: ({OrderId}) - {string.Join(", ", updates)} {Tag} Status: {Status}");
+        /// <summary>
+        /// Checks whether the update request is allowed for a closed order.
+        /// Only tag updates are allowed on closed orders.
+        /// </summary>
+        /// <returns>True if the update request is allowed for a closed order</returns>
+        public bool IsAllowedForClosedOrder()
+        {
+            return !Quantity.HasValue && !LimitPrice.HasValue && !StopPrice.HasValue && !TriggerPrice.HasValue;
         }
     }
 }

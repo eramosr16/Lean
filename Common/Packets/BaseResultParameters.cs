@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,8 +15,8 @@
 */
 
 using System;
-using System.Collections.Generic;
 using QuantConnect.Orders;
+using System.Collections.Generic;
 
 namespace QuantConnect.Packets
 {
@@ -25,11 +25,6 @@ namespace QuantConnect.Packets
     /// </summary>
     public class BaseResultParameters
     {
-        /// <summary>
-        /// Contains population averages scores over the life of the algorithm
-        /// </summary>
-        public AlphaRuntimeStatistics AlphaRuntimeStatistics { get; set; }
-
         /// <summary>
         /// Trade profit and loss information since the last algorithm result packet
         /// </summary>
@@ -59,5 +54,15 @@ namespace QuantConnect.Packets
         /// Runtime banner/updating statistics in the title banner of the live algorithm GUI.
         /// </summary>
         public IDictionary<string, string> RuntimeStatistics { get; set; }
+
+        /// <summary>
+        /// State information of the algorithm.
+        /// </summary>
+        public IDictionary<string, string> State { get; set; }
+
+        /// <summary>
+        /// The algorithm's configuration required for report generation
+        /// </summary>
+        public AlgorithmConfiguration AlgorithmConfiguration { get; set; }
     }
 }

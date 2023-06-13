@@ -14,14 +14,15 @@
 */
 
 using System;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using QuantConnect.Configuration;
-using QuantConnect.Interfaces;
-using QuantConnect.Logging;
-using QuantConnect.Orders.Fees;
 using QuantConnect.Util;
+using QuantConnect.Logging;
+using System.Threading.Tasks;
+using QuantConnect.Interfaces;
+using QuantConnect.Orders.Fees;
+using QuantConnect.Configuration;
+using System.Collections.Generic;
 
 namespace QuantConnect.Securities.Future
 {
@@ -30,17 +31,15 @@ namespace QuantConnect.Securities.Future
     /// </summary>
     public class FutureMarginModel : SecurityMarginModel
     {
-        private static readonly object DataFolderSymbolLock = new object();
+        private static IDataProvider _dataProvider;
+        private static readonly object _locker = new();
+        private static readonly string DataProvider = Config.Get("data-provider", "DefaultDataProvider");
+        private static Dictionary<string, MarginRequirementsEntry[]> _marginRequirementsCache = new();
 
         // historical database of margin requirements
-        private MarginRequirementsEntry[] _marginRequirementsHistory;
         private int _marginCurrentIndex;
 
         private readonly Security _security;
-
-        private IDataProvider _dataProvider =
-            Composer.Instance.GetExportedValueByTypeName<IDataProvider>(Config.Get("data-provider",
-                "DefaultDataProvider"));
 
         /// <summary>
         /// True will enable usage of intraday margins.
@@ -152,23 +151,27 @@ namespace QuantConnect.Securities.Future
         /// <returns>The maintenance margin required for the </returns>
         public override MaintenanceMargin GetMaintenanceMargin(MaintenanceMarginParameters parameters)
         {
-            var security = parameters.Security;
-            if (security?.GetLastData() == null || parameters.Quantity == 0m)
+            if (parameters.Quantity == 0m)
             {
                 return 0m;
             }
 
+            var security = parameters.Security;
             var marginReq = GetCurrentMarginRequirements(security);
+            if (marginReq == null)
+            {
+                return 0m;
+            }
 
             if (EnableIntradayMargins
                 && security.Exchange.ExchangeOpen
                 && !security.Exchange.ClosingSoon)
             {
-                return marginReq.MaintenanceIntraday * parameters.AbsoluteQuantity;
+                return marginReq.MaintenanceIntraday * parameters.AbsoluteQuantity * security.QuoteCurrency.ConversionRate;
             }
 
             // margin is per contract
-            return marginReq.MaintenanceOvernight * parameters.AbsoluteQuantity;
+            return marginReq.MaintenanceOvernight * parameters.AbsoluteQuantity * security.QuoteCurrency.ConversionRate;
         }
 
         /// <summary>
@@ -178,42 +181,46 @@ namespace QuantConnect.Securities.Future
         {
             var security = parameters.Security;
             var quantity = parameters.Quantity;
-            if (security?.GetLastData() == null || quantity == 0m)
+            if (quantity == 0m)
+            {
                 return InitialMargin.Zero;
+            }
 
             var marginReq = GetCurrentMarginRequirements(security);
+            if (marginReq == null)
+            {
+                return InitialMargin.Zero;
+            }
 
             if (EnableIntradayMargins
                 && security.Exchange.ExchangeOpen
                 && !security.Exchange.ClosingSoon)
             {
-                return new InitialMargin(marginReq.InitialIntraday * quantity);
+                return new InitialMargin(marginReq.InitialIntraday * quantity * security.QuoteCurrency.ConversionRate);
             }
 
             // margin is per contract
-            return new InitialMargin(marginReq.InitialOvernight * quantity);
+            return new InitialMargin(marginReq.InitialOvernight * quantity * security.QuoteCurrency.ConversionRate);
         }
 
         private MarginRequirementsEntry GetCurrentMarginRequirements(Security security)
         {
-            if (security?.GetLastData() == null)
-                return null;
-
-            if (_marginRequirementsHistory == null)
+            var lastData = security?.GetLastData();
+            if (lastData == null)
             {
-                _marginRequirementsHistory = LoadMarginRequirementsHistory(security.Symbol);
-                _marginCurrentIndex = 0;
+                return null;
             }
 
-            var date = security.GetLastData().Time.Date;
+            var marginRequirementsHistory = LoadMarginRequirementsHistory(security.Symbol);
+            var date = lastData.Time.Date;
 
-            while (_marginCurrentIndex + 1 < _marginRequirementsHistory.Length &&
-                _marginRequirementsHistory[_marginCurrentIndex + 1].Date <= date)
+            while (_marginCurrentIndex + 1 < marginRequirementsHistory.Length &&
+                marginRequirementsHistory[_marginCurrentIndex + 1].Date <= date)
             {
                 _marginCurrentIndex++;
             }
 
-            return _marginRequirementsHistory[_marginCurrentIndex];
+            return marginRequirementsHistory[_marginCurrentIndex];
         }
 
         /// <summary>
@@ -221,134 +228,79 @@ namespace QuantConnect.Securities.Future
         /// data found in /Data/symbol-margin/
         /// </summary>
         /// <returns>Sorted list of historical margin changes</returns>
-        private MarginRequirementsEntry[] LoadMarginRequirementsHistory(Symbol symbol)
+        private static MarginRequirementsEntry[] LoadMarginRequirementsHistory(Symbol symbol)
         {
-            var directory = Path.Combine(Globals.DataFolder,
-                                        symbol.SecurityType.ToLower(),
-                                        symbol.ID.Market.ToLowerInvariant(),
-                                        "margins");
-            return FromCsvFile(Path.Combine(directory, symbol.ID.Symbol + ".csv"));
+            if (!_marginRequirementsCache.TryGetValue(symbol.ID.Symbol, out var marginRequirementsEntries))
+            {
+                lock (_locker)
+                {
+                    if (!_marginRequirementsCache.TryGetValue(symbol.ID.Symbol, out marginRequirementsEntries))
+                    {
+                        Dictionary<string, MarginRequirementsEntry[]> marginRequirementsCache = new(_marginRequirementsCache)
+                        {
+                            [symbol.ID.Symbol] = marginRequirementsEntries = FromCsvFile(symbol)
+                        };
+                        // we change the reference so we can read without a lock
+                        _marginRequirementsCache = marginRequirementsCache;
+                    }
+                }
+            }
+            return marginRequirementsEntries;
         }
 
         /// <summary>
         /// Reads margin requirements file and returns a sorted list of historical margin changes
         /// </summary>
-        /// <param name="file">The csv file to be read</param>
+        /// <param name="symbol">The symbol to fetch margin requirements for</param>
         /// <returns>Sorted list of historical margin changes</returns>
-        private MarginRequirementsEntry[] FromCsvFile(string file)
+        private static MarginRequirementsEntry[] FromCsvFile(Symbol symbol)
         {
-            lock (DataFolderSymbolLock)
+            var file = Path.Combine(Globals.DataFolder,
+                                    symbol.SecurityType.ToLower(),
+                                    symbol.ID.Market.ToLowerInvariant(),
+                                    "margins", symbol.ID.Symbol + ".csv");
+
+            if(_dataProvider == null)
             {
-                var stream = _dataProvider.Fetch(file);
-                if (stream == null)
-                {
-                    Log.Trace($"Unable to locate future margin requirements file. Defaulting to zero margin for this symbol. File: {file}");
-
-                    return new[] {
-                                new MarginRequirementsEntry
-                                {
-                                  Date = DateTime.MinValue
-                                }
-                            };
-                }
-
-                MarginRequirementsEntry[] marginRequirementsEntries;
-                using (var streamReader = new StreamReader(stream))
-                {
-                    // skip the first header line, also skip #'s as these are comment lines
-                    marginRequirementsEntries = streamReader.ReadAllLines()
-                        .Where(x => !x.StartsWith("#") && !string.IsNullOrWhiteSpace(x))
-                        .Skip(1)
-                        .Select(FromCsvLine)
-                        .OrderBy(x => x.Date)
-                        .ToArray();
-                }
-                
-                stream.Dispose();
-                return marginRequirementsEntries;
+                ClearMarginCache();
+                _dataProvider = Composer.Instance.GetExportedValueByTypeName<IDataProvider>(DataProvider, forceTypeNameOnExisting: false);
             }
+
+            // skip the first header line, also skip #'s as these are comment lines
+            var marginRequirementsEntries = _dataProvider.ReadLines(file)
+                .Where(x => !x.StartsWith("#") && !string.IsNullOrWhiteSpace(x))
+                .Skip(1)
+                .Select(MarginRequirementsEntry.Create)
+                .OrderBy(x => x.Date)
+                .ToArray();
+
+            if (marginRequirementsEntries.Length == 0)
+            {
+                Log.Error($"FutureMarginModel.FromCsvFile(): Unable to locate future margin requirements file. Defaulting to zero margin for this symbol. File: {file}");
+
+                marginRequirementsEntries = new[] {
+                    new MarginRequirementsEntry
+                    {
+                        Date = DateTime.MinValue
+                    }
+                };
+            }
+            return marginRequirementsEntries;
         }
 
         /// <summary>
-        /// Creates a new instance of <see cref="MarginRequirementsEntry"/> from the specified csv line
+        /// For live deployments we don't want to have stale margin requirements to we refresh them every day
         /// </summary>
-        /// <param name="csvLine">The csv line to be parsed</param>
-        /// <returns>A new <see cref="MarginRequirementsEntry"/> for the specified csv line</returns>
-        private MarginRequirementsEntry FromCsvLine(string csvLine)
+        private static void ClearMarginCache()
         {
-            var line = csvLine.Split(',');
-
-            DateTime date;
-            if (!DateTime.TryParseExact(line[0], DateFormat.EightCharacter, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+            Task.Delay(Time.OneDay).ContinueWith((_) =>
             {
-                Log.Trace($"Couldn't parse date/time while reading future margin requirement file. Line: {csvLine}");
-            }
-
-            decimal initialOvernight;
-            if (!decimal.TryParse(line[1], out initialOvernight))
-            {
-                Log.Trace($"Couldn't parse Initial Overnight margin requirements while reading future margin requirement file. Line: {csvLine}");
-            }
-
-            decimal maintenanceOvernight;
-            if (!decimal.TryParse(line[2], out maintenanceOvernight))
-            {
-                Log.Trace($"Couldn't parse Maintenance Overnight margin requirements while reading future margin requirement file. Line: {csvLine}");
-            }
-
-            // default value, if present in file we try to parse
-            decimal initialIntraday = initialOvernight * 0.4m;
-            if (line.Length >= 4
-                && !decimal.TryParse(line[3], out initialIntraday))
-            {
-                Log.Trace($"Couldn't parse Initial Intraday margin requirements while reading future margin requirement file. Line: {csvLine}");
-            }
-
-            // default value, if present in file we try to parse
-            decimal maintenanceIntraday = maintenanceOvernight * 0.4m;
-            if (line.Length >= 5
-                && !decimal.TryParse(line[4], out maintenanceIntraday))
-            {
-                Log.Trace($"Couldn't parse Maintenance Intraday margin requirements while reading future margin requirement file. Line: {csvLine}");
-            }
-
-            return new MarginRequirementsEntry
-            {
-                Date = date,
-                InitialOvernight = initialOvernight,
-                MaintenanceOvernight = maintenanceOvernight,
-                InitialIntraday = initialIntraday,
-                MaintenanceIntraday = maintenanceIntraday
-            };
-        }
-
-        // Private POCO class for modeling margin requirements at given date
-        class MarginRequirementsEntry
-        {
-            /// <summary>
-            /// Date of margin requirements change
-            /// </summary>
-            public DateTime Date;
-
-            /// <summary>
-            /// Initial overnight margin for the contract effective from the date of change
-            /// </summary>
-            public decimal InitialOvernight;
-
-            /// <summary>
-            /// Maintenance overnight margin for the contract effective from the date of change
-            /// </summary>
-            public decimal MaintenanceOvernight;
-
-            /// <summary>
-            /// Initial intraday margin for the contract effective from the date of change
-            /// </summary>
-            public decimal InitialIntraday;
-
-            /// <summary>
-            /// Maintenance intraday margin for the contract effective from the date of change
-            /// </summary>
-            public decimal MaintenanceIntraday;
+                lock (_locker)
+                {
+                    _marginRequirementsCache = new();
+                }
+                ClearMarginCache();
+            });
         }
     }
 }

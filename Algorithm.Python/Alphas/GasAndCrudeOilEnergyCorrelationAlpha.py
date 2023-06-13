@@ -26,27 +26,7 @@
     sourced so the community and client funds can see an example of an alpha.
 '''
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Algorithm.Framework")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Orders import OrderStatus
-from QuantConnect.Orders.Fees import ConstantFeeModel
-from QuantConnect.Algorithm import *
-from QuantConnect.Indicators import *
-from QuantConnect.Algorithm.Framework import *
-from QuantConnect.Algorithm.Framework.Risk import *
-from QuantConnect.Algorithm.Framework.Alphas import *
-from QuantConnect.Algorithm.Framework.Execution import *
-from QuantConnect.Algorithm.Framework.Portfolio import *
-from QuantConnect.Algorithm.Framework.Selection import *
-import pandas as pd
-from datetime import timedelta
+from AlgorithmImports import *
 
 class GasAndCrudeOilEnergyCorrelationAlpha(QCAlgorithm):
 
@@ -172,7 +152,7 @@ class SymbolData:
     def __init__(self, symbol, dailyLookback, lookback, resolution, algorithm):
         self.Symbol = symbol
 
-        self.dailyReturn = RateOfChangePercent('f{symbol}.DailyROCP({1})', 1)
+        self.dailyReturn = RateOfChangePercent(f'{symbol}.DailyROCP({1})', 1)
         self.dailyConsolidator = algorithm.ResolveConsolidator(symbol, Resolution.Daily)
         self.dailyReturnHistory = RollingWindow[IndicatorDataPoint](dailyLookback)
 

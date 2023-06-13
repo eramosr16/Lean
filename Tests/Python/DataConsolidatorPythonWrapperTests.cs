@@ -17,8 +17,12 @@ using System;
 using NUnit.Framework;
 using Python.Runtime;
 using System.Collections.Generic;
+using System.Linq;
+using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 using QuantConnect.Python;
+using QuantConnect.Algorithm;
+using QuantConnect.Tests.Engine.DataFeeds;
 
 namespace QuantConnect.Tests.Python
 {
@@ -30,11 +34,8 @@ namespace QuantConnect.Tests.Python
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
-                    "from QuantConnect import *\n" +
-                    "from QuantConnect.Data.Market import *\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class CustomConsolidator():\n" +
                     "   def __init__(self):\n" +
                     "       self.UpdateWasCalled = False\n" +
@@ -75,11 +76,8 @@ namespace QuantConnect.Tests.Python
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
-                    "from QuantConnect import *\n" +
-                    "from QuantConnect.Data.Market import *\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class CustomConsolidator():\n" +
                     "   def __init__(self):\n" +
                     "       self.ScanWasCalled = False\n" +
@@ -109,11 +107,8 @@ namespace QuantConnect.Tests.Python
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
-                    "from QuantConnect import *\n" +
-                    "from QuantConnect.Data.Market import *\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class CustomConsolidator():\n" +
                     "   def __init__(self):\n" +
                     "       self.InputType = QuoteBar\n" +
@@ -137,11 +132,8 @@ namespace QuantConnect.Tests.Python
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
-                    "from QuantConnect import *\n" +
-                    "from QuantConnect.Data.Market import *\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class CustomConsolidator():\n" +
                     "   def __init__(self):\n" +
                     "       self.InputType = QuoteBar\n" +
@@ -165,33 +157,32 @@ namespace QuantConnect.Tests.Python
         {
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("CustomConsolidatorRegressionAlgorithm",
                 new Dictionary<string, string> {
-                    {"Total Trades", "32"},
+                    {"Total Trades", "30"},
                     {"Average Win", "0.32%"},
-                    {"Average Loss", "-0.02%"},
-                    {"Compounding Annual Return", "66.006%"},
+                    {"Average Loss", "-0.03%"},
+                    {"Compounding Annual Return", "67.341%"},
                     {"Drawdown", "0.300%"},
-                    {"Expectancy", "2.478"},
-                    {"Net Profit", "1.070%"},
-                    {"Sharpe Ratio", "8.835"},
-                    {"Probabilistic Sharpe Ratio", "89.255%"},
-                    {"Loss Rate", "75%"},
-                    {"Win Rate", "25%"},
-                    {"Profit-Loss Ratio", "12.91"},
-                    {"Alpha", "0.525"},
-                    {"Beta", "0.345"},
-                    {"Annual Standard Deviation", "0.081"},
-                    {"Annual Variance", "0.007"},
-                    {"Information Ratio", "1.156"},
-                    {"Tracking Error", "0.144"},
-                    {"Treynor Ratio", "2.07"},
-                    {"Total Fees", "$52.82"}
+                    {"Expectancy", "2.471"},
+                    {"Net Profit", "1.087%"},
+                    {"Sharpe Ratio", "6.941"},
+                    {"Probabilistic Sharpe Ratio", "89.678%"},
+                    {"Loss Rate", "73%"},
+                    {"Win Rate", "27%"},
+                    {"Profit-Loss Ratio", "12.02"},
+                    {"Alpha", "0.349"},
+                    {"Beta", "0.355"},
+                    {"Annual Standard Deviation", "0.069"},
+                    {"Annual Variance", "0.005"},
+                    {"Information Ratio", "0.961"},
+                    {"Tracking Error", "0.117"},
+                    {"Treynor Ratio", "1.349"},
+                    {"Total Fees", "$50.81"}
                 },
                 Language.Python,
                 AlgorithmStatus.Completed);
 
             AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus);
         }
@@ -201,21 +192,18 @@ namespace QuantConnect.Tests.Python
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
-                    "from QuantConnect import *\n" +
-                    "from QuantConnect.Data.Consolidators import *\n" +
-                    "from datetime import *\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class ImplementingClass():\n" +
                     "   def __init__(self):\n" +
                     "       self.EventCalled = False\n" +
-                    "       self.Consolidator = CustomConsolidator(timedelta(minutes=1))\n" +
+                    "       self.Consolidator = CustomConsolidator(timedelta(minutes=2))\n" +
                     "       self.Consolidator.DataConsolidated += self.ConsolidatorEvent\n" +
                     "   def ConsolidatorEvent(self, sender, bar):\n" +
                     "       self.EventCalled = True\n" +
                     "class CustomConsolidator(QuoteBarConsolidator):\n" +
                     "   def __init__(self,span):\n" +
+                    "       super().__init__(span)\n" +
                     "       self.Span = span");
 
                 var implementingClass = module.GetAttr("ImplementingClass").Invoke();
@@ -241,10 +229,42 @@ namespace QuantConnect.Tests.Python
                 };
 
                 wrapper.Update(bar1);
-                wrapper.Scan(time.AddMinutes(1));
+                wrapper.Scan(time.AddMinutes(2));
                 implementingClass.GetAttr("EventCalled").TryConvert(out called);
                 Assert.True(called);
             }
         }
+
+        [Test]
+        public void SubscriptionManagedDoesNotWrapCSharpConsolidators()
+        {
+            //Setup algorithm and Equity
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            var spy = algorithm.AddEquity("SPY").Symbol;
+
+            using (Py.GIL())
+            {
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
+                    "consolidator = QuoteBarConsolidator(timedelta(5))");
+
+                var pyConsolidator = module.GetAttr("consolidator");
+
+                algorithm.SubscriptionManager.AddConsolidator(spy, pyConsolidator);
+
+                pyConsolidator.TryConvert(out IDataConsolidator consolidator);
+                algorithm.SubscriptionManager.RemoveConsolidator(spy, consolidator);
+
+                var count = algorithm.SubscriptionManager
+                    .SubscriptionDataConfigService
+                    .GetSubscriptionDataConfigs(spy)
+                    .Sum(x => x.Consolidators.Count);
+
+                Assert.AreEqual(0, count);
+            }
+
+        }
+
     }
 }

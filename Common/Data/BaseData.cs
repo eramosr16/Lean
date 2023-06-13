@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,17 +14,15 @@
 */
 
 using System;
-using System.Collections.Generic;
+using NodaTime;
+using ProtoBuf;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
-using NodaTime;
-using ProtoBuf;
-using QuantConnect.Data.Custom.Benzinga;
-using QuantConnect.Data.Custom.Estimize;
-using QuantConnect.Data.Custom.Tiingo;
-using QuantConnect.Data.Market;
 using QuantConnect.Util;
+using QuantConnect.Data.Market;
+using System.Collections.Generic;
+using QuantConnect.Data.Custom.AlphaStreams;
 
 namespace QuantConnect.Data
 {
@@ -38,11 +36,8 @@ namespace QuantConnect.Data
     [ProtoInclude(200, typeof(QuoteBar))]
     [ProtoInclude(300, typeof(Dividend))]
     [ProtoInclude(400, typeof(Split))]
-    [ProtoInclude(500, typeof(TiingoNews))]
-    [ProtoInclude(600, typeof(BenzingaNews))]
-    [ProtoInclude(700, typeof(EstimizeEstimate))]
-    [ProtoInclude(800, typeof(EstimizeRelease))]
-    [ProtoInclude(900, typeof(EstimizeConsensus))]
+    [ProtoInclude(555, typeof(AlphaStreamsPortfolioState))]
+    [ProtoInclude(556, typeof(AlphaStreamsOrderEvent))]
     public abstract class BaseData : IBaseData
     {
         private decimal _value;
@@ -67,6 +62,11 @@ namespace QuantConnect.Data
         /// A list of high <see cref="Resolution"/>, including minute, second, and tick.
         /// </summary>
         protected static readonly List<Resolution> HighResolution = new List<Resolution> { Resolution.Minute, Resolution.Second, Resolution.Tick };
+
+        /// <summary>
+        /// A list of resolutions support by Options
+        /// </summary>
+        protected static readonly List<Resolution> OptionResolutions = new List<Resolution> { Resolution.Daily, Resolution.Hour, Resolution.Minute };
 
         /// <summary>
         /// Market Data Type of this data - does it come in individual price packets or is it grouped into OHLC.
@@ -122,7 +122,7 @@ namespace QuantConnect.Data
         /// <summary>
         /// As this is a backtesting platform we'll provide an alias of value as price.
         /// </summary>
-        public decimal Price => Value;
+        public virtual decimal Price => Value;
 
         /// <summary>
         /// Constructor for initialising the dase data class
@@ -203,8 +203,7 @@ namespace QuantConnect.Data
         /// <returns>True indicates mapping should be used</returns>
         public virtual bool RequiresMapping()
         {
-            return Symbol.SecurityType == SecurityType.Equity ||
-                   Symbol.SecurityType == SecurityType.Option;
+            return Symbol.RequiresMapping();
         }
 
         /// <summary>
@@ -240,12 +239,7 @@ namespace QuantConnect.Data
         {
             if (Symbol.SecurityType.IsOption() || Symbol.SecurityType == SecurityType.Index)
             {
-                return MinuteResolution;
-            }
-
-            if (Symbol.SecurityType == SecurityType.Future)
-            {
-                return HighResolution;
+                return OptionResolutions;
             }
 
             return AllResolutions;

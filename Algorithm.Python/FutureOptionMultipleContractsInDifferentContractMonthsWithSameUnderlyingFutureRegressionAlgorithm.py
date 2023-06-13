@@ -11,19 +11,7 @@
 ### See the License for the specific language governing permissions and
 ### limitations under the License.
 
-from datetime import datetime
-
-from System import *
-from System.Reflection import *
-import QuantConnect
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Orders import *
-from QuantConnect.Securities import *
-from QuantConnect.Securities.Future import *
-from QuantConnect import Market
+from AlgorithmImports import *
 
 ### <summary>
 ### This regression test tests for the loading of futures options contracts with a contract month of 2020-03 can live
@@ -38,17 +26,22 @@ class FutureOptionMultipleContractsInDifferentContractMonthsWithSameUnderlyingFu
             self._createOption(datetime(2020, 2, 25), OptionRight.Put, 1545.0): False
         }
 
-        self.SetStartDate(2020, 1, 5)
+
+        # Required for FOPs to use extended hours, until GH #6491 is addressed
+        self.UniverseSettings.ExtendedMarketHours = True
+
+        self.SetStartDate(2020, 1, 4)
         self.SetEndDate(2020, 1, 6)
 
-        goldFutures = self.AddFuture("GC", Resolution.Minute, QuantConnect.Market.COMEX)
+        goldFutures = self.AddFuture("GC", Resolution.Minute, Market.COMEX, extendedMarketHours=True)
         goldFutures.SetFilter(0, 365)
 
         self.AddFutureOption(goldFutures.Symbol)
 
     def OnData(self, data: Slice):
         for symbol in data.QuoteBars.Keys:
-            if symbol in self.expectedSymbols:
+            # Check that we are in regular hours, we can place a market order (on extended hours, limit orders should be used)
+            if symbol in self.expectedSymbols and self.IsInRegularHours(symbol):
                 invested = self.expectedSymbols[symbol]
                 if not invested:
                     self.MarketOrder(symbol, 1)
@@ -63,11 +56,13 @@ class FutureOptionMultipleContractsInDifferentContractMonthsWithSameUnderlyingFu
         if not self.Portfolio.Invested:
             raise AggregateException("Expected holdings at the end of algorithm, but none were found.")
 
+    def IsInRegularHours(self, symbol):
+        return self.Securities[symbol].Exchange.ExchangeOpen
 
     def _createOption(self, expiry: datetime, optionRight: OptionRight, strikePrice: float) -> Symbol:
-        return QuantConnect.Symbol.CreateOption(
-            QuantConnect.Symbol.CreateFuture("GC", QuantConnect.Market.COMEX, datetime(2020, 4, 28)),
-            QuantConnect.Market.COMEX,
+        return Symbol.CreateOption(
+            Symbol.CreateFuture("GC", Market.COMEX, datetime(2020, 4, 28)),
+            Market.COMEX,
             OptionStyle.American,
             optionRight,
             strikePrice,

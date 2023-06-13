@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -18,6 +18,7 @@ using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Orders;
 using QuantConnect.Report;
 using QuantConnect.Securities;
+using QuantConnect.Brokerages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,9 +28,9 @@ namespace QuantConnect.Tests.Report
     [TestFixture]
     public class PortfolioLooperAlgorithmTests
     {
-        private PortfolioLooperAlgorithm CreateAlgorithm(IEnumerable<Order> orders)
+        private PortfolioLooperAlgorithm CreateAlgorithm(IEnumerable<Order> orders, AlgorithmConfiguration algorithmConfiguration = null)
         {
-            var algorithm = new PortfolioLooperAlgorithm(100000m, orders);
+            var algorithm = new PortfolioLooperAlgorithm(100000m, orders, algorithmConfiguration);
 
             // Create MHDB and Symbol properties DB instances for the DataManager
             var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
@@ -106,6 +107,20 @@ namespace QuantConnect.Tests.Report
             Assert.IsTrue(algorithm.Securities.Where(x => x.Key.SecurityType == SecurityType.Cfd).All(x => x.Value.BuyingPowerModel.GetLeverage(x.Value) == 10000m));
             Assert.IsTrue(algorithm.Securities.Where(x => x.Key.SecurityType == SecurityType.Future).All(x => x.Value.BuyingPowerModel.GetLeverage(x.Value) == 1m));
             Assert.IsTrue(algorithm.Securities.Where(x => x.Key.SecurityType == SecurityType.Crypto).All(x => x.Value.BuyingPowerModel.GetLeverage(x.Value) == 10000m));
+        }
+
+        [TestCase("BTC", BrokerageName.Binance, AccountType.Cash)]
+        [TestCase("USDT", BrokerageName.GDAX, AccountType.Cash)]
+        [TestCase("EUR", BrokerageName.Bitfinex, AccountType.Margin)]
+        public void SetsTheRightAlgorithmConfiguration(string currency, BrokerageName brokerageName, AccountType accountType)
+        {
+            var algorithm = CreateAlgorithm(new List<Order>(),
+                new AlgorithmConfiguration(currency, brokerageName, accountType, new Dictionary<string, string>()));
+            algorithm.Initialize();
+
+            Assert.AreEqual(currency, algorithm.AccountCurrency);
+            Assert.AreEqual(brokerageName, BrokerageModel.GetBrokerageName(algorithm.BrokerageModel));
+            Assert.AreEqual(accountType, algorithm.BrokerageModel.AccountType);
         }
     }
 }

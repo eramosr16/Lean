@@ -24,6 +24,7 @@ using QuantConnect.Data;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
+using QuantConnect.Lean.Engine.DataFeeds.WorkScheduling;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
 using QuantConnect.Util;
@@ -84,7 +85,7 @@ namespace QuantConnect.Lean.Engine.Setup
                 var resolution = configs.GetHighestResolution();
                 var startTime = historyRequestFactory.GetStartTimeAlgoTz(
                     security.Symbol,
-                    10,
+                    60,
                     resolution,
                     hours,
                     configToUse.DataTimeZone);
@@ -117,7 +118,7 @@ namespace QuantConnect.Lean.Engine.Setup
             var unassignedCash = cashToUpdate.Where(x => x.ConversionRate == 0).ToList();
             if (unassignedCash.Any())
             {
-                Log.Error(
+                Log.Trace(
                     $"Failed to assign conversion rates for the following cash: {string.Join(",", unassignedCash.Select(x => x.Symbol))}." +
                     $" Attempting to request daily resolution history to resolve conversion rate");
 
@@ -154,8 +155,10 @@ namespace QuantConnect.Lean.Engine.Setup
                 }
             }
 
-            Log.Trace("BaseSetupHandler.SetupCurrencyConversions():" +
-                $"{Environment.NewLine}{algorithm.Portfolio.CashBook}");
+            Log.Trace($"BaseSetupHandler.SetupCurrencyConversions():{Environment.NewLine}" +
+                $"Account Type: {algorithm.BrokerageModel.AccountType}{Environment.NewLine}{Environment.NewLine}{algorithm.Portfolio.CashBook}");
+            // this is useful for debugging
+            algorithm.Portfolio.LogMarginInformation();
         }
 
         /// <summary>
@@ -167,7 +170,15 @@ namespace QuantConnect.Lean.Engine.Setup
         {
             var isolator = new Isolator();
             return isolator.ExecuteWithTimeLimit(TimeSpan.FromMinutes(5),
-                () => DebuggerHelper.Initialize(algorithmNodePacket.Language),
+                () => {
+                    DebuggerHelper.Initialize(algorithmNodePacket.Language, out var workersInitializationCallback);
+
+                    if(workersInitializationCallback != null)
+                    {
+                        // initialize workers for debugging if required
+                        WeightedWorkScheduler.Instance.AddSingleCallForAll(workersInitializationCallback);
+                    }
+                },
                 algorithmNodePacket.RamAllocation,
                 sleepIntervalMillis: 100,
                 workerThread: workerThread);

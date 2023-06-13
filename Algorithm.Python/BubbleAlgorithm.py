@@ -1,4 +1,4 @@
-﻿ # QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+ # QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,23 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Common")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Indicators import *
-from QuantConnect.Data import SubscriptionDataSource
-from QuantConnect.Python import PythonData
-from datetime import date, timedelta, datetime
-import numpy as np
-import math
-import json
-
+from AlgorithmImports import *
 
 ### <summary>
 ### Strategy example algorithm using CAPE - a bubble indicator dataset saved in dropbox. CAPE is based on a macroeconomic indicator(CAPE Ratio),
@@ -110,7 +94,7 @@ class BubbleAlgorithm(QCAlgorithm):
                         and self.Time.hour == 9 and self.Time.minute == 31:
                             self.BuyStock(stock)
                 
-                # Cape Ratio is missing from orignial data
+                # Cape Ratio is missing from original data
                 # Most recent cape data is most likely to be missing 
                 elif self._currCape == 0:
                     self.Debug("Exiting due to no CAPE!")
@@ -174,7 +158,7 @@ class Cape(PythonData):
         return SubscriptionDataSource("https://www.dropbox.com/s/ggt6blmib54q36e/CAPE.csv?dl=1", SubscriptionTransportMedium.RemoteFile)
     
     
-    ''' Reader Method : using set of arguements we specify read out type. Enumerate until 
+    ''' Reader Method : using set of arguments we specify read out type. Enumerate until 
         the end of the data stream or file. E.g. Read CSV file line by line and convert into data types. '''
         
     # <returns>BaseData type set by Subscription Method.</returns>

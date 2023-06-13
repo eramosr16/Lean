@@ -71,6 +71,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 36;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -78,45 +88,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "716.979%"},
+            {"Compounding Annual Return", "808.402%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
-            {"Net Profit", "2.919%"},
-            {"Sharpe Ratio", "51.393"},
-            {"Probabilistic Sharpe Ratio", "0%"},
+            {"Net Profit", "3.069%"},
+            {"Sharpe Ratio", "19.579"},
+            {"Probabilistic Sharpe Ratio", "100.000%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "4.401"},
-            {"Beta", "1.732"},
-            {"Annual Standard Deviation", "0.1"},
-            {"Annual Variance", "0.01"},
-            {"Information Ratio", "57.872"},
-            {"Tracking Error", "0.082"},
-            {"Treynor Ratio", "2.973"},
+            {"Alpha", "1.292"},
+            {"Beta", "0.537"},
+            {"Annual Standard Deviation", "0.078"},
+            {"Annual Variance", "0.006"},
+            {"Information Ratio", "14.15"},
+            {"Tracking Error", "0.077"},
+            {"Treynor Ratio", "2.837"},
             {"Total Fees", "$1.00"},
-            {"Estimated Strategy Capacity", "$35000000.00"},
+            {"Estimated Strategy Capacity", "$37000000.00"},
             {"Lowest Capacity Asset", "GOOCV VP83T1ZUHROL"},
-            {"Fitness Score", "0.245"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "79228162514264337593543950335"},
-            {"Portfolio Turnover", "0.245"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "f21c21e86a17e6295635fd8fb9e4ef62"}
+            {"Portfolio Turnover", "19.60%"},
+            {"OrderListHash", "e13a2a28fe02267625b423c20e7ff572"}
         };
     }
 }

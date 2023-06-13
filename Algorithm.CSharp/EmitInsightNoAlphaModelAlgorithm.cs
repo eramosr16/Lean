@@ -51,6 +51,10 @@ namespace QuantConnect.Algorithm.CSharp
             // set algorithm framework models except ALPHA
             SetUniverseSelection(new ManualUniverseSelectionModel(_symbol));
             SetPortfolioConstruction(new EqualWeightingPortfolioConstructionModel());
+
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
         }
 
         /// <summary>
@@ -107,6 +111,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 48;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -114,45 +128,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "5"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.02%"},
-            {"Compounding Annual Return", "-72.266%"},
+            {"Compounding Annual Return", "-72.241%"},
             {"Drawdown", "2.900%"},
             {"Expectancy", "-1"},
-            {"Net Profit", "-1.742%"},
-            {"Sharpe Ratio", "-2.983"},
-            {"Probabilistic Sharpe Ratio", "22.301%"},
+            {"Net Profit", "-1.740%"},
+            {"Sharpe Ratio", "-2.985"},
+            {"Probabilistic Sharpe Ratio", "24.616%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.388"},
-            {"Beta", "-0.138"},
-            {"Annual Standard Deviation", "0.195"},
-            {"Annual Variance", "0.038"},
-            {"Information Ratio", "-6.727"},
-            {"Tracking Error", "0.294"},
-            {"Treynor Ratio", "4.204"},
+            {"Alpha", "1.316"},
+            {"Beta", "-0.998"},
+            {"Annual Standard Deviation", "0.222"},
+            {"Annual Variance", "0.049"},
+            {"Information Ratio", "-5.95"},
+            {"Tracking Error", "0.445"},
+            {"Treynor Ratio", "0.664"},
             {"Total Fees", "$19.23"},
             {"Estimated Strategy Capacity", "$540000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Fitness Score", "0.054"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-4.06"},
-            {"Return Over Maximum Drawdown", "-25.225"},
-            {"Portfolio Turnover", "0.999"},
-            {"Total Insights Generated", "1"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "1"},
-            {"Long/Short Ratio", "0%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "39c512346541c1d40c04a514d605b723"}
+            {"Portfolio Turnover", "100.02%"},
+            {"OrderListHash", "c548ae1a6ae4d75e832ed401881ddb21"}
         };
     }
 }

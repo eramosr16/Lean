@@ -63,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Order fill event handler. On an order fill update the resulting information is passed to this method.
         /// </summary>
-        /// <param name="orderEvent">Order event details containing details of the evemts</param>
+        /// <param name="orderEvent">Order event details containing details of the events</param>
         /// <remarks>This method can be called asynchronously and so should only be used by seasoned C# experts. Ensure you use proper locks on thread-unsafe objects</remarks>
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
@@ -81,52 +81,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 15643;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 56;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "20"},
+            {"Total Trades", "19"},
             {"Average Win", "0.62%"},
             {"Average Loss", "-0.19%"},
-            {"Compounding Annual Return", "392.086%"},
+            {"Compounding Annual Return", "398.867%"},
             {"Drawdown", "1.500%"},
-            {"Expectancy", "1.386"},
-            {"Net Profit", "2.058%"},
-            {"Sharpe Ratio", "10.412"},
-            {"Probabilistic Sharpe Ratio", "70.414%"},
+            {"Expectancy", "1.395"},
+            {"Net Profit", "2.076%"},
+            {"Sharpe Ratio", "10.494"},
+            {"Probabilistic Sharpe Ratio", "70.084%"},
             {"Loss Rate", "44%"},
             {"Win Rate", "56%"},
-            {"Profit-Loss Ratio", "3.29"},
-            {"Alpha", "0.507"},
-            {"Beta", "1.106"},
-            {"Annual Standard Deviation", "0.259"},
-            {"Annual Variance", "0.067"},
-            {"Information Ratio", "8.435"},
-            {"Tracking Error", "0.085"},
-            {"Treynor Ratio", "2.441"},
-            {"Total Fees", "$38.63"},
-            {"Estimated Strategy Capacity", "$2100000.00"},
+            {"Profit-Loss Ratio", "3.31"},
+            {"Alpha", "0.532"},
+            {"Beta", "1.115"},
+            {"Annual Standard Deviation", "0.261"},
+            {"Annual Variance", "0.068"},
+            {"Information Ratio", "8.837"},
+            {"Tracking Error", "0.086"},
+            {"Treynor Ratio", "2.46"},
+            {"Total Fees", "$40.66"},
+            {"Estimated Strategy Capacity", "$1900000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.999"},
-            {"Kelly Criterion Estimate", "34.534"},
-            {"Kelly Criterion Probability Value", "0.444"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "440.494"},
-            {"Portfolio Turnover", "1.083"},
-            {"Total Insights Generated", "5"},
-            {"Total Insights Closed", "3"},
-            {"Total Insights Analysis Completed", "3"},
-            {"Long Insight Count", "3"},
-            {"Short Insight Count", "2"},
-            {"Long/Short Ratio", "150.0%"},
-            {"Estimated Monthly Alpha Value", "$801935.3567"},
-            {"Total Accumulated Estimated Alpha Value", "$129200.6964"},
-            {"Mean Population Estimated Insight Value", "$43066.8988"},
-            {"Mean Population Direction", "100%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "100%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "b546a93144f0567a21f4be27e2dc7e0b"}
+            {"Portfolio Turnover", "146.73%"},
+            {"OrderListHash", "3154429f6891e9e249b2647a09286a4c"}
         };
     }
 }

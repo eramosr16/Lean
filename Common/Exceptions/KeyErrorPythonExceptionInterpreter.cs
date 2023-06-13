@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,32 +14,40 @@
 */
 
 using System;
-using System.Collections.Generic;
 using Python.Runtime;
 using QuantConnect.Util;
+using System.Collections.Generic;
 
 namespace QuantConnect.Exceptions
 {
     /// <summary>
     /// Interprets <see cref="KeyErrorPythonExceptionInterpreter"/> instances
     /// </summary>
-    public class KeyErrorPythonExceptionInterpreter : IExceptionInterpreter
+    public class KeyErrorPythonExceptionInterpreter : PythonExceptionInterpreter
     {
         /// <summary>
         /// Determines the order that an instance of this class should be called
         /// </summary>
-        public int Order => 0;
+        public override int Order => 0;
 
         /// <summary>
         /// Determines if this interpreter should be applied to the specified exception.
         /// </summary>
         /// <param name="exception">The exception to check</param>
         /// <returns>True if the exception can be interpreted, false otherwise</returns>
-        public bool CanInterpret(Exception exception)
+        public override bool CanInterpret(Exception exception)
         {
-            return 
-                exception?.GetType() == typeof(PythonException) &&
-                exception.Message.Contains("KeyError");
+            var pythonException = exception as PythonException;
+            if (pythonException == null)
+            {
+                return false;
+            }
+
+            using (Py.GIL())
+            {
+                return base.CanInterpret(exception) &&
+                    pythonException.Type.Name.Contains("KeyError", StringComparison.InvariantCultureIgnoreCase);
+            }
         }
         /// <summary>
         /// Interprets the specified exception into a new exception
@@ -47,7 +55,7 @@ namespace QuantConnect.Exceptions
         /// <param name="exception">The exception to be interpreted</param>
         /// <param name="innerInterpreter">An interpreter that should be applied to the inner exception.</param>
         /// <returns>The interpreted exception</returns>
-        public Exception Interpret(Exception exception, IExceptionInterpreter innerInterpreter)
+        public override Exception Interpret(Exception exception, IExceptionInterpreter innerInterpreter)
         {
             var pe = (PythonException)exception;
 
@@ -60,7 +68,7 @@ namespace QuantConnect.Exceptions
             {
                 key = pe.Message.GetStringBetweenChars('\'', '\'');
             }
-            var message = $"Trying to retrieve an element from a collection using a key that does not exist in that collection throws a KeyError exception. To prevent the exception, ensure that the {key} key exist in the collection and/or that collection is not empty.";
+            var message = Messages.KeyErrorPythonExceptionInterpreter.KeyNotFoundInCollection(key);
 
             message += PythonUtil.PythonExceptionStackParser(pe.StackTrace);
 

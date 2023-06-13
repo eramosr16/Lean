@@ -37,6 +37,10 @@ namespace QuantConnect.Algorithm.CSharp
             // Set requested data resolution
             UniverseSettings.Resolution = Resolution.Daily;
 
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
+
             SetStartDate(2014, 03, 24);
             SetEndDate(2014, 04, 07);
             SetCash(100000);
@@ -86,52 +90,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 234018;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "23"},
-            {"Average Win", "0.01%"},
+            {"Total Trades", "21"},
+            {"Average Win", "0.00%"},
             {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "-75.293%"},
+            {"Compounding Annual Return", "-75.275%"},
             {"Drawdown", "5.800%"},
-            {"Expectancy", "-0.822"},
-            {"Net Profit", "-5.584%"},
-            {"Sharpe Ratio", "-3.264"},
-            {"Probabilistic Sharpe Ratio", "5.887%"},
-            {"Loss Rate", "92%"},
-            {"Win Rate", "8%"},
-            {"Profit-Loss Ratio", "1.13"},
-            {"Alpha", "-0.593"},
-            {"Beta", "0.711"},
-            {"Annual Standard Deviation", "0.204"},
-            {"Annual Variance", "0.042"},
-            {"Information Ratio", "-2.924"},
-            {"Tracking Error", "0.193"},
-            {"Treynor Ratio", "-0.935"},
-            {"Total Fees", "$25.95"},
-            {"Estimated Strategy Capacity", "$520000000.00"},
+            {"Expectancy", "-0.609"},
+            {"Net Profit", "-5.581%"},
+            {"Sharpe Ratio", "-3.25"},
+            {"Probabilistic Sharpe Ratio", "5.546%"},
+            {"Loss Rate", "73%"},
+            {"Win Rate", "27%"},
+            {"Profit-Loss Ratio", "0.43"},
+            {"Alpha", "-0.498"},
+            {"Beta", "1.484"},
+            {"Annual Standard Deviation", "0.196"},
+            {"Annual Variance", "0.039"},
+            {"Information Ratio", "-3.843"},
+            {"Tracking Error", "0.141"},
+            {"Treynor Ratio", "-0.43"},
+            {"Total Fees", "$31.25"},
+            {"Estimated Strategy Capacity", "$550000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
-            {"Fitness Score", "0.004"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "1"},
-            {"Sortino Ratio", "-4.452"},
-            {"Return Over Maximum Drawdown", "-13.058"},
-            {"Portfolio Turnover", "0.083"},
-            {"Total Insights Generated", "33"},
-            {"Total Insights Closed", "30"},
-            {"Total Insights Analysis Completed", "30"},
-            {"Long Insight Count", "33"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "be3b0d8b0e2cb312aae1b043e1bef9aa"}
+            {"Portfolio Turnover", "7.33%"},
+            {"OrderListHash", "6aab808e341ae46946b91ba378073531"}
         };
     }
 }

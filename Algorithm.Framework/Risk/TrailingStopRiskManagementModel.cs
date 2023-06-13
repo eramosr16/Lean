@@ -27,7 +27,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
     public class TrailingStopRiskManagementModel : RiskManagementModel
     {
         private readonly decimal _maximumDrawdownPercent;
-        private Dictionary<Symbol, decimal> _trailingHighs = new Dictionary<Symbol, decimal>();
+        private readonly Dictionary<Symbol, HoldingsState> _trailingAbsoluteHoldingsState = new Dictionary<Symbol, HoldingsState>();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TrailingStopRiskManagementModel"/> class
@@ -35,7 +35,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
         /// <param name="maximumDrawdownPercent">The maximum percentage relative drawdown allowed for algorithm portfolio compared with the highest unrealized profit, defaults to 5% drawdown per security</param>
         public TrailingStopRiskManagementModel(decimal maximumDrawdownPercent = 0.05m)
         {
-            _maximumDrawdownPercent = -Math.Abs(maximumDrawdownPercent);
+            _maximumDrawdownPercent = Math.Abs(maximumDrawdownPercent);
         }
 
         /// <summary>
@@ -53,36 +53,58 @@ namespace QuantConnect.Algorithm.Framework.Risk
                 // Remove if not invested
                 if (!security.Invested)
                 {
-                    if (_trailingHighs.ContainsKey(symbol))
-                    {
-                        _trailingHighs.Remove(symbol);
-                    }
+                    _trailingAbsoluteHoldingsState.Remove(symbol);
                     continue;
                 }
 
-                // Add newly invested securities
-                if (!_trailingHighs.ContainsKey(symbol))
+                var position = security.Holdings.IsLong ? PositionSide.Long : PositionSide.Short;
+                var absoluteHoldingsValue = security.Holdings.AbsoluteHoldingsValue;
+                HoldingsState trailingAbsoluteHoldingsState;
+
+                // Add newly invested security (if doesn't exist) or reset holdings state (if position changed)
+                if (!_trailingAbsoluteHoldingsState.TryGetValue(symbol, out trailingAbsoluteHoldingsState) ||
+                    position != trailingAbsoluteHoldingsState.Position)
                 {
-                    _trailingHighs.Add(symbol, security.Holdings.AveragePrice); // Set to average holding cost
+                    _trailingAbsoluteHoldingsState[symbol] = trailingAbsoluteHoldingsState = new HoldingsState(position, security.Holdings.AbsoluteHoldingsCost);
+                }
+
+                var trailingAbsoluteHoldingsValue = trailingAbsoluteHoldingsState.AbsoluteHoldingsValue;
+
+                // Check for new max (for long position) or min (for short position) absolute holdings value
+                if ((position == PositionSide.Long && trailingAbsoluteHoldingsValue < absoluteHoldingsValue) ||
+                    (position == PositionSide.Short && trailingAbsoluteHoldingsValue > absoluteHoldingsValue))
+                {
+                    trailingAbsoluteHoldingsState.AbsoluteHoldingsValue = absoluteHoldingsValue;
                     continue;
                 }
 
-                // Check for new highs and update - set to tradebar high
-                if (_trailingHighs[symbol] < security.High)
-                {
-                    _trailingHighs[symbol] = security.High;
-                    continue;
-                }
+                var drawdown = Math.Abs((trailingAbsoluteHoldingsValue - absoluteHoldingsValue) / trailingAbsoluteHoldingsValue);
 
-                // Check for securities past the drawdown limit
-                var securityHigh = _trailingHighs[symbol];
-                var drawdown = (security.Low / securityHigh) - 1m;
-
-                if (drawdown < _maximumDrawdownPercent)
+                if (_maximumDrawdownPercent < drawdown)
                 {
+                    // Cancel insights
+                    algorithm.Insights.Cancel(new[] { symbol });
+
+                    _trailingAbsoluteHoldingsState.Remove(symbol);
                     // liquidate
-                    yield return new PortfolioTarget(security.Symbol, 0);
+                    yield return new PortfolioTarget(symbol, 0);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Helper class used to store holdings state for the <see cref="TrailingStopRiskManagementModel"/>
+        /// in <see cref="ManageRisk"/>
+        /// </summary>
+        private class HoldingsState
+        {
+            public PositionSide Position;
+            public decimal AbsoluteHoldingsValue;
+
+            public HoldingsState(PositionSide position, decimal absoluteHoldingsValue)
+            {
+                Position = position;
+                AbsoluteHoldingsValue = absoluteHoldingsValue;
             }
         }
     }

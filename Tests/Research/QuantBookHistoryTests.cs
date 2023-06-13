@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -196,6 +196,40 @@ namespace QuantConnect.Tests.Research
         }
 
         [Test]
+        public void OptionIndexWeekly()
+        {
+            var qb = new QuantBook();
+            var spxw = qb.AddIndexOption(Symbols.SPX, "SPXW");
+            spxw.SetFilter(u => u.Strikes(0, 1)
+                 // single week ahead since there are many SPXW contracts and we want to preserve performance
+                 .Expiration(0, 7)
+                 .IncludeWeeklys());
+
+            var startTime = new DateTime(2021, 1, 4);
+
+            var historyByOptionSymbol = qb.GetOptionHistory(spxw.Symbol, startTime);
+            var historyByUnderlyingSymbol = qb.GetOptionHistory(Symbols.SPX, "SPXW", startTime);
+
+            List<DateTime> expiry;
+            List<DateTime> byUnderlyingExpiry;
+
+            historyByOptionSymbol.GetExpiryDates().TryConvert(out expiry);
+            historyByUnderlyingSymbol.GetExpiryDates().TryConvert(out byUnderlyingExpiry);
+
+            List<decimal> strikes;
+            List<decimal> byUnderlyingStrikes;
+
+            historyByOptionSymbol.GetStrikes().TryConvert(out strikes);
+            historyByUnderlyingSymbol.GetStrikes().TryConvert(out byUnderlyingStrikes);
+
+            Assert.IsTrue(expiry.Count > 0);
+            Assert.IsTrue(expiry.SequenceEqual(byUnderlyingExpiry));
+
+            Assert.IsTrue(strikes.Count > 0);
+            Assert.IsTrue(strikes.SequenceEqual(byUnderlyingStrikes));
+        }
+
+        [Test]
         public void OptionUnderlyingSymbolQuantBookHistory()
         {
             var qb = new QuantBook();
@@ -293,7 +327,7 @@ namespace QuantConnect.Tests.Research
                 var future = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, expiry);
                 var start = new DateTime(2020, 1, 5);
                 var end = new DateTime(2020, 1, 6);
-                var history = qb.GetOptionHistory(future, start, end, Resolution.Minute);
+                var history = qb.GetOptionHistory(future, start, end, Resolution.Minute, extendedMarketHours: true);
                 dynamic df = history.GetAllData();
 
                 Assert.IsNotNull(df);
@@ -322,7 +356,7 @@ namespace QuantConnect.Tests.Research
 
                 var start = new DateTime(2020, 1, 5);
                 var end = new DateTime(2020, 1, 6);
-                var history = qb.GetOptionHistory(futureOption, start, end, Resolution.Minute);
+                var history = qb.GetOptionHistory(futureOption, start, end, Resolution.Minute, extendedMarketHours: true);
                 dynamic df = history.GetAllData();
 
                 Assert.IsNotNull(df);
@@ -342,6 +376,124 @@ namespace QuantConnect.Tests.Research
             Assert.Throws<ArgumentException>(() =>
             {
                 qb.GetOptionHistory(future, default(DateTime), DateTime.MaxValue, Resolution.Minute);
+            });
+        }
+
+        [TestCase(true, true, 1920)]
+        [TestCase(true, false, 780)]
+        [TestCase(false, true, 898)]
+        [TestCase(false, false, 390)]
+        public void OptionHistorySpecifyingFillForwardAndExtendedMarket(bool fillForward, bool extendedMarket, int expectedCount)
+        {
+            using (Py.GIL())
+            {
+                var qb = new QuantBook();
+                var start = new DateTime(2013, 10, 11);
+                var end = new DateTime(2013, 10, 15);
+
+                var spy = qb.AddEquity("SPY");
+                dynamic history = qb.GetOptionHistory(spy.Symbol, start, end, Resolution.Minute, fillForward, extendedMarket).GetAllData();
+                var historyCount = (history.shape[0] as PyObject).As<int>();
+
+                Assert.AreEqual(expectedCount, historyCount);
+            }
+        }
+
+        [TestCase(true, true, 8640)]
+        [TestCase(true, false, 2700)]
+        [TestCase(false, true, 6899)]
+        [TestCase(false, false, 2249)]
+        public void FutureHistorySpecifyingFillForwardAndExtendedMarket(bool fillForward, bool extendedMarket, int expectedCount)
+        {
+            using (Py.GIL())
+            {
+                var qb = new QuantBook();
+                var start = new DateTime(2013, 10, 6);
+                var end = new DateTime(2013, 10, 15);
+
+                var future = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2013, 12, 20));
+                dynamic history = qb.GetFutureHistory(future, start, end, Resolution.Minute, fillForward, extendedMarket).GetAllData();
+                var historyCount = (history.shape[0] as PyObject).As<int>();
+
+                Assert.AreEqual(expectedCount, historyCount);
+            }
+        }
+
+        [TestCase(Language.CSharp)]
+        [TestCase(Language.Python)]
+        public void OptionHistoryObjectIsIterable(Language language)
+        {
+            var qb = new QuantBook();
+            var start = new DateTime(2013, 10, 11);
+            var end = new DateTime(2013, 10, 15);
+
+            var spy = qb.AddEquity("SPY");
+            var history = qb.GetOptionHistory(spy.Symbol, start, end, Resolution.Minute);
+
+            Assert.DoesNotThrow(() =>
+            {
+                if (language == Language.CSharp)
+                {
+                    Assert.AreEqual(780, history.Count());
+                }
+                else
+                {
+                    using (Py.GIL())
+                    {
+                        var testModule = PyModule.FromString("testModule",
+                        @"
+def getOptionHistory(qb, symbol, start, end, resolution):
+    return qb.GetOptionHistory(symbol, start, end, resolution)
+
+def getHistoryCount(history):
+    return len(list(history))
+        ");
+
+                        dynamic getOptionHistory = testModule.GetAttr("getOptionHistory");
+                        dynamic getHistoryCount = testModule.GetAttr("getHistoryCount");
+                        var pyHistory = getOptionHistory(qb, spy.Symbol, start, end, Resolution.Minute);
+                        Assert.AreEqual(780, getHistoryCount(pyHistory).AsManagedObject(typeof(int)));
+                    }
+                }
+            });
+        }
+
+        [TestCase(Language.CSharp)]
+        [TestCase(Language.Python)]
+        public void FutureHistoryObjectIsIterable(Language language)
+        {
+            var qb = new QuantBook();
+            var start = new DateTime(2013, 10, 6);
+            var end = new DateTime(2013, 10, 15);
+
+            var futureSymbol = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2013, 12, 20));
+            var history = qb.GetFutureHistory(futureSymbol, start, end, Resolution.Minute);
+
+            Assert.DoesNotThrow(() =>
+            {
+                if (language == Language.CSharp)
+                {
+                    Assert.AreEqual(2700, history.Count());
+                }
+                else
+                {
+                    using (Py.GIL())
+                    {
+                        var testModule = PyModule.FromString("testModule",
+                        @"
+def getFutureHistory(qb, symbol, start, end, resolution):
+    return qb.GetFutureHistory(symbol, start, end, resolution)
+
+def getHistoryCount(history):
+    return len(list(history))
+        ");
+
+                        dynamic getFutureHistory = testModule.GetAttr("getFutureHistory");
+                        dynamic getHistoryCount = testModule.GetAttr("getHistoryCount");
+                        var pyHistory = getFutureHistory(qb, futureSymbol, start, end, Resolution.Minute);
+                        Assert.AreEqual(2700, getHistoryCount(pyHistory).AsManagedObject(typeof(int)));
+                    }
+                }
             });
         }
     }

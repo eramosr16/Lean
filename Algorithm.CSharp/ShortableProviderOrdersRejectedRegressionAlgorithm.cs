@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using QuantConnect.Brokerages;
 using QuantConnect.Data;
+using QuantConnect.Securities;
 using QuantConnect.Data.Shortable;
 using QuantConnect.Interfaces;
 using QuantConnect.Orders;
@@ -29,11 +30,12 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public class ShortableProviderOrdersRejectedRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        private Symbol _spy;
-        private Symbol _aig;
+        private Security _spy;
+        private Security _aig;
         private readonly List<OrderTicket> _ordersAllowed = new List<OrderTicket>();
         private readonly List<OrderTicket> _ordersDenied = new List<OrderTicket>();
         private bool _initialize;
+        private OrderEvent _lastOrderEvent;
         private bool _invalidatedAllowedOrder;
         private bool _invalidatedNewOrderWithPortfolioHoldings;
 
@@ -43,19 +45,20 @@ namespace QuantConnect.Algorithm.CSharp
             SetEndDate(2013, 10, 11);
             SetCash(10000000);
 
-            _spy = AddEquity("SPY", Resolution.Minute).Symbol;
-            _aig = AddEquity("AIG", Resolution.Minute).Symbol;
+            _spy = AddEquity("SPY", Resolution.Minute);
+            _aig = AddEquity("AIG", Resolution.Minute);
 
-            SetBrokerageModel(new RegressionTestShortableBrokerageModel());
+            _spy.SetShortableProvider(new RegressionTestShortableProvider());
+            _aig.SetShortableProvider(new RegressionTestShortableProvider());
         }
 
         public override void OnData(Slice data)
         {
             if (!_initialize)
             {
-                HandleOrder(LimitOrder(_spy, -1001, 10000m)); // Should be canceled, exceeds the max shortable quantity
-                HandleOrder(LimitOrder(_spy, -1000, 10000m)); // Allowed, orders at or below 1000 should be accepted
-                HandleOrder(LimitOrder(_spy, -10, 0.01m)); // Should be canceled, the total quantity we would be short would exceed the max shortable quantity.
+                HandleOrder(LimitOrder(_spy.Symbol, -1001, 10000m)); // Should be canceled, exceeds the max shortable quantity
+                HandleOrder(LimitOrder(_spy.Symbol, -1000, 10000m)); // Allowed, orders at or below 1000 should be accepted
+                HandleOrder(LimitOrder(_spy.Symbol, -10, 0.01m)); // Should be canceled, the total quantity we would be short would exceed the max shortable quantity.
                 _initialize = true;
                 return;
             }
@@ -99,14 +102,14 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (!_invalidatedNewOrderWithPortfolioHoldings)
             {
-                HandleOrder(MarketOrder(_spy, -1000)); // Should succeed, no holdings and no open orders to stop this
-                var spyShares = Portfolio[_spy].Quantity;
+                HandleOrder(MarketOrder(_spy.Symbol, -1000)); // Should succeed, no holdings and no open orders to stop this
+                var spyShares = Portfolio[_spy.Symbol].Quantity;
                 if (spyShares != -1000m)
                 {
                     throw new Exception($"Expected -1000 shares in portfolio, found: {spyShares}");
                 }
 
-                HandleOrder(LimitOrder(_spy, -1, 0.01m)); // Should fail, portfolio holdings are at the max shortable quantity.
+                HandleOrder(LimitOrder(_spy.Symbol, -1, 0.01m)); // Should fail, portfolio holdings are at the max shortable quantity.
                 if (_ordersDenied.Count != 1)
                 {
                     throw new Exception($"Expected limit order to fail due to existing holdings, but found {_ordersDenied.Count} failures");
@@ -115,7 +118,7 @@ namespace QuantConnect.Algorithm.CSharp
                 _ordersAllowed.Clear();
                 _ordersDenied.Clear();
 
-                HandleOrder(MarketOrder(_aig, -1001));
+                HandleOrder(MarketOrder(_aig.Symbol, -1001));
                 if (_ordersAllowed.Count != 1)
                 {
                     throw new Exception($"Expected market order of -1001 BAC to not fail");
@@ -125,10 +128,21 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
+        public override void OnOrderEvent(OrderEvent orderEvent)
+        {
+            _lastOrderEvent = orderEvent;
+        }
+
         private void HandleOrder(OrderTicket orderTicket)
         {
             if (orderTicket.SubmitRequest.Status == OrderRequestStatus.Error)
             {
+                if (_lastOrderEvent == null || _lastOrderEvent.Status != OrderStatus.Invalid)
+                {
+                    throw new Exception($"Expected order event with invalid status for ticket {orderTicket}");
+                }
+
+                _lastOrderEvent = null;
                 _ordersDenied.Add(orderTicket);
                 return;
             }
@@ -143,14 +157,6 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
-        public class RegressionTestShortableBrokerageModel : DefaultBrokerageModel
-        {
-            public RegressionTestShortableBrokerageModel() : base()
-            {
-                ShortableProvider = new RegressionTestShortableProvider();
-            }
-        }
-
         /// <summary>
         /// This is used by the regression test system to indicate if the open source Lean repository has the required data to run this algorithm.
         /// </summary>
@@ -162,6 +168,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 9410;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -169,45 +185,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-1.673%"},
+            {"Compounding Annual Return", "-1.623%"},
             {"Drawdown", "0.100%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-0.035%"},
-            {"Sharpe Ratio", "-1.746"},
-            {"Probabilistic Sharpe Ratio", "35.739%"},
+            {"Net Profit", "-0.034%"},
+            {"Sharpe Ratio", "-1.535"},
+            {"Probabilistic Sharpe Ratio", "33.979%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.004"},
+            {"Alpha", "0.002"},
             {"Beta", "-0.022"},
-            {"Annual Standard Deviation", "0.005"},
+            {"Annual Standard Deviation", "0.004"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-2.546"},
-            {"Tracking Error", "0.219"},
-            {"Treynor Ratio", "0.373"},
+            {"Information Ratio", "-2.082"},
+            {"Tracking Error", "0.179"},
+            {"Treynor Ratio", "0.269"},
             {"Total Fees", "$10.01"},
-            {"Estimated Strategy Capacity", "$90000000.00"},
+            {"Estimated Strategy Capacity", "$99000000.00"},
             {"Lowest Capacity Asset", "AIG R735QTJ8XC9X"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-4.875"},
-            {"Return Over Maximum Drawdown", "-21.808"},
-            {"Portfolio Turnover", "0.003"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "8bba08ad8e5e3b0094852e396ccc7d19"}
+            {"Portfolio Turnover", "0.23%"},
+            {"OrderListHash", "3ac2d7a61f71c1345eb569e30cc2834c"}
         };
     }
 }

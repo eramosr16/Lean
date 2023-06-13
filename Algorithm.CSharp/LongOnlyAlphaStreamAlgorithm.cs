@@ -52,6 +52,10 @@ namespace QuantConnect.Algorithm.CSharp
             SetPortfolioConstruction(new EqualWeightingPortfolioConstructionModel(Resolution.Daily, PortfolioBias.Long));
             SetExecution(new ImmediateExecutionModel());
 
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
+
             // set algorithm framework models
             SetUniverseSelection(
                 new ManualUniverseSelectionModel(
@@ -94,6 +98,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 7843;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -120,25 +134,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Fees", "$309.75"},
             {"Estimated Strategy Capacity", "$15000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Fitness Score", "0.999"},
-            {"Kelly Criterion Estimate", "-6.933"},
-            {"Kelly Criterion Probability Value", "0.593"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "68.722"},
-            {"Portfolio Turnover", "1.741"},
-            {"Total Insights Generated", "10"},
-            {"Total Insights Closed", "8"},
-            {"Total Insights Analysis Completed", "8"},
-            {"Long Insight Count", "5"},
-            {"Short Insight Count", "5"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$82986.8301"},
-            {"Total Accumulated Estimated Alpha Value", "$13370.1004"},
-            {"Mean Population Estimated Insight Value", "$1671.2626"},
-            {"Mean Population Direction", "62.5%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "73.1163%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
+            {"Portfolio Turnover", "179.37%"},
             {"OrderListHash", "79a973155c0106b60249931daa89c54b"}
         };
     }

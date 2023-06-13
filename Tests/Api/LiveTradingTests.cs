@@ -16,11 +16,13 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using NUnit.Framework;
 using QuantConnect.Api;
+using System.Threading;
+using QuantConnect.Orders;
 using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
+using System.Collections.Generic;
 
 namespace QuantConnect.Tests.API
 {
@@ -53,7 +55,7 @@ namespace QuantConnect.Tests.API
                 Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateAlgorithm.cs")
             };
 
-            RunLiveAlgorithm(settings, file);
+            RunLiveAlgorithm(settings, file, StopLiveAlgos);
         }
 
         /// <summary>
@@ -78,7 +80,7 @@ namespace QuantConnect.Tests.API
                 Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateForexAlgorithm.cs")
             };
 
-            RunLiveAlgorithm(settings, file);
+            RunLiveAlgorithm(settings, file, StopLiveAlgos);
         }
 
         /// <summary>
@@ -101,7 +103,7 @@ namespace QuantConnect.Tests.API
                 Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateForexAlgorithm.cs")
             };
 
-            RunLiveAlgorithm(settings, file);
+            RunLiveAlgorithm(settings, file, StopLiveAlgos);
         }
 
         /// <summary>
@@ -129,7 +131,7 @@ namespace QuantConnect.Tests.API
                 Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateAlgorithm.cs")
             };
 
-            RunLiveAlgorithm(settings, file);
+            RunLiveAlgorithm(settings, file, StopLiveAlgos);
         }
 
         /// <summary>
@@ -150,7 +152,7 @@ namespace QuantConnect.Tests.API
                 Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateAlgorithm.cs")
             };
 
-            RunLiveAlgorithm(settings, file);
+            RunLiveAlgorithm(settings, file, StopLiveAlgos);
         }
 
         /// <summary>
@@ -172,7 +174,7 @@ namespace QuantConnect.Tests.API
                 Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateAlgorithm.cs")
             };
 
-            RunLiveAlgorithm(settings, file);
+            RunLiveAlgorithm(settings, file, StopLiveAlgos);
         }
 
         /// <summary>
@@ -323,44 +325,79 @@ namespace QuantConnect.Tests.API
         /// </summary>
         /// <param name="settings">Settings for Lean</param>
         /// <param name="file">File to run</param>
-        private void RunLiveAlgorithm(BaseLiveAlgorithmSettings settings, ProjectFile file)
+        /// <param name="stopLiveAlgos">If true the algorithm will be stopped at the end of the method.
+        /// Otherwise, it will keep running</param>
+        /// <returns>The id of the project created with the algorithm in</returns>
+        private int RunLiveAlgorithm(BaseLiveAlgorithmSettings settings, ProjectFile file, bool stopLiveAlgos)
         {
             // Create a new project
             var project = ApiClient.CreateProject($"Test project - {DateTime.Now.ToStringInvariant()}", Language.CSharp, TestOrganization);
+            var projectId = project.Projects.First().ProjectId;
 
-            // Add Project Files
-            var addProjectFile = ApiClient.AddProjectFile(project.Projects.First().ProjectId, file.Name, file.Code);
-            Assert.IsTrue(addProjectFile.Success);
+            // Update Project Files
+            var updateProjectFileContent = ApiClient.UpdateProjectFileContent(projectId, "Main.cs", file.Code);
+            Assert.IsTrue(updateProjectFileContent.Success);
 
             // Create compile
-            var compile = ApiClient.CreateCompile(project.Projects.First().ProjectId);
+            var compile = ApiClient.CreateCompile(projectId);
             Assert.IsTrue(compile.Success);
 
             // Wait at max 30 seconds for project to compile
-            Compile compileCheck = WaitForCompilerResponse(project.Projects.First().ProjectId, compile.CompileId, 30);
+            var compileCheck = WaitForCompilerResponse(projectId, compile.CompileId, 30);
             Assert.IsTrue(compileCheck.Success);
             Assert.IsTrue(compileCheck.State == CompileState.BuildSuccess);
 
             // Get a live node to launch the algorithm on
-            var nodes = ApiClient.ReadNodes(TestOrganization);
-            Assert.IsTrue(nodes.Success);
-            var freeNode = nodes.LiveNodes.Where(x => x.Busy == false);
+            var nodesResponse = ApiClient.ReadProjectNodes(projectId);
+            Assert.IsTrue(nodesResponse.Success);
+            var freeNode = nodesResponse.Nodes.LiveNodes.Where(x => x.Busy == false);
             Assert.IsNotEmpty(freeNode, "No free Live Nodes found");
 
             // Create live default algorithm
-            var createLiveAlgorithm = ApiClient.CreateLiveAlgorithm(project.Projects.First().ProjectId, compile.CompileId, freeNode.FirstOrDefault().Id, settings);
+            var createLiveAlgorithm = ApiClient.CreateLiveAlgorithm(projectId, compile.CompileId, freeNode.FirstOrDefault().Id, settings);
             Assert.IsTrue(createLiveAlgorithm.Success);
 
-            if (StopLiveAlgos)
+            if (stopLiveAlgos)
             {
                 // Liquidate live algorithm; will also stop algorithm
-                var liquidateLive = ApiClient.LiquidateLiveAlgorithm(project.Projects.First().ProjectId);
+                var liquidateLive = ApiClient.LiquidateLiveAlgorithm(projectId);
                 Assert.IsTrue(liquidateLive.Success);
 
                 // Delete the project
-                var deleteProject = ApiClient.DeleteProject(project.Projects.First().ProjectId);
+                var deleteProject = ApiClient.DeleteProject(projectId);
                 Assert.IsTrue(deleteProject.Success);
             }
+
+            return projectId;
+        }
+
+        [Test]
+        public void ReadLiveOrders()
+        {
+            // Create default algorithm settings
+            var settings = new DefaultLiveAlgorithmSettings("", "", BrokerageEnvironment.Paper, "");
+
+            var file = new ProjectFile
+            {
+                Name = "Main.cs",
+                Code = File.ReadAllText("../../../Algorithm.CSharp/BasicTemplateAlgorithm.cs")
+            };
+
+            // Run the live algorithm
+            var projectId = RunLiveAlgorithm(settings, file, false);
+
+            // Wait to receive the orders
+            var readLiveOrders = WaitForReadLiveOrdersResponse(projectId, 60 * 5);
+            Assert.IsTrue(readLiveOrders.Any());
+            Assert.AreEqual(Symbols.SPY, readLiveOrders.First().Symbol);
+
+            // Liquidate live algorithm; will also stop algorithm
+            var liquidateLive = ApiClient.LiquidateLiveAlgorithm(projectId);
+            Assert.IsTrue(liquidateLive.Success);
+
+            // Delete the project
+            var deleteProject = ApiClient.DeleteProject(projectId);
+            Assert.IsTrue(deleteProject.Success);
         }
 
         /// <summary>
@@ -381,6 +418,24 @@ namespace QuantConnect.Tests.API
                 if (compile.State == CompileState.BuildSuccess) break;
             }
             return compile;
+        }
+
+        /// <summary>
+        /// Wait to receive at least one order
+        /// </summary>
+        /// <param name="projectId">Id of the project</param>
+        /// <param name="seconds">Seconds to allow for receive an order</param>
+        /// <returns></returns>
+        private List<Order> WaitForReadLiveOrdersResponse(int projectId, int seconds)
+        {
+            var readLiveOrders = new List<Order>();
+            var finish = DateTime.UtcNow.AddSeconds(seconds);
+            while (DateTime.UtcNow < finish && !readLiveOrders.Any())
+            {
+                Thread.Sleep(10000);
+                readLiveOrders = ApiClient.ReadLiveOrders(projectId);
+            }
+            return readLiveOrders;
         }
     }
 }

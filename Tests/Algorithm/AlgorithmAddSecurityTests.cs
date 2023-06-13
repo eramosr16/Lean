@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,14 +16,22 @@
 
 using NUnit.Framework;
 using QuantConnect.Algorithm;
+using QuantConnect.Data.Custom.AlphaStreams;
+using QuantConnect.Lean.Engine.DataFeeds;
+using QuantConnect.Securities;
 using QuantConnect.Securities.Cfd;
 using QuantConnect.Securities.Crypto;
+using QuantConnect.Securities.CryptoFuture;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Forex;
 using QuantConnect.Securities.Future;
+using QuantConnect.Securities.IndexOption;
 using QuantConnect.Securities.Option;
 using QuantConnect.Tests.Engine.DataFeeds;
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Index = QuantConnect.Securities.Index.Index;
 
 namespace QuantConnect.Tests.Algorithm
@@ -32,6 +40,7 @@ namespace QuantConnect.Tests.Algorithm
     public class AlgorithmAddSecurityTests
     {
         private QCAlgorithm _algo;
+        private NullDataFeed _dataFeed;
 
         /// <summary>
         /// Instatiate a new algorithm before each test.
@@ -41,13 +50,17 @@ namespace QuantConnect.Tests.Algorithm
         public void Setup()
         {
             _algo = new QCAlgorithm();
-            _algo.SubscriptionManager.SetDataManager(new DataManagerStub(_algo));
+            _dataFeed = new NullDataFeed
+            {
+                ShouldThrow = false
+            };
+            _algo.SubscriptionManager.SetDataManager(new DataManagerStub(_dataFeed, _algo));
         }
 
         [Test, TestCaseSource(nameof(TestAddSecurityWithSymbol))]
-        public void AddSecurityWithSymbol(Symbol symbol)
+        public void AddSecurityWithSymbol(Symbol symbol, Type type = null)
         {
-            var security = _algo.AddSecurity(symbol);
+            var security = type != null ? _algo.AddData(type, symbol.Underlying) : _algo.AddSecurity(symbol);
             Assert.AreEqual(security.Symbol, symbol);
             Assert.IsTrue(_algo.Securities.ContainsKey(symbol));
 
@@ -73,8 +86,14 @@ namespace QuantConnect.Tests.Algorithm
                     case SecurityType.Index:
                         var index = (Index)security;
                         break;
+                    case SecurityType.IndexOption:
+                        var indexOption = (IndexOption)security;
+                        break;
                     case SecurityType.Crypto:
                         var crypto = (Crypto)security;
+                        break;
+                    case SecurityType.CryptoFuture:
+                        var cryptoFuture = (CryptoFuture)security;
                         break;
                     case SecurityType.Base:
                         break;
@@ -85,11 +104,115 @@ namespace QuantConnect.Tests.Algorithm
 
             if (symbol.IsCanonical())
             {
-                // Throws NotImplementedException because we are using NullDataFeed
-                // We need to call this to add the pending universe additions
-                Assert.Throws<NotImplementedException>(() => _algo.OnEndOfTimeStep());
+                Assert.DoesNotThrow(() => _algo.OnEndOfTimeStep());
 
                 Assert.IsTrue(_algo.UniverseManager.ContainsKey(symbol));
+            }
+        }
+
+        [TestCaseSource(nameof(GetDataNormalizationModes))]
+        public void AddsEquityWithExpectedDataNormalizationMode(DataNormalizationMode dataNormalizationMode)
+        {
+            var equity = _algo.AddEquity("AAPL", dataNormalizationMode: dataNormalizationMode);
+            Assert.That(_algo.SubscriptionManager.Subscriptions.Where(x => x.Symbol == equity.Symbol).Select(x => x.DataNormalizationMode),
+                Has.All.EqualTo(dataNormalizationMode));
+        }
+
+        [Test]
+        public void ProperlyAddsFutureWithExtendedMarketHours(
+            [Values(true, false)] bool extendedMarketHours,
+            [ValueSource(nameof(FuturesTestCases))] Func<QCAlgorithm, Security> getFuture)
+        {
+            var future = _algo.AddFuture(Futures.Indices.VIX, Resolution.Minute, extendedMarketHours: extendedMarketHours);
+            Assert.That(_algo.SubscriptionManager.Subscriptions.Where(x => x.Symbol == future.Symbol).Select(x => x.ExtendedMarketHours),
+                Has.All.EqualTo(extendedMarketHours));
+        }
+
+        [TestCaseSource(nameof(FuturesTestCases))]
+        public void AddFutureWithExtendedMarketHours(Func<QCAlgorithm, Security> getFuture)
+        {
+            string file = Path.Combine("TestData", "SampleMarketHoursDatabase.json");
+            var marketHoursDatabase = MarketHoursDatabase.FromFile(file);
+            var securityService = new SecurityService(
+                _algo.Portfolio.CashBook,
+                marketHoursDatabase,
+                SymbolPropertiesDatabase.FromDataFolder(),
+                _algo,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCacheProvider(_algo.Portfolio));
+            _algo.Securities.SetSecurityService(securityService);
+
+            var future = getFuture(_algo);
+
+            var now = new DateTime(2022, 6, 26, 17, 0, 0);
+            Assert.AreEqual(DayOfWeek.Sunday, now.DayOfWeek);
+            var regularMarketStartTime = new TimeSpan(8, 30, 0);
+            var regularMarketEndTime = new TimeSpan(15, 0, 0);
+            var firstExtendedMarketStartTime = regularMarketEndTime;
+            var firstExtendedMarketEndTime = new TimeSpan(16, 0, 0);
+            var secondExtendedMarketStartTime = new TimeSpan(17, 0, 0);
+
+            Action<DateTime> checkExtendedHours = (date) =>
+            {
+                Assert.IsFalse(future.Exchange.Hours.IsOpen(now, false));
+                Assert.IsTrue(future.Exchange.Hours.IsOpen(now, true));
+            };
+            Action<DateTime> checkRegularHours = (date) =>
+            {
+                Assert.IsTrue(future.Exchange.Hours.IsOpen(now, false));
+                Assert.IsTrue(future.Exchange.Hours.IsOpen(now, true));
+            };
+            Action<DateTime> checkClosed = (date) =>
+            {
+                Assert.IsFalse(future.Exchange.Hours.IsOpen(now, false));
+                Assert.IsFalse(future.Exchange.Hours.IsOpen(now, true));
+            };
+
+            while (now.DayOfWeek < DayOfWeek.Saturday)
+            {
+                while (now.TimeOfDay < regularMarketStartTime)
+                {
+                    checkExtendedHours(now);
+                    now = now.AddMinutes(1);
+                }
+
+                while (now.TimeOfDay < regularMarketEndTime)
+                {
+                    checkRegularHours(now);
+                    now = now.AddMinutes(1);
+                }
+
+                while (now.TimeOfDay >= firstExtendedMarketStartTime && now.TimeOfDay < firstExtendedMarketEndTime)
+                {
+                    checkExtendedHours(now);
+                    now = now.AddMinutes(1);
+                }
+
+                while (now.TimeOfDay < secondExtendedMarketStartTime)
+                {
+                    checkClosed(now);
+                    now = now.AddMinutes(1);
+                }
+
+                var endOfDay = now.AddDays(1).Date;
+                if (now.DayOfWeek < DayOfWeek.Friday)
+                {
+                    while (now < endOfDay)
+                    {
+                        checkExtendedHours(now);
+                        now = now.AddMinutes(1);
+                    }
+                }
+                else
+                {
+                    now = endOfDay;
+                }
+            }
+
+            while (now.DayOfWeek < DayOfWeek.Sunday)
+            {
+                checkClosed(now);
+                now = now.AddMinutes(1);
             }
         }
 
@@ -97,19 +220,54 @@ namespace QuantConnect.Tests.Algorithm
         {
             get
             {
-                return new[]
+                var result = new List<TestCaseData>()
                 {
-                    new TestCaseData(Symbols.SPY),
-                    new TestCaseData(Symbols.EURUSD),
-                    new TestCaseData(Symbols.DE30EUR),
-                    new TestCaseData(Symbols.BTCUSD),
-                    new TestCaseData(Symbols.ES_Future_Chain),
-                    new TestCaseData(Symbols.Future_ESZ18_Dec2018),
-                    new TestCaseData(Symbols.SPY_Option_Chain),
-                    new TestCaseData(Symbols.SPY_C_192_Feb19_2016),
-                    new TestCaseData(Symbols.SPY_P_192_Feb19_2016),
-                    new TestCaseData(Symbol.Create("CustomData", SecurityType.Base, Market.Binance)),
-                    new TestCaseData(Symbol.Create("CustomData2", SecurityType.Base, Market.COMEX))
+                    new TestCaseData(Symbols.SPY, null),
+                    new TestCaseData(Symbols.EURUSD, null),
+                    new TestCaseData(Symbols.DE30EUR, null),
+                    new TestCaseData(Symbols.BTCUSD, null),
+                    new TestCaseData(Symbols.ES_Future_Chain, null),
+                    new TestCaseData(Symbols.Future_ESZ18_Dec2018, null),
+                    new TestCaseData(Symbols.SPY_Option_Chain, null),
+                    new TestCaseData(Symbols.SPY_C_192_Feb19_2016, null),
+                    new TestCaseData(Symbols.SPY_P_192_Feb19_2016, null),
+                    new TestCaseData(Symbol.CreateBase(typeof(AlphaStreamsPortfolioState), Symbols.SPY, Market.USA), typeof(AlphaStreamsPortfolioState)),
+                    new TestCaseData(Symbol.Create("CustomData", SecurityType.Base, Market.Binance), null),
+                    new TestCaseData(Symbol.Create("CustomData2", SecurityType.Base, Market.COMEX), null)
+                };
+
+                foreach (var market in Market.SupportedMarkets())
+                {
+                    foreach (var kvp in SymbolPropertiesDatabase.FromDataFolder().GetSymbolPropertiesList(market))
+                    {
+                        var securityDatabaseKey = kvp.Key;
+                        if (securityDatabaseKey.SecurityType != SecurityType.FutureOption)
+                        {
+                            result.Add(new TestCaseData(Symbol.Create(securityDatabaseKey.Symbol, securityDatabaseKey.SecurityType,
+                                securityDatabaseKey.Market), null));
+                        }
+                    }
+                }
+
+                return result.ToArray();
+            }
+        }
+
+        private static DataNormalizationMode[] GetDataNormalizationModes()
+        {
+            return ((DataNormalizationMode[])Enum.GetValues(typeof(DataNormalizationMode)))
+                .Where(x => x != DataNormalizationMode.ScaledRaw).ToArray();
+        }
+
+        private static Func<QCAlgorithm, Security>[] FuturesTestCases
+        {
+            get
+            {
+                return new Func<QCAlgorithm, Security>[]
+                {
+                    (algo) => algo.AddFuture(Futures.Indices.VIX, Resolution.Minute, extendedMarketHours: true),
+                    (algo) => algo.AddFutureContract(Symbol.CreateFuture(Futures.Indices.VIX, Market.CFE, new DateTime(2022, 8, 1)),
+                        Resolution.Minute, extendedMarketHours: true)
                 };
             }
         }

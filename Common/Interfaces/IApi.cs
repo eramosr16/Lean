@@ -18,6 +18,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using QuantConnect.Api;
+using QuantConnect.Notifications;
+using QuantConnect.Optimizer.Objectives;
+using QuantConnect.Optimizer.Parameters;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Interfaces
 {
@@ -89,6 +93,22 @@ namespace QuantConnect.Interfaces
         /// <param name="projectId">Project id to which the file belongs</param>
         /// <returns><see cref="ProjectFilesResponse"/> that includes the information about all files in the project</returns>
         ProjectFilesResponse ReadProjectFiles(int projectId);
+
+        /// <summary>
+        /// Read all nodes in a project.
+        /// </summary>
+        /// <param name="projectId">Project id to which the nodes refer</param>
+        /// <returns><see cref="ProjectNodesResponse"/> that includes the information about all nodes in the project</returns>
+        ProjectNodesResponse ReadProjectNodes(int projectId);
+
+        /// <summary>
+        /// Update the active state of some nodes to true.
+        /// If you don't provide any nodes, all the nodes become inactive and AutoSelectNode is true.
+        /// </summary>
+        /// <param name="projectId">Project id to which the nodes refer</param>
+        /// <param name="nodes">List of node ids to update</param>
+        /// <returns><see cref="ProjectNodesResponse"/> that includes the information about all nodes in the project</returns>
+        ProjectNodesResponse UpdateProjectNodes(int projectId, string[] nodes);
 
         /// <summary>
         /// Delete a file in a project
@@ -170,6 +190,96 @@ namespace QuantConnect.Interfaces
         BacktestList ListBacktests(int projectId);
 
         /// <summary>
+        /// Estimate optimization with the specified parameters via QuantConnect.com API
+        /// </summary>
+        /// <param name="projectId">Project ID of the project the optimization belongs to</param>
+        /// <param name="name">Name of the optimization</param>
+        /// <param name="target">Target of the optimization, see examples in <see cref="PortfolioStatistics"/></param>
+        /// <param name="targetTo">Target extremum of the optimization, for example "max" or "min"</param>
+        /// <param name="targetValue">Optimization target value</param>
+        /// <param name="strategy">Optimization strategy, <see cref="GridSearchOptimizationStrategy"/></param>
+        /// <param name="compileId">Optimization compile ID</param>
+        /// <param name="parameters">Optimization parameters</param>
+        /// <param name="constraints">Optimization constraints</param>
+        /// <returns>Estimate object from the API.</returns>
+        public Estimate EstimateOptimization(
+            int projectId,
+            string name,
+            string target,
+            string targetTo,
+            decimal? targetValue,
+            string strategy,
+            string compileId,
+            HashSet<OptimizationParameter> parameters,
+            IReadOnlyList<Constraint> constraints);
+
+        /// <summary>
+        /// Create an optimization with the specified parameters via QuantConnect.com API
+        /// </summary>
+        /// <param name="projectId">Project ID of the project the optimization belongs to</param>
+        /// <param name="name">Name of the optimization</param>
+        /// <param name="target">Target of the optimization, see examples in <see cref="PortfolioStatistics"/></param>
+        /// <param name="targetTo">Target extremum of the optimization, for example "max" or "min"</param>
+        /// <param name="targetValue">Optimization target value</param>
+        /// <param name="strategy">Optimization strategy, <see cref="GridSearchOptimizationStrategy"/></param>
+        /// <param name="compileId">Optimization compile ID</param>
+        /// <param name="parameters">Optimization parameters</param>
+        /// <param name="constraints">Optimization constraints</param>
+        /// <param name="estimatedCost">Estimated cost for optimization</param>
+        /// <param name="nodeType">Optimization node type</param>
+        /// <param name="parallelNodes">Number of parallel nodes for optimization</param>
+        /// <returns>BaseOptimization object from the API.</returns>
+        public BaseOptimization CreateOptimization(
+            int projectId,
+            string name,
+            string target,
+            string targetTo,
+            decimal? targetValue,
+            string strategy,
+            string compileId,
+            HashSet<OptimizationParameter> parameters,
+            IReadOnlyList<Constraint> constraints,
+            decimal estimatedCost,
+            string nodeType,
+            int parallelNodes);
+
+        /// <summary>
+        /// List all the optimizations for a project
+        /// </summary>
+        /// <param name="projectId">Project id we'd like to get a list of optimizations for</param>
+        /// <returns>A list of BaseOptimization objects, <see cref="BaseOptimization"/></returns>
+        public List<BaseOptimization> ListOptimizations(int projectId);
+
+        /// <summary>
+        /// Read an optimization
+        /// </summary>        
+        /// <param name="optimizationId">Optimization id for the optimization we want to read</param>
+        /// <returns><see cref="Optimization"/></returns>
+        public Optimization ReadOptimization(string optimizationId);
+
+        /// <summary>
+        /// Abort an optimization
+        /// </summary>        
+        /// <param name="optimizationId">Optimization id for the optimization we want to abort</param>
+        /// <returns><see cref="RestResponse"/></returns>
+        public RestResponse AbortOptimization(string optimizationId);
+
+        /// <summary>
+        /// Update an optimization
+        /// </summary>
+        /// <param name="optimizationId">Optimization id we want to update</param>
+        /// <param name="name">Name we'd like to assign to the optimization</param>
+        /// <returns><see cref="RestResponse"/></returns>
+        public RestResponse UpdateOptimization(string optimizationId, string name = null);
+
+        /// <summary>
+        /// Delete an optimization
+        /// </summary>        
+        /// <param name="optimizationId">Optimization id for the optimization we want to delete</param>
+        /// <returns><see cref="RestResponse"/></returns>
+        public RestResponse DeleteOptimization(string optimizationId);
+
+        /// <summary>
         /// Gets the logs of a specific live algorithm
         /// </summary>
         /// <param name="projectId">Project Id of the live running algorithm</param>
@@ -188,11 +298,49 @@ namespace QuantConnect.Interfaces
         DataLink ReadDataLink(string filePath, string organizationId);
 
         /// <summary>
+        /// Get valid data entries for a given filepath from data/list
+        /// </summary>
+        /// <returns></returns>
+        DataList ReadDataDirectory(string filePath);
+
+        /// <summary>
+        /// Gets data prices from data/prices
+        /// </summary>
+        public DataPricesList ReadDataPrices(string organizationId);
+
+        /// <summary>
+        /// Read out the report of a backtest in the project id specified.
+        /// </summary>
+        /// <param name="projectId">Project id to read</param>
+        /// <param name="backtestId">Specific backtest id to read</param>
+        /// <returns><see cref="BacktestReport"/></returns>
+        public BacktestReport ReadBacktestReport(int projectId, string backtestId);
+
+        /// <summary>
         /// Method to download and save the data purchased through QuantConnect
         /// </summary>
         /// <param name="filePath">File path representing the data requested</param>
         /// <returns>A bool indicating whether the data was successfully downloaded or not.</returns>
         bool DownloadData(string filePath, string organizationId);
+
+        /// <summary>
+        /// Will read the organization account status
+        /// </summary>
+        /// <param name="organizationId">The target organization id, if null will return default organization</param>
+        public Account ReadAccount(string organizationId = null);
+
+        /// <summary>
+        /// Get a list of organizations tied to this account
+        /// </summary>
+        /// <returns></returns>
+        public List<Organization> ListOrganizations();
+
+        /// <summary>
+        /// Fetch organization data from web API
+        /// </summary>
+        /// <param name="organizationId"></param>
+        /// <returns></returns>
+        public Organization ReadOrganization(string organizationId = null);
 
         /// <summary>
         /// Create a new live algorithm for a logged in user.
@@ -236,13 +384,13 @@ namespace QuantConnect.Interfaces
         /// <returns></returns>
         RestResponse StopLiveAlgorithm(int projectId);
 
-        //Status StatusRead(int projectId, string algorithmId);
-        //RestResponse StatusUpdate(int projectId, string algorithmId, AlgorithmStatus status, string message = "");
-        //LogControl LogAllowanceRead();
-        //void LogAllowanceUpdate(string backtestId, string url, int length);
-        //void StatisticsUpdate(int projectId, string algorithmId, decimal unrealized, decimal fees, decimal netProfit, decimal holdings, decimal equity, decimal netReturn, decimal volume, int trades, double sharpe);
-        //void NotifyOwner(int projectId, string algorithmId, string subject, string body);
-        //IEnumerable<MarketHoursSegment> MarketHours(int projectId, DateTime time, Symbol symbol);
+        /// <summary>
+        /// Sends a notification
+        /// </summary>
+        /// <param name="notification">The notification to send</param>
+        /// <param name="projectId">The project id</param>
+        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
+        RestResponse SendNotification(Notification notification, int projectId);
 
         /// <summary>
         /// Get the algorithm current status, active or cancelled from the user

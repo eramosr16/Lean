@@ -61,7 +61,7 @@ namespace QuantConnect.Tests.Brokerages.Paper
             var expectedTotalDistribution = distributionPerShare * SPY.Holdings.Quantity;
 
             // create slice w/ dividend
-            var slice = new Slice(algorithm.Time, new List<BaseData>());
+            var slice = new Slice(algorithm.Time, new List<BaseData>(), algorithm.Time);
             slice.Dividends.Add(new Dividend(Symbols.SPY, algorithm.Time, distributionPerShare, 100m));
             algorithm.SetCurrentSlice(slice);
 
@@ -134,7 +134,6 @@ namespace QuantConnect.Tests.Brokerages.Paper
                 results,
                 realTime,
                 new AlgorithmManagerTests.NullLeanManager(),
-                new AlgorithmManagerTests.NullAlphaHandler(),
                 new CancellationToken()
             );
 

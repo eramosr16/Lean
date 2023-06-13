@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -22,24 +22,22 @@ namespace QuantConnect.Exceptions
     /// <summary>
     /// Interprets <see cref="UnsupportedOperandPythonExceptionInterpreter"/> instances
     /// </summary>
-    public class UnsupportedOperandPythonExceptionInterpreter : IExceptionInterpreter
+    public class UnsupportedOperandPythonExceptionInterpreter : PythonExceptionInterpreter
     {
         /// <summary>
         /// Determines the order that an instance of this class should be called
         /// </summary>
-        public int Order => 0;
+        public override int Order => 0;
 
         /// <summary>
         /// Determines if this interpreter should be applied to the specified exception.
         /// </summary>
         /// <param name="exception">The exception to check</param>
         /// <returns>True if the exception can be interpreted, false otherwise</returns>
-        public bool CanInterpret(Exception exception)
+        public override bool CanInterpret(Exception exception)
         {
-            return 
-                exception?.GetType() == typeof(PythonException) &&
-                exception.Message.Contains("TypeError") &&
-                exception.Message.Contains("unsupported operand type");
+            return base.CanInterpret(exception) &&
+                exception.Message.Contains(Messages.UnsupportedOperandPythonExceptionInterpreter.UnsupportedOperandTypeExpectedSubstring);
         }
 
         /// <summary>
@@ -48,12 +46,12 @@ namespace QuantConnect.Exceptions
         /// <param name="exception">The exception to be interpreted</param>
         /// <param name="innerInterpreter">An interpreter that should be applied to the inner exception.</param>
         /// <returns>The interpreted exception</returns>
-        public Exception Interpret(Exception exception, IExceptionInterpreter innerInterpreter)
+        public override Exception Interpret(Exception exception, IExceptionInterpreter innerInterpreter)
         {
             var pe = (PythonException)exception;
 
-            var types = pe.Message.Split(':')[2].Trim();
-            var message = $"Trying to perform a summation, subtraction, multiplication or division between {types} objects throws a TypeError exception. To prevent the exception, ensure that both values share the same type.";
+            var types = pe.Message.Split(':')[1].Trim();
+            var message = Messages.UnsupportedOperandPythonExceptionInterpreter.InvalidObjectTypesForOperation(types);
             message += PythonUtil.PythonExceptionStackParser(pe.StackTrace);
 
             return new Exception(message, pe);

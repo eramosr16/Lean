@@ -19,11 +19,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using Accord;
 using Newtonsoft.Json;
 using NUnit.Framework;
 using QuantConnect.Algorithm.CSharp;
-using QuantConnect.Data.Auxiliary;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Logging;
 using QuantConnect.Util;
@@ -43,11 +41,29 @@ namespace QuantConnect.Tests.Common.Securities
         // this is euro-dollar futures contract (for tests)
         private readonly SecurityIdentifier ED_Dec_2020 = SecurityIdentifier.GenerateFuture(new DateTime(2020, 12, 15), "ED", Market.USA);
 
+        [TestCase("SPY", "SPY", "20230403")]
+        [TestCase("GOOG", "GOOG", "20140403")]
+        [TestCase("GOOG", "GOOCV", "20140402")]
+        public void Ticker(string symbol, string expectedTicker, string date)
+        {
+            var equity = Symbol.Create(symbol, SecurityType.Equity, Market.USA);
+            var ticker = SecurityIdentifier.Ticker(equity, Time.ParseDate(date));
+
+            Assert.AreEqual(expectedTicker, ticker);
+        }
+
         [Test]
         public void GenerateEquityProperlyResolvesFirstDate()
         {
             var spy = SecurityIdentifier.GenerateEquity("SPY", Market.USA);
             Assert.AreEqual(new DateTime(1998, 01, 02), spy.Date);
+        }
+
+        [Test]
+        public void GenerateFailsOnInvalidDate()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                SecurityIdentifier.GenerateEquity(Time.BeginningOfTime.AddDays(-1), "SPY", Market.USA));
         }
 
         [Test]
@@ -314,12 +330,13 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(sid.ToString(), value);
         }
 
-        [Test]
-        public void TryParseFailsInvalidProperties()
+        [TestCase("SPY WhatEver")]
+        [TestCase("Sharpe ratio")]
+        public void TryParseFailsInvalidProperties(string value)
         {
-            const string value = "SPY WhatEver";
-            SecurityIdentifier sid;
-            Assert.IsFalse(SecurityIdentifier.TryParse(value, out sid));
+            Assert.IsFalse(SecurityIdentifier.TryParse(value, out var _));
+            // On the second call, we test the cache to increase speed and remove redundant logging
+            Assert.IsFalse(SecurityIdentifier.TryParse(value, out var _));
         }
 
         [Test, Category("TravisExclude")]
@@ -535,7 +552,7 @@ namespace QuantConnect.Tests.Common.Securities
         [Test, Ignore("Requires complete option data to validate chain")]
         public void ValidateAAPLOptionChainSecurityIdentifiers()
         {
-            var chainProvider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
+            var chainProvider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var aapl = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
             var chains = new HashSet<Symbol>();
             var expectedChains = File.ReadAllLines("TestData/aapl_chain.csv")

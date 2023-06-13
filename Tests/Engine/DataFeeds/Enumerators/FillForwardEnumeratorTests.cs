@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -33,12 +33,68 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using QuantConnect.Securities.Future;
 
 namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 {
     [TestFixture]
     public class FillForwardEnumeratorTests
     {
+        [Test]
+        public void FillForwardsUntilSubscriptionEnd()
+        {
+            var dataResolution = Time.OneHour;
+            var fillForwardResolution = Time.OneHour;
+
+            var time = new DateTime(2017, 7, 20, 0, 0, 0);
+            var subscriptionEndTime = time.AddDays(1);
+
+            var enumerator = new List<BaseData>
+            {
+                new TradeBar { Time = time, Value = 1, Period = dataResolution, Volume = 100},
+                new TradeBar { Time = time.AddDays(5), Value = 1, Period = dataResolution, Volume = 100},
+            }.GetEnumerator();
+
+            var exchange = new EquityExchange(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork));
+            using var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, Ref.Create(fillForwardResolution), false, subscriptionEndTime, dataResolution, exchange.TimeZone);
+
+            var dataCount = 0;
+            while (fillForwardEnumerator.MoveNext())
+            {
+                dataCount++;
+                Assert.IsFalse(fillForwardEnumerator.Current.EndTime > subscriptionEndTime);
+            }
+            Assert.AreEqual(24, dataCount);
+        }
+
+        [Test]
+        public void DelistingEvents()
+        {
+            var dataResolution = Time.OneMinute;
+            var fillForwardResolution = Time.OneMinute;
+
+            var time = new DateTime(2017, 7, 20, 0, 0, 0);
+
+            var enumerator = new List<BaseData>
+            {
+                new Delisting(Symbols.SPY, time, 100, DelistingType.Warning),
+                new Delisting(Symbols.SPY, time.AddDays(1), 100, DelistingType.Delisted),
+                new TradeBar { Time = time.AddDays(2), Value = 1, Period = dataResolution, Volume = 100},
+            }.GetEnumerator();
+
+            var exchange = new OptionExchange(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork));
+            using var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, Ref.Create(fillForwardResolution), false, time.AddDays(10), dataResolution, exchange.TimeZone);
+
+            Assert.IsTrue(fillForwardEnumerator.MoveNext());
+            Assert.AreEqual(DelistingType.Warning, ((Delisting)fillForwardEnumerator.Current).Type);
+
+            Assert.IsTrue(fillForwardEnumerator.MoveNext());
+            Assert.AreEqual(DelistingType.Delisted, ((Delisting)fillForwardEnumerator.Current).Type);
+
+            // even if there's more data emitted in the base enumerator we've passed the delisting date!
+            Assert.IsFalse(fillForwardEnumerator.MoveNext());
+        }
+
         [Test]
         // reproduces GH issue 4392 causing fill forward bars not to advance
         // the nature of the bug was rounding down in exchange tz versus data timezone
@@ -1147,7 +1203,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 
             AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus,
                 setupHandler: "FillForwardTestSetupHandler");
@@ -1696,7 +1751,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             while (fillForwardEnumerator.MoveNext())
             {
                 Assert.NotNull(fillForwardEnumerator.Current);
-                Assert.GreaterOrEqual(fillForwardEnumerator.Current.Time, previous?.Time);
+                // we don't care about 'Time' because lean only uses 'EndTime', in case some auxiliary data point comes in 'Time == EndTime'
+                // but the enumerator output should always go increasing 'EndTime'
                 Assert.GreaterOrEqual(fillForwardEnumerator.Current.EndTime, previous?.EndTime);
                 Assert.AreEqual(
                     fillForwardEnumerator.Current.DataType != MarketDataType.Auxiliary,
@@ -1826,6 +1882,72 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
         }
 
         [Test]
+        public void FillsForwardSymbolChangedDailyResolution()
+        {
+            var symbol = Symbols.Fut_SPY_Mar19_2016;
+            var entry = MarketHoursDatabase.FromDataFolder().GetEntry(symbol.ID.Market, symbol, symbol.SecurityType);
+            var reference = new DateTime(2014, 6, 5, 20, 0, 0);
+            var dataResolution = Time.OneDay;
+
+            var data = new BaseData[]
+            {
+                new TradeBar {
+                    Time = reference,
+                    Value = 1,
+                    Period = dataResolution,
+                    Volume = 100,
+                    Symbol = symbol
+                }, new TradeBar {
+                    Time = reference.AddDays(1),
+                    Value = 2,
+                    Period = dataResolution,
+                    Volume = 200,
+                    Symbol = symbol
+                },
+                new SymbolChangedEvent(symbol, reference.AddDays(3).Date, symbol, symbol),
+                new TradeBar {
+                    Time = reference.AddDays(2),
+                    Value = 3,
+                    Period = dataResolution,
+                    Volume = 300,
+                    Symbol = symbol
+                }}.ToList();
+
+            var enumerator = data.GetEnumerator();
+
+            var fillForwardEnumerator = new FillForwardEnumerator(enumerator,
+                new FutureExchange(entry.ExchangeHours),
+                Ref.Create(dataResolution),
+                false,
+                data.Last().EndTime,
+                dataResolution,
+                entry.DataTimeZone);
+
+            BaseData previous = null;
+            var counter = 0;
+            while (fillForwardEnumerator.MoveNext())
+            {
+                Assert.NotNull(fillForwardEnumerator.Current);
+                // we don't care about 'Time' because lean only uses 'EndTime', in case some auxiliary data point comes in 'Time == EndTime'
+                // but the enumerator output should always go increasing 'EndTime'
+                if (previous != null)
+                {
+                    Assert.GreaterOrEqual(fillForwardEnumerator.Current.EndTime, previous?.EndTime);
+                }
+                if (fillForwardEnumerator.Current.IsFillForward)
+                {
+                    Assert.AreNotEqual(MarketDataType.Auxiliary, fillForwardEnumerator.Current.DataType);
+                    counter++;
+                }
+                previous = fillForwardEnumerator.Current;
+            }
+
+            Assert.AreEqual((int)(data.Last().EndTime - data[1].EndTime).TotalDays - 1, counter);
+
+            fillForwardEnumerator.Dispose();
+        }
+
+        [Test]
         [TestCaseSource(nameof(ExchangeDaylightTimeSet), new object[] { 6, Resolution.Daily })]
         [TestCaseSource(nameof(ExchangeDaylightTimeSet), new object[] { 7, Resolution.Daily })]
         [TestCaseSource(nameof(ExchangeDaylightTimeSet), new object[] { 14, Resolution.Daily })]
@@ -1853,7 +1975,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 
             AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus,
                 setupHandler: "FillForwardDaylightMovementTestSetupHandler");
@@ -2056,7 +2177,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             while (fillForwardEnumerator.MoveNext())
             {
                 Assert.NotNull(fillForwardEnumerator.Current);
-                Assert.GreaterOrEqual(fillForwardEnumerator.Current.Time, previous?.Time ?? DateTime.MinValue);
+                // we don't care about .Time because lean only uses .EndTime
+                // in case some auxiliary data point comes in it will respect endtime being ascendant but it's time == endtime
                 Assert.GreaterOrEqual(fillForwardEnumerator.Current.EndTime, previous?.EndTime ?? DateTime.MinValue);
                 Assert.AreEqual(
                     fillForwardEnumerator.Current.DataType != MarketDataType.Auxiliary,
@@ -2108,6 +2230,17 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 
             public bool CanRunLocally { get; } = true;
             public Language[] Languages { get; } = { Language.CSharp };
+
+            /// <summary>
+            /// Data Points count of all timeslices of algorithm
+            /// </summary>
+            public long DataPoints => 0;
+
+            /// </summary>
+            /// Data Points count of the algorithm history
+            /// </summary>
+            public int AlgorithmHistoryDataPoints => 0;
+
             public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>();
         }
 

@@ -11,20 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import SubscriptionDataSource
-from QuantConnect.Python import PythonData
-
-from datetime import date, timedelta, datetime
-import numpy as np
-import json
+from AlgorithmImports import *
 
 ### <summary>
 ### Demonstration of using an external custom datasource. LEAN Engine is incredibly flexible and allows you to define your own data source.
@@ -65,11 +52,11 @@ class Bitcoin(PythonData):
 
     def GetSource(self, config, date, isLiveMode):
         if isLiveMode:
-            return SubscriptionDataSource("https://www.bitstamp.net/api/ticker/", SubscriptionTransportMedium.Rest);
+            return SubscriptionDataSource("https://www.bitstamp.net/api/ticker/", SubscriptionTransportMedium.Rest)
 
-        #return "http://my-ftp-server.com/futures-data-" + date.ToString("Ymd") + ".zip";
+        #return "http://my-ftp-server.com/futures-data-" + date.ToString("Ymd") + ".zip"
         # OR simply return a fixed small data file. Large files will slow down your backtest
-        return SubscriptionDataSource("https://www.quantconnect.com/api/v2/proxy/quandl/api/v3/datasets/BCHARTS/BITSTAMPUSD.csv?order=asc&api_key=WyAazVXnq7ATy_fefTqm", SubscriptionTransportMedium.RemoteFile);
+        return SubscriptionDataSource("https://www.quantconnect.com/api/v2/proxy/quandl/api/v3/datasets/BCHARTS/BITSTAMPUSD.csv?order=asc&api_key=WyAazVXnq7ATy_fefTqm", SubscriptionTransportMedium.RemoteFile)
 
 
     def Reader(self, config, line, date, isLiveMode):
@@ -123,7 +110,7 @@ class Bitcoin(PythonData):
             coin["VolumeBTC"] = float(data[5])
             coin["VolumeUSD"] = float(data[6])
             coin["WeightedPrice"] = float(data[7])
-            return coin;
+            return coin
 
         except ValueError:
             # Do nothing, possible error in json decoding

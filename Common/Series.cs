@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -81,13 +81,8 @@ namespace QuantConnect
         /// </summary>
         /// <param name="name">Name of the chart series</param>
         public Series(string name)
+            : this(name, SeriesType.Line)
         {
-            Name = name;
-            SeriesType = SeriesType.Line;
-            Unit = "$";
-            Index = 0;
-            Color = Color.Empty;
-            ScatterMarkerSymbol = ScatterMarkerSymbol.None;
         }
 
         /// <summary>
@@ -96,13 +91,8 @@ namespace QuantConnect
         /// <param name="name">Name of the series</param>
         /// <param name="type">Type of the series</param>
         public Series(string name, SeriesType type)
+            : this(name, type, 0)
         {
-            Name = name;
-            SeriesType = type;
-            Index = 0;
-            Unit = "$";
-            Color = Color.Empty;
-            ScatterMarkerSymbol = ScatterMarkerSymbol.None;
         }
 
         /// <summary>
@@ -112,13 +102,8 @@ namespace QuantConnect
         /// <param name="type">Type of the series</param>
         /// <param name="index">Index position on the chart of the series</param>
         public Series(string name, SeriesType type, int index)
+            : this(name, type, index, "$")
         {
-            Name = name;
-            SeriesType = type;
-            Index = index;
-            Unit = "$";
-            Color = Color.Empty;
-            ScatterMarkerSymbol = ScatterMarkerSymbol.None;
         }
 
         /// <summary>
@@ -129,13 +114,9 @@ namespace QuantConnect
         /// <param name="index">Index position on the chart of the series</param>
         /// <param name="unit">Unit for the series axis</param>
         public Series(string name, SeriesType type, int index, string unit)
+            : this(name, type, unit, Color.Empty, ScatterMarkerSymbol.None)
         {
-            Name = name;
-            SeriesType = type;
             Index = index;
-            Unit = unit;
-            Color = Color.Empty;
-            ScatterMarkerSymbol = ScatterMarkerSymbol.None;
         }
 
         /// <summary>
@@ -145,14 +126,8 @@ namespace QuantConnect
         /// <param name="type">Type of the chart series</param>
         /// <param name="unit">Unit of the serier</param>
         public Series(string name, SeriesType type = SeriesType.Line, string unit = "$")
+            : this(name, type, unit, Color.Empty)
         {
-            Name = name;
-            Values = new List<ChartPoint>();
-            SeriesType = type;
-            Unit = unit;
-            Index = 0;
-            Color = Color.Empty;
-            ScatterMarkerSymbol = ScatterMarkerSymbol.None;
         }
 
         /// <summary>
@@ -163,14 +138,8 @@ namespace QuantConnect
         /// <param name="unit">Unit of the serier</param>
         /// <param name="color">Color of the series</param>
         public Series(string name, SeriesType type, string unit, Color color)
+            : this(name, type, unit, color, ScatterMarkerSymbol.None)
         {
-            Name = name;
-            Values = new List<ChartPoint>();
-            SeriesType = type;
-            Unit = unit;
-            Index = 0;
-            Color = color;
-            ScatterMarkerSymbol = ScatterMarkerSymbol.None;
         }
 
         /// <summary>
@@ -226,11 +195,7 @@ namespace QuantConnect
         /// <returns>List of the updates from the series</returns>
         public Series GetUpdates()
         {
-            var copy = new Series(Name, SeriesType, Index, Unit)
-            {
-                Color = Color,
-                ScatterMarkerSymbol = ScatterMarkerSymbol
-            };
+            var copy = Clone(empty: true);
 
             try
             {
@@ -280,7 +245,7 @@ namespace QuantConnect
         /// Return a new instance clone of this object
         /// </summary>
         /// <returns></returns>
-        public Series Clone()
+        public Series Clone(bool empty = false)
         {
             var series = new Series
             {
@@ -293,9 +258,12 @@ namespace QuantConnect
                 ScatterMarkerSymbol = ScatterMarkerSymbol
             };
 
-            foreach (var point in Values)
+            if (!empty)
             {
-                series.Values.Add(new ChartPoint(point.x, point.y));
+                foreach (var point in Values)
+                {
+                    series.Values.Add(new ChartPoint(point.x, point.y));
+                }
             }
 
             return series;
@@ -307,21 +275,21 @@ namespace QuantConnect
     /// </summary>
     public enum SeriesType
     {
-        /// Line Plot for Value Types
+        /// Line Plot for Value Types (0)
         Line,
-        /// Scatter Plot for Chart Distinct Types
+        /// Scatter Plot for Chart Distinct Types (1)
         Scatter,
-        /// Charts
+        /// Charts (2)
         Candle,
-        /// Bar chart.
+        /// Bar chart (3)
         Bar,
-        /// Flag indicators
+        /// Flag indicators (4)
         Flag,
-        /// 100% area chart showing relative proportions of series values at each time index
+        /// 100% area chart showing relative proportions of series values at each time index (5)
         StackedArea,
-        /// Pie chart
+        /// Pie chart (6)
         Pie,
-        /// Treemap Plot
+        /// Treemap Plot (7)
         Treemap
     }
 
@@ -331,23 +299,23 @@ namespace QuantConnect
     [JsonConverter(typeof(StringEnumConverter))]
     public enum ScatterMarkerSymbol
     {
-        /// Circle symbol
+        /// Circle symbol (0)
         [EnumMember(Value = "none")]
         None,
-        /// Circle symbol
+        /// Circle symbol (1)
         [EnumMember(Value = "circle")]
         Circle,
-        /// Square symbol
+        /// Square symbol (2)
         [EnumMember(Value = "square")]
         Square,
-        /// Diamond symbol
+        /// Diamond symbol (3)
         [EnumMember(Value = "diamond")]
         Diamond,
-        /// Triangle symbol
+        /// Triangle symbol (4)
         [EnumMember(Value = "triangle")]
         Triangle,
-        /// Triangle-down symbol
+        /// Triangle-down symbol (5)
         [EnumMember(Value = "triangle-down")]
-        TriangleDown,
+        TriangleDown
     }
 }

@@ -11,20 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Data import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Securities import *
-from datetime import datetime
+from AlgorithmImports import *
 
 ### <summary>
-### In this algortihm, we fetch a list of tickers with corresponding dates from a file on Dropbox.
+### In this algorithm, we fetch a list of tickers with corresponding dates from a file on Dropbox.
 ### We then create a fine fundamental universe which contains those symbols on their respective dates.### 
 ### </summary>
 ### <meta name="tag" content="download" />

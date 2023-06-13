@@ -34,6 +34,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using QuantConnect.Storage;
+using QuantConnect.Algorithm.Framework.Alphas.Analysis;
 
 namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 {
@@ -83,7 +84,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
                         var repr = attr.Repr().GetStringBetweenChars('\'', '\'');
 
                         if (repr.StartsWith(moduleName) &&                // Must be defined in the module
-                            attr.TryConvert(out type) &&                  // Must be a Type
+                            attr.TryConvert(out type, true) &&                  // Must be a Type
                             typeof(QCAlgorithm).IsAssignableFrom(type))   // Must inherit from QCAlgorithm
                         {
                             Logging.Log.Trace("AlgorithmPythonWrapper(): Creating IAlgorithm instance.");
@@ -395,6 +396,21 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public SubscriptionManager SubscriptionManager => _baseAlgorithm.SubscriptionManager;
 
         /// <summary>
+        /// The project id associated with this algorithm if any
+        /// </summary>
+        public int ProjectId
+        {
+            set
+            {
+                _baseAlgorithm.ProjectId = value;
+            }
+            get
+            {
+                return _baseAlgorithm.ProjectId;
+            }
+        }
+
+        /// <summary>
         /// Current date/time in the algorithm's local time zone
         /// </summary>
         public DateTime Time => _baseAlgorithm.Time;
@@ -431,39 +447,68 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public string AccountCurrency => _baseAlgorithm.AccountCurrency;
 
         /// <summary>
+        /// Gets the insight manager
+        /// </summary>
+        public InsightManager Insights => _baseAlgorithm.Insights;
+
+        /// <summary>
         /// Set a required SecurityType-symbol and resolution for algorithm
         /// </summary>
         /// <param name="securityType">SecurityType Enum: Equity, Commodity, FOREX or Future</param>
         /// <param name="symbol">Symbol Representation of the MarketType, e.g. AAPL</param>
         /// <param name="resolution">The <see cref="Resolution"/> of market data, Tick, Second, Minute, Hour, or Daily.</param>
         /// <param name="market">The market the requested security belongs to, such as 'usa' or 'fxcm'</param>
-        /// <param name="fillDataForward">If true, returns the last available data even if none in that timeslice.</param>
+        /// <param name="fillForward">If true, returns the last available data even if none in that timeslice.</param>
         /// <param name="leverage">leverage for this security</param>
-        /// <param name="extendedMarketHours">ExtendedMarketHours send in data from 4am - 8pm, not used for FOREX</param>
-        public Security AddSecurity(SecurityType securityType, string symbol, Resolution? resolution, string market, bool fillDataForward, decimal leverage, bool extendedMarketHours)
-            => _baseAlgorithm.AddSecurity(securityType, symbol, resolution, market, fillDataForward, leverage, extendedMarketHours);
+        /// <param name="extendedMarketHours">Use extended market hours data</param>
+        /// <param name="dataMappingMode">The contract mapping mode to use for the security</param>
+        /// <param name="dataNormalizationMode">The price scaling mode to use for the security</param>
+        public Security AddSecurity(SecurityType securityType, string symbol, Resolution? resolution, string market, bool fillForward, decimal leverage, bool extendedMarketHours,
+            DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null)
+            => _baseAlgorithm.AddSecurity(securityType, symbol, resolution, market, fillForward, leverage, extendedMarketHours, dataMappingMode, dataNormalizationMode);
+
+
+        /// <summary>
+        /// Set a required SecurityType-symbol and resolution for algorithm
+        /// </summary>
+        /// <param name="symbol">The security Symbol</param>
+        /// <param name="resolution">Resolution of the MarketType required: MarketData, Second or Minute</param>
+        /// <param name="fillForward">If true, returns the last available data even if none in that timeslice.</param>
+        /// <param name="leverage">leverage for this security</param>
+        /// <param name="extendedMarketHours">Use extended market hours data</param>
+        /// <param name="dataMappingMode">The contract mapping mode to use for the security</param>
+        /// <param name="dataNormalizationMode">The price scaling mode to use for the security</param>
+        /// <param name="contractDepthOffset">The continuous contract desired offset from the current front month.
+        /// For example, 0 (default) will use the front month, 1 will use the back month contract</param>
+        /// <returns>The new Security that was added to the algorithm</returns>
+        public Security AddSecurity(Symbol symbol, Resolution? resolution = null, bool fillForward = true, decimal leverage = Security.NullLeverage, bool extendedMarketHours = false,
+            DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int contractDepthOffset = 0)
+            => _baseAlgorithm.AddSecurity(symbol, resolution, fillForward, leverage, extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset);
 
         /// <summary>
         /// Creates and adds a new single <see cref="Future"/> contract to the algorithm
         /// </summary>
         /// <param name="symbol">The futures contract symbol</param>
         /// <param name="resolution">The <see cref="Resolution"/> of market data, Tick, Second, Minute, Hour, or Daily. Default is <see cref="Resolution.Minute"/></param>
-        /// <param name="fillDataForward">If true, returns the last available data even if none in that timeslice. Default is <value>true</value></param>
+        /// <param name="fillForward">If true, returns the last available data even if none in that timeslice. Default is <value>true</value></param>
         /// <param name="leverage">The requested leverage for this equity. Default is set by <see cref="SecurityInitializer"/></param>
+        /// <param name="extendedMarketHours">Use extended market hours data</param>
         /// <returns>The new <see cref="Future"/> security</returns>
-        public Future AddFutureContract(Symbol symbol, Resolution? resolution = null, bool fillDataForward = true, decimal leverage = 0m)
-            => _baseAlgorithm.AddFutureContract(symbol, resolution, fillDataForward, leverage);
+        public Future AddFutureContract(Symbol symbol, Resolution? resolution = null, bool fillForward = true, decimal leverage = 0m,
+            bool extendedMarketHours = false)
+            => _baseAlgorithm.AddFutureContract(symbol, resolution, fillForward, leverage, extendedMarketHours);
 
         /// <summary>
         /// Creates and adds a new single <see cref="Option"/> contract to the algorithm
         /// </summary>
         /// <param name="symbol">The option contract symbol</param>
         /// <param name="resolution">The <see cref="Resolution"/> of market data, Tick, Second, Minute, Hour, or Daily. Default is <see cref="Resolution.Minute"/></param>
-        /// <param name="fillDataForward">If true, returns the last available data even if none in that timeslice. Default is <value>true</value></param>
+        /// <param name="fillForward">If true, returns the last available data even if none in that timeslice. Default is <value>true</value></param>
         /// <param name="leverage">The requested leverage for this equity. Default is set by <see cref="SecurityInitializer"/></param>
+        /// <param name="extendedMarketHours">Use extended market hours data</param>
         /// <returns>The new <see cref="Option"/> security</returns>
-        public Option AddOptionContract(Symbol symbol, Resolution? resolution = null, bool fillDataForward = true, decimal leverage = 0m)
-            => _baseAlgorithm.AddOptionContract(symbol, resolution, fillDataForward, leverage);
+        public Option AddOptionContract(Symbol symbol, Resolution? resolution = null, bool fillForward = true, decimal leverage = 0m, bool extendedMarketHours = false)
+            => _baseAlgorithm.AddOptionContract(symbol, resolution, fillForward, leverage, extendedMarketHours);
 
         /// <summary>
         /// Invoked at the end of every time step. This allows the algorithm
@@ -505,18 +550,45 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public bool GetLocked() => _baseAlgorithm.GetLocked();
 
         /// <summary>
-        /// Gets the parameter with the specified name. If a parameter
-        /// with the specified name does not exist, null is returned
+        /// Gets a read-only dictionary with all current parameters
         /// </summary>
-        /// <param name="name">The name of the parameter to get</param>
-        /// <returns>The value of the specified parameter, or null if not found</returns>
-        public string GetParameter(string name) => _baseAlgorithm.GetParameter(name);
+        public IReadOnlyDictionary<string, string> GetParameters() => _baseAlgorithm.GetParameters();
 
         /// <summary>
-        /// Gets the history requests required for provide warm up data for the algorithm
+        /// Gets the parameter with the specified name. If a parameter with the specified name does not exist,
+        /// the given default value is returned if any, else null
         /// </summary>
-        /// <returns></returns>
-        public IEnumerable<HistoryRequest> GetWarmupHistoryRequests() => _baseAlgorithm.GetWarmupHistoryRequests();
+        /// <param name="name">The name of the parameter to get</param>
+        /// <param name="defaultValue">The default value to return</param>
+        /// <returns>The value of the specified parameter, or defaultValue if not found or null if there's no default value</returns>
+        public string GetParameter(string name, string defaultValue = null) => _baseAlgorithm.GetParameter(name, defaultValue);
+
+        /// <summary>
+        /// Gets the parameter with the specified name parsed as an integer. If a parameter with the specified name does not exist,
+        /// or the conversion is not possible, the given default value is returned
+        /// </summary>
+        /// <param name="name">The name of the parameter to get</param>
+        /// <param name="defaultValue">The default value to return</param>
+        /// <returns>The value of the specified parameter, or defaultValue if not found or null if there's no default value</returns>
+        public int GetParameter(string name, int defaultValue) => _baseAlgorithm.GetParameter(name, defaultValue);
+
+        /// <summary>
+        /// Gets the parameter with the specified name parsed as a double. If a parameter with the specified name does not exist,
+        /// or the conversion is not possible, the given default value is returned
+        /// </summary>
+        /// <param name="name">The name of the parameter to get</param>
+        /// <param name="defaultValue">The default value to return</param>
+        /// <returns>The value of the specified parameter, or defaultValue if not found or null if there's no default value</returns>
+        public double GetParameter(string name, double defaultValue) => _baseAlgorithm.GetParameter(name, defaultValue);
+
+        /// <summary>
+        /// Gets the parameter with the specified name parsed as a decimal. If a parameter with the specified name does not exist,
+        /// or the conversion is not possible, the given default value is returned
+        /// </summary>
+        /// <param name="name">The name of the parameter to get</param>
+        /// <param name="defaultValue">The default value to return</param>
+        /// <returns>The value of the specified parameter, or defaultValue if not found or null if there's no default value</returns>
+        public decimal GetParameter(string name, decimal defaultValue) => _baseAlgorithm.GetParameter(name, defaultValue);
 
         /// <summary>
         /// Initialise the Algorithm and Prepare Required Data:
@@ -631,7 +703,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
             // Only throws if there is an error in its implementation body
             catch (PythonException exception)
             {
-                if (!exception.Message.StartsWith("TypeError : OnEndOfDay()"))
+                if (!exception.Message.StartsWith("OnEndOfDay()"))
                 {
                     _baseAlgorithm.SetRunTimeError(exception);
                 }
@@ -659,7 +731,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
             // Only throws if there is an error in its implementation body
             catch (PythonException exception)
             {
-                if (!exception.Message.StartsWith("TypeError : OnEndOfDay()"))
+                if (!exception.Message.StartsWith("OnEndOfDay()"))
                 {
                     _baseAlgorithm.SetRunTimeError(exception);
                 }
@@ -687,7 +759,8 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 
                     requests.Clear();
 
-                    foreach (PyObject pyRequest in pyRequests)
+                    using var iterator = pyRequests.GetIterator();
+                    foreach (PyObject pyRequest in iterator)
                     {
                         SubmitOrderRequest request;
                         if (TryConvert(pyRequest, out request))
@@ -727,6 +800,17 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
             {
                 _onOrderEvent(newEvent);
             }
+        }
+
+        /// <summary>
+        /// Will submit an order request to the algorithm
+        /// </summary>
+        /// <param name="request">The request to submit</param>
+        /// <remarks>Will run order prechecks, which include making sure the algorithm is not warming up, security is added and has data among others</remarks>
+        /// <returns>The order ticket</returns>
+        public OrderTicket SubmitOrderRequest(SubmitOrderRequest request)
+        {
+            return _baseAlgorithm.SubmitOrderRequest(request);
         }
 
         /// <summary>
@@ -817,12 +901,14 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public void SetBrokerageModel(IBrokerageModel brokerageModel) => _baseAlgorithm.SetBrokerageModel(brokerageModel);
 
         /// <summary>
-        /// Sets the account currency cash symbol this algorithm is to manage.
+        /// Sets the account currency cash symbol this algorithm is to manage, as well
+        /// as the starting cash in this currency if given
         /// </summary>
         /// <remarks>Has to be called during <see cref="Initialize"/> before
         /// calling <see cref="SetCash(decimal)"/> or adding any <see cref="Security"/></remarks>
         /// <param name="accountCurrency">The account currency cash symbol to set</param>
-        public void SetAccountCurrency(string accountCurrency) => _baseAlgorithm.SetAccountCurrency(accountCurrency);
+        /// <param name="startingCash">The account currency starting cash to set</param>
+        public void SetAccountCurrency(string accountCurrency, decimal? startingCash = null) => _baseAlgorithm.SetAccountCurrency(accountCurrency, startingCash);
 
         /// <summary>
         /// Set the starting capital for the strategy
@@ -901,7 +987,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public void SetLocked() => _baseAlgorithm.SetLocked();
 
         /// <summary>
-        /// Set the maximum number of orders the algortihm is allowed to process.
+        /// Set the maximum number of orders the algorithm is allowed to process.
         /// </summary>
         /// <param name="max">Maximum order count int</param>
         public void SetMaximumOrders(int max) => _baseAlgorithm.SetMaximumOrders(max);
@@ -976,5 +1062,21 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         {
             return _baseAlgorithm.Shortable(symbol, quantity);
         }
+
+        /// <summary>
+        /// Converts the string 'ticker' symbol into a full <see cref="Symbol"/> object
+        /// This requires that the string 'ticker' has been added to the algorithm
+        /// </summary>
+        /// <param name="ticker">The ticker symbol. This should be the ticker symbol
+        /// as it was added to the algorithm</param>
+        /// <returns>The symbol object mapped to the specified ticker</returns>
+        public Symbol Symbol(string ticker) => _baseAlgorithm.Symbol(ticker);
+
+        /// <summary>
+        /// For the given symbol will resolve the ticker it used at the current algorithm date
+        /// </summary>
+        /// <param name="symbol">The symbol to get the ticker for</param>
+        /// <returns>The mapped ticker for a symbol</returns>
+        public string Ticker(Symbol symbol) => _baseAlgorithm.Ticker(symbol);
     }
 }

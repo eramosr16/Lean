@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -50,10 +50,16 @@ namespace QuantConnect.Interfaces
         decimal MinAbsolutePortfolioTargetPercentage { get; set; }
 
         /// <summary>
+        /// Configurable minimum order margin portfolio percentage to ignore bad orders, or orders with unrealistic sizes
+        /// </summary>
+        /// <remarks>Default minimum order size is $0 value</remarks>
+        decimal MinimumOrderMarginPortfolioPercentage { get; set; }
+
+        /// <summary>
         /// Gets/sets the SetHoldings buffers value.
         /// The buffer is used for orders not to be rejected due to volatility when using SetHoldings and CalculateOrderQuantity
         /// </summary>
-        decimal FreePortfolioValue { get; set; }
+        decimal? FreePortfolioValue { get; set; }
 
         /// <summary>
         /// Gets/sets the SetHoldings buffers value percentage.
@@ -80,5 +86,11 @@ namespace QuantConnect.Interfaces
         /// Gets the minimum time span elapsed to consider a market fill price as stale (defaults to one hour)
         /// </summary>
         TimeSpan StalePriceTimeSpan { get; set; }
+
+        /// <summary>
+        /// The warmup resolution to use if any
+        /// </summary>
+        /// <remarks>This allows improving the warmup speed by setting it to a lower resolution than the one added in the algorithm</remarks>
+        Resolution? WarmupResolution { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,17 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System.Core")
-AddReference("System.Collections")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Algorithm")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data.UniverseSelection import *
-from datetime import *
+from AlgorithmImports import *
 
 ### <summary>
 ### Demonstration of how to chain a coarse and fine universe selection with an option chain universe selection model
@@ -32,7 +22,7 @@ class CoarseFineOptionUniverseChainRegressionAlgorithm(QCAlgorithm):
     def Initialize(self):
         '''Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.'''
 
-        self.SetStartDate(2014,6,5)  #Set Start Date
+        self.SetStartDate(2014,6,4)  #Set Start Date
         self.SetEndDate(2014,6,6)    #Set End Date
 
         self.UniverseSettings.Resolution = Resolution.Minute
@@ -73,11 +63,11 @@ class CoarseFineOptionUniverseChainRegressionAlgorithm(QCAlgorithm):
         # liquidate removed securities
         for security in self._changes.RemovedSecurities:
             if security.Invested:
-                self.Liquidate(security.Symbol);
+                self.Liquidate(security.Symbol)
 
         for security in self._changes.AddedSecurities:
             if not security.Symbol.HasUnderlying:
-                self._lastEquityAdded = security.Symbol;
+                self._lastEquityAdded = security.Symbol
             else:
                 # options added should all match prev added security
                 if security.Symbol.Underlying != self._lastEquityAdded:

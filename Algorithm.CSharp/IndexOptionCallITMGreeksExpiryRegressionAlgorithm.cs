@@ -13,16 +13,13 @@
  * limitations under the License.
 */
 
+using QuantConnect.Data;
+using QuantConnect.Interfaces;
+using QuantConnect.Securities;
+using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using QuantConnect.Data;
-using QuantConnect.Interfaces;
-using QuantConnect.Orders;
-using QuantConnect.Securities;
-using QuantConnect.Securities.Option;
-using QuantConnect.Securities.Volatility;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -90,6 +87,7 @@ namespace QuantConnect.Algorithm.CSharp
             var lambda = data.OptionChains.Values.OrderByDescending(y => y.Contracts.Values.Sum(x => x.Volume)).First().Contracts.Values.Select(x => x.Greeks.Lambda).ToList();
             var rho = data.OptionChains.Values.OrderByDescending(y => y.Contracts.Values.Sum(x => x.Volume)).First().Contracts.Values.Select(x => x.Greeks.Rho).ToList();
             var theta = data.OptionChains.Values.OrderByDescending(y => y.Contracts.Values.Sum(x => x.Volume)).First().Contracts.Values.Select(x => x.Greeks.Theta).ToList();
+            var impliedVol = data.OptionChains.Values.OrderByDescending(y => y.Contracts.Values.Sum(x => x.Volume)).First().Contracts.Values.Select(x => x.ImpliedVolatility).ToList();
             var vega = data.OptionChains.Values.OrderByDescending(y => y.Contracts.Values.Sum(x => x.Volume)).First().Contracts.Values.Select(x => x.Greeks.Vega).ToList();
 
             // The commented out test cases all return zero.
@@ -116,9 +114,8 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 throw new AggregateException("Option contract Theta was equal to zero");
             }
-            // The strike is far away from the underlying asset's price, and we're very close to expiry.
-            // Zero is an expected value here.
-            if (vega.Any(v => v != 0))
+            // Vega will equal 0 if the quote price and IV are way too off, causing the price is not sensitive to volatility change
+            if (vega.Zip(impliedVol, (v, iv) => (v, iv)).Any(x => x.v == 0 && x.iv < 10))
             {
                 throw new AggregateException("Option contract Vega was equal to zero");
             }
@@ -157,52 +154,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 19623;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "2"},
             {"Average Win", "0%"},
-            {"Average Loss", "-56.91%"},
-            {"Compounding Annual Return", "44.906%"},
-            {"Drawdown", "9.800%"},
+            {"Average Loss", "-54.58%"},
+            {"Compounding Annual Return", "101.333%"},
+            {"Drawdown", "7.600%"},
             {"Expectancy", "-1"},
-            {"Net Profit", "2.644%"},
-            {"Sharpe Ratio", "7.691"},
-            {"Probabilistic Sharpe Ratio", "91.027%"},
+            {"Net Profit", "5.044%"},
+            {"Sharpe Ratio", "5.256"},
+            {"Probabilistic Sharpe Ratio", "89.867%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "3.219"},
-            {"Beta", "-0.229"},
-            {"Annual Standard Deviation", "0.417"},
-            {"Annual Variance", "0.174"},
-            {"Information Ratio", "6.893"},
-            {"Tracking Error", "0.457"},
-            {"Treynor Ratio", "-14.008"},
+            {"Alpha", "1.695"},
+            {"Beta", "-0.205"},
+            {"Annual Standard Deviation", "0.321"},
+            {"Annual Variance", "0.103"},
+            {"Information Ratio", "4.556"},
+            {"Tracking Error", "0.36"},
+            {"Treynor Ratio", "-8.238"},
             {"Total Fees", "$0.00"},
-            {"Estimated Strategy Capacity", "$44000000.00"},
+            {"Estimated Strategy Capacity", "$59000000.00"},
             {"Lowest Capacity Asset", "SPX XL80P3GHDZXQ|SPX 31"},
-            {"Fitness Score", "0.023"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "0.535"},
-            {"Return Over Maximum Drawdown", "5.789"},
-            {"Portfolio Turnover", "0.03"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "3cccf8c2409ee8a9020ba79a6c45742a"}
+            {"Portfolio Turnover", "2.19%"},
+            {"OrderListHash", "6d74cb5ac8ee73a1154088ad97f5ce3d"}
         };
     }
 }

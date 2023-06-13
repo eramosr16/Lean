@@ -11,20 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License
 
-from datetime import datetime, timedelta
-
-import clr
-from System import *
-from System.Reflection import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Orders import *
-from QuantConnect.Securities import *
-from QuantConnect.Securities.Future import *
-from QuantConnect import Market
-
+from AlgorithmImports import *
 
 ### <summary>
 ### This regression algorithm tests In The Money (ITM) future option calls across different strike prices.
@@ -64,7 +51,10 @@ class FutureOptionBuySellCallIntradayRegressionAlgorithm(QCAlgorithm):
 
         # Select a future option expiring ITM, and adds it to the algorithm.
         self.esOptions = [
-            self.AddFutureOptionContract(i, Resolution.Minute).Symbol for i in (self.OptionChainProvider.GetOptionContractList(self.es19m20, self.Time) + self.OptionChainProvider.GetOptionContractList(self.es20h20, self.Time)) if i.ID.StrikePrice == 3200.0 and i.ID.OptionRight == OptionRight.Call
+            self.AddFutureOptionContract(i, Resolution.Minute).Symbol
+            for i in (self.OptionChainProvider.GetOptionContractList(self.es19m20, self.Time) +
+                self.OptionChainProvider.GetOptionContractList(self.es20h20, self.Time))
+            if i.ID.StrikePrice == 3200.0 and i.ID.OptionRight == OptionRight.Call
         ]
 
         self.expectedContracts = [
@@ -77,16 +67,11 @@ class FutureOptionBuySellCallIntradayRegressionAlgorithm(QCAlgorithm):
                 raise AssertionError(f"Contract {esOption} was not found in the chain")
 
         self.Schedule.On(self.DateRules.Tomorrow, self.TimeRules.AfterMarketOpen(self.es19m20, 1), self.ScheduleCallbackBuy)
-        self.Schedule.On(self.DateRules.Tomorrow, self.TimeRules.Noon, self.ScheduleCallbackLiquidate)
 
     def ScheduleCallbackBuy(self):
         self.MarketOrder(self.esOptions[0], 1)
         self.MarketOrder(self.esOptions[1], -1)
 
-    def ScheduleCallbackLiquidate(self):
-        self.Liquidate()
-
     def OnEndOfAlgorithm(self):
         if self.Portfolio.Invested:
             raise AssertionError(f"Expected no holdings at end of algorithm, but are invested in: {', '.join([str(i.ID) for i in self.Portfolio.Keys])}")
-    

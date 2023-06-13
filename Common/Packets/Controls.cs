@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,8 +14,6 @@
  *
 */
 
-using System;
-using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
 using QuantConnect.Interfaces;
@@ -27,6 +25,12 @@ namespace QuantConnect.Packets
     /// </summary>
     public class Controls
     {
+        /// <summary>
+        /// The maximum runtime in minutes
+        /// </summary>
+        [JsonProperty(PropertyName = "iMaximumRuntimeMinutes")]
+        public int MaximumRuntimeMinutes;
+
         /// <summary>
         /// The maximum number of minute symbols
         /// </summary>
@@ -56,6 +60,12 @@ namespace QuantConnect.Packets
         /// </summary>
         [JsonProperty(PropertyName = "dMaxCpuAllocation")]
         public decimal CpuAllocation;
+
+        /// <summary>
+        /// The user live log limit
+        /// </summary>
+        [JsonProperty(PropertyName = "iLiveLogLimit")]
+        public int LiveLogLimit;
 
         /// <summary>
         /// The user backtesting log limit
@@ -109,13 +119,13 @@ namespace QuantConnect.Packets
         /// <summary>
         /// Limits the total size of storage used by <see cref="IObjectStore"/>
         /// </summary>
-        [JsonProperty(PropertyName = "storageLimitMB")]
-        public int StorageLimitMB;
+        [JsonProperty(PropertyName = "storageLimit")]
+        public long StorageLimit;
 
         /// <summary>
         /// Limits the number of files to be held under the <see cref="IObjectStore"/>
         /// </summary>
-        [JsonProperty(PropertyName = "storageFileCountMB")]
+        [JsonProperty(PropertyName = "storageFileCount")]
         public int StorageFileCount;
 
         /// <summary>
@@ -130,24 +140,6 @@ namespace QuantConnect.Packets
         /// </summary>
         [JsonProperty(PropertyName = "persistenceIntervalSeconds")]
         public int PersistenceIntervalSeconds;
-
-        /// <summary>
-        /// Gets list of streaming data types permissions
-        /// </summary>
-        [JsonProperty(PropertyName = "streamingDataPermissions")]
-        public HashSet<string> StreamingDataPermissions;
-
-        /// <summary>
-        /// Gets list of streaming security types permissions
-        /// </summary>
-        [JsonProperty(PropertyName = "streamingSecurityTypePermissions")]
-        public HashSet<SecurityType> StreamingSecurityTypePermissions;
-
-        /// <summary>
-        /// Gets list of allowed data resolutions
-        /// </summary>
-        [JsonProperty(PropertyName = "dataResolutionPermissions")]
-        public HashSet<Resolution> DataResolutionPermissions;
 
         /// <summary>
         /// The cost associated with running this job
@@ -168,40 +160,17 @@ namespace QuantConnect.Packets
             BacktestingMaxOrders = int.MaxValue;
             DailyLogLimit = 3000000;
             RemainingLogAllowance = 10000;
+            MaximumRuntimeMinutes = 60 * 24 * 100; // 100 days default
             BacktestingMaxInsights = 10000;
             MaximumDataPointsPerChartSeries = 4000;
             SecondTimeOut = 300;
-            StorageLimitMB = 5;
-            StorageFileCount = 100;
+            StorageLimit = 10737418240;
+            StorageFileCount = 10000;
             PersistenceIntervalSeconds = 5;
             StoragePermissions = FileAccess.ReadWrite;
 
             // initialize to default leaky bucket values in case they're not specified
             TrainingLimits = new LeakyBucketControlParameters();
-
-            StreamingDataPermissions = new HashSet<string>();
-            DataResolutionPermissions = new HashSet<Resolution>();
-        }
-
-        /// <summary>
-        /// Gets the maximum number of subscriptions for the specified resolution
-        /// </summary>
-        public int GetLimit(Resolution resolution)
-        {
-            switch (resolution)
-            {
-                case Resolution.Tick:
-                    return TickLimit;
-
-                case Resolution.Second:
-                    return SecondLimit;
-
-                case Resolution.Minute:
-                case Resolution.Hour:
-                case Resolution.Daily:
-                default:
-                    return MinuteLimit;
-            }
         }
     }
 }

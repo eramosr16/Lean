@@ -115,6 +115,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 37597;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -126,41 +136,23 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "0.300%"},
             {"Expectancy", "-0.042"},
             {"Net Profit", "-0.332%"},
-            {"Sharpe Ratio", "-3.7"},
-            {"Probabilistic Sharpe Ratio", "0.563%"},
+            {"Sharpe Ratio", "-3.149"},
+            {"Probabilistic Sharpe Ratio", "0.427%"},
             {"Loss Rate", "50%"},
             {"Win Rate", "50%"},
             {"Profit-Loss Ratio", "0.92"},
-            {"Alpha", "-0.021"},
-            {"Beta", "-0.011"},
-            {"Annual Standard Deviation", "0.006"},
+            {"Alpha", "-0.015"},
+            {"Beta", "-0.012"},
+            {"Annual Standard Deviation", "0.005"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-3.385"},
-            {"Tracking Error", "0.058"},
-            {"Treynor Ratio", "2.117"},
+            {"Information Ratio", "-2.823"},
+            {"Tracking Error", "0.049"},
+            {"Treynor Ratio", "1.372"},
             {"Total Fees", "$2.00"},
-            {"Estimated Strategy Capacity", "$45000000.00"},
-            {"Lowest Capacity Asset", "AOL R735QTJ8XC9X"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-43.418"},
-            {"Return Over Maximum Drawdown", "-14.274"},
-            {"Portfolio Turnover", "0.007"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "486118a60d78f74811fe8d927c2c6b43"}
+            {"Estimated Strategy Capacity", "$5700000.00"},
+            {"Lowest Capacity Asset", "AOL VRKS95ENLBYE|AOL R735QTJ8XC9X"},
+            {"Portfolio Turnover", "0.55%"},
+            {"OrderListHash", "568fe7c2a11960436660db1231f2cfd2"}
         };
     }
 }

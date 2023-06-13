@@ -11,15 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datetime import datetime, timedelta
-
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Securities import *
-from QuantConnect.Securities.Future import *
-from QuantConnect import Market
+from AlgorithmImports import *
 
 ### <summary>
 ### This regression algorithm tests that we receive the expected data when
@@ -33,8 +25,8 @@ class AddFutureOptionContractDataStreamingRegressionAlgorithm(QCAlgorithm):
         self.expectedSymbolsReceived = []
         self.dataReceived = {}
 
-        self.SetStartDate(2020, 1, 5)
-        self.SetEndDate(2020, 1, 6)
+        self.SetStartDate(2020, 1, 4)
+        self.SetEndDate(2020, 1, 8)
 
         self.es20h20 = self.AddFutureContract(
             Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, datetime(2020, 3, 20)),
@@ -44,8 +36,9 @@ class AddFutureOptionContractDataStreamingRegressionAlgorithm(QCAlgorithm):
             Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, datetime(2020, 6, 19)),
             Resolution.Minute).Symbol
 
-        optionChains = self.OptionChainProvider.GetOptionContractList(self.es20h20, self.Time)
-        optionChains += self.OptionChainProvider.GetOptionContractList(self.es19m20, self.Time)
+        # Get option contract lists for 2020/01/05 (timedelta(days=1)) because Lean has local data for that date
+        optionChains = self.OptionChainProvider.GetOptionContractList(self.es20h20, self.Time + timedelta(days=1))
+        optionChains += self.OptionChainProvider.GetOptionContractList(self.es19m20, self.Time + timedelta(days=1))
 
         for optionContract in optionChains:
             self.expectedSymbolsReceived.append(self.AddFutureOptionContract(optionContract, Resolution.Minute).Symbol)
@@ -79,8 +72,6 @@ class AddFutureOptionContractDataStreamingRegressionAlgorithm(QCAlgorithm):
             self.invested = True
 
     def OnEndOfAlgorithm(self):
-        super().OnEndOfAlgorithm()
-
         self.symbolsReceived = list(set(self.symbolsReceived))
         self.expectedSymbolsReceived = list(set(self.expectedSymbolsReceived))
 

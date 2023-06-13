@@ -110,52 +110,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 5345;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "3528"},
-            {"Average Win", "0.67%"},
+            {"Average Win", "0.68%"},
             {"Average Loss", "-0.71%"},
-            {"Compounding Annual Return", "17.171%"},
-            {"Drawdown", "63.700%"},
-            {"Expectancy", "0.020"},
-            {"Net Profit", "17.171%"},
-            {"Sharpe Ratio", "0.834"},
-            {"Probabilistic Sharpe Ratio", "33.675%"},
+            {"Compounding Annual Return", "15.587%"},
+            {"Drawdown", "64.100%"},
+            {"Expectancy", "0.019"},
+            {"Net Profit", "15.587%"},
+            {"Sharpe Ratio", "0.708"},
+            {"Probabilistic Sharpe Ratio", "29.597%"},
             {"Loss Rate", "48%"},
             {"Win Rate", "52%"},
-            {"Profit-Loss Ratio", "0.95"},
-            {"Alpha", "0.829"},
-            {"Beta", "-0.381"},
-            {"Annual Standard Deviation", "0.945"},
-            {"Annual Variance", "0.894"},
-            {"Information Ratio", "0.712"},
-            {"Tracking Error", "0.959"},
-            {"Treynor Ratio", "-2.067"},
-            {"Total Fees", "$24795.24"},
+            {"Profit-Loss Ratio", "0.96"},
+            {"Alpha", "0.172"},
+            {"Beta", "5.008"},
+            {"Annual Standard Deviation", "0.866"},
+            {"Annual Variance", "0.749"},
+            {"Information Ratio", "0.655"},
+            {"Tracking Error", "0.801"},
+            {"Treynor Ratio", "0.122"},
+            {"Total Fees", "$21434.41"},
             {"Estimated Strategy Capacity", "$510000.00"},
             {"Lowest Capacity Asset", "BNO UN3IMQ2JU1YD"},
-            {"Fitness Score", "0.54"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "0.238"},
-            {"Return Over Maximum Drawdown", "0.269"},
-            {"Portfolio Turnover", "7.204"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "4c2372ba503bc56a3aa70c088b1d1796"}
+            {"Portfolio Turnover", "602.27%"},
+            {"OrderListHash", "3989cd396bcaa495151aba155d7fe1fb"}
         };
     }
 }

@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,14 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Algorithm.Framework")
-
-from QuantConnect.Data.UniverseSelection import *
-from QuantConnect.Indicators import ExponentialMovingAverage
+from AlgorithmImports import *
 from Selection.FundamentalUniverseSelectionModel import FundamentalUniverseSelectionModel
 
 class EmaCrossUniverseSelectionModel(FundamentalUniverseSelectionModel):
@@ -35,7 +28,7 @@ class EmaCrossUniverseSelectionModel(FundamentalUniverseSelectionModel):
             fastPeriod: Fast EMA period
             slowPeriod: Slow EMA period
             universeCount: Maximum number of members of this universe selection
-            universeSettings: The settings used when adding symbols to the algorithm, specify null to use algorthm.UniverseSettings'''
+            universeSettings: The settings used when adding symbols to the algorithm, specify null to use algorithm.UniverseSettings'''
         super().__init__(False, universeSettings)
         self.fastPeriod = fastPeriod
         self.slowPeriod = slowPeriod

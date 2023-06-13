@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -20,7 +20,7 @@ using System.Threading;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
-using static QuantConnect.StringExtensions;
+using Python.Runtime;
 
 namespace QuantConnect.Securities
 {
@@ -32,10 +32,9 @@ namespace QuantConnect.Securities
         private readonly Dictionary<DateTime, decimal> _transactionRecord;
         private readonly IAlgorithm _algorithm;
         private int _orderId;
+        private int _groupOrderManagerId;
         private readonly SecurityManager _securities;
-        private const decimal _minimumOrderSize = 0;
-        private const int _minimumOrderQuantity = 1;
-        private TimeSpan _marketOrderFillTimeout = TimeSpan.FromSeconds(5);
+        private TimeSpan _marketOrderFillTimeout = TimeSpan.MinValue;
 
         private IOrderProcessor _orderProcessor;
 
@@ -81,25 +80,15 @@ namespace QuantConnect.Securities
         /// Configurable minimum order value to ignore bad orders, or orders with unrealistic sizes
         /// </summary>
         /// <remarks>Default minimum order size is $0 value</remarks>
-        public decimal MinimumOrderSize
-        {
-            get
-            {
-                return _minimumOrderSize;
-            }
-        }
+        [Obsolete("MinimumOrderSize is obsolete and will not be used, please use Settings.MinimumOrderMarginPortfolioPercentage instead")]
+        public decimal MinimumOrderSize { get; }
 
         /// <summary>
         /// Configurable minimum order size to ignore bad orders, or orders with unrealistic sizes
         /// </summary>
         /// <remarks>Default minimum order size is 0 shares</remarks>
-        public int MinimumOrderQuantity
-        {
-            get
-            {
-                return _minimumOrderQuantity;
-            }
-        }
+        [Obsolete("MinimumOrderQuantity is obsolete and will not be used, please use Settings.MinimumOrderMarginPortfolioPercentage instead")]
+        public int MinimumOrderQuantity { get; }
 
         /// <summary>
         /// Get the last order id.
@@ -143,9 +132,23 @@ namespace QuantConnect.Securities
             var submit = request as SubmitOrderRequest;
             if (submit != null)
             {
-                submit.SetOrderId(GetIncrementOrderId());
+                SetOrderId(submit);
             }
             return _orderProcessor.Process(request);
+        }
+
+        /// <summary>
+        /// Sets the order id for the specified submit request
+        /// </summary>
+        /// <param name="request">Request to set the order id for</param>
+        /// <remarks>This method is public so we can request an order id from outside the assembly, for testing for example</remarks>
+        public void SetOrderId(SubmitOrderRequest request)
+        {
+            // avoid setting the order id if it's already been set
+            if (request.OrderId < 1)
+            {
+                request.SetOrderId(GetIncrementOrderId());
+            }
         }
 
         /// <summary>
@@ -186,13 +189,13 @@ namespace QuantConnect.Securities
         {
             if (_algorithm != null && _algorithm.IsWarmingUp)
             {
-                throw new InvalidOperationException("This operation is not allowed in Initialize or during warm up: CancelOpenOrders. Please move this code to the OnWarmupFinished() method.");
+                throw new InvalidOperationException(Messages.SecurityTransactionManager.CancelOpenOrdersNotAllowedOnInitializeOrWarmUp);
             }
 
             var cancelledOrders = new List<OrderTicket>();
             foreach (var ticket in GetOpenOrderTickets())
             {
-                ticket.Cancel($"Canceled by CancelOpenOrders() at {_algorithm.UtcTime:o}");
+                ticket.Cancel(Messages.SecurityTransactionManager.OrderCanceledByCancelOpenOrders(_algorithm.UtcTime));
                 cancelledOrders.Add(ticket);
             }
             return cancelledOrders;
@@ -208,7 +211,7 @@ namespace QuantConnect.Securities
         {
             if (_algorithm != null && _algorithm.IsWarmingUp)
             {
-                throw new InvalidOperationException("This operation is not allowed in Initialize or during warm up: CancelOpenOrders. Please move this code to the OnWarmupFinished() method.");
+                throw new InvalidOperationException(Messages.SecurityTransactionManager.CancelOpenOrdersNotAllowedOnInitializeOrWarmUp);
             }
 
             var cancelledOrders = new List<OrderTicket>();
@@ -241,6 +244,16 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Gets an enumerable of <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
+        /// </summary>
+        /// <param name="filter">The Python function filter used to find the required order tickets</param>
+        /// <returns>An enumerable of <see cref="OrderTicket"/> matching the specified <paramref name="filter"/></returns>
+        public IEnumerable<OrderTicket> GetOrderTickets(PyObject filter)
+        {
+            return _orderProcessor.GetOrderTickets(filter.ConvertToDelegate<Func<OrderTicket, bool>>());
+        }
+
+        /// <summary>
         /// Get an enumerable of open <see cref="OrderTicket"/> for the specified symbol
         /// </summary>
         /// <param name="symbol">The symbol for which to return the order tickets</param>
@@ -261,12 +274,50 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Gets an enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
+        /// However, this method can be confused with the override that takes a Symbol as parameter. For this reason
+        /// it first checks if it can convert the parameter into a symbol. If that conversion cannot be aplied it
+        /// assumes the parameter is a Python function object and not a Python representation of a Symbol.
+        /// </summary>
+        /// <param name="filter">The Python function filter used to find the required order tickets</param>
+        /// <returns>An enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/></returns>
+        public IEnumerable<OrderTicket> GetOpenOrderTickets(PyObject filter)
+        {
+            Symbol pythonSymbol;
+            if (filter.TryConvert(out pythonSymbol))
+            {
+                return GetOpenOrderTickets(pythonSymbol);
+            }
+            return _orderProcessor.GetOpenOrderTickets(filter.ConvertToDelegate<Func<OrderTicket, bool>>());
+        }
+
+        /// <summary>
         /// Gets the remaining quantity to be filled from open orders, i.e. order size minus quantity filled
         /// </summary>
         /// <param name="filter">Filters the order tickets to be included in the aggregate quantity remaining to be filled</param>
         /// <returns>Total quantity that hasn't been filled yet for all orders that were not filtered</returns>
         public decimal GetOpenOrdersRemainingQuantity(Func<OrderTicket, bool> filter = null)
         {
+            return GetOpenOrderTickets(filter)
+                .Aggregate(0m, (d, t) => d + t.Quantity - t.QuantityFilled);
+        }
+
+        /// <summary>
+        /// Gets the remaining quantity to be filled from open orders, i.e. order size minus quantity filled
+        /// However, this method can be confused with the override that takes a Symbol as parameter. For this reason
+        /// it first checks if it can convert the parameter into a symbol. If that conversion cannot be aplied it
+        /// assumes the parameter is a Python function object and not a Python representation of a Symbol.
+        /// </summary>
+        /// <param name="filter">Filters the order tickets to be included in the aggregate quantity remaining to be filled</param>
+        /// <returns>Total quantity that hasn't been filled yet for all orders that were not filtered</returns>
+        public decimal GetOpenOrdersRemainingQuantity(PyObject filter)
+        {
+            Symbol pythonSymbol;
+            if (filter.TryConvert(out pythonSymbol))
+            {
+                return GetOpenOrdersRemainingQuantity(pythonSymbol);
+            }
+
             return GetOpenOrderTickets(filter)
                 .Aggregate(0m, (d, t) => d + t.Quantity - t.QuantityFilled);
         }
@@ -303,18 +354,18 @@ namespace QuantConnect.Securities
             var orderTicket = GetOrderTicket(orderId);
             if (orderTicket == null)
             {
-                Log.Error(Invariant(
-                    $"SecurityTransactionManager.WaitForOrder(): Unable to locate ticket for order: {orderId}"
-                ));
+                Log.Error($@"SecurityTransactionManager.WaitForOrder(): {
+                    Messages.SecurityTransactionManager.UnableToLocateOrderTicket(orderId)}");
 
                 return false;
             }
 
             if (!orderTicket.OrderClosed.WaitOne(_marketOrderFillTimeout))
             {
-                Log.Error(Invariant(
-                    $"SecurityTransactionManager.WaitForOrder(): Order did not fill within {_marketOrderFillTimeout.TotalSeconds} seconds."
-                ));
+                if(_marketOrderFillTimeout > TimeSpan.Zero)
+                {
+                    Log.Error($@"SecurityTransactionManager.WaitForOrder(): {Messages.SecurityTransactionManager.OrderNotFilledWithinExpectedTime(_marketOrderFillTimeout)}");
+                }
 
                 return false;
             }
@@ -345,6 +396,25 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Gets open orders matching the specified filter. However, this method can be confused with the
+        /// override that takes a Symbol as parameter. For this reason it first checks if it can convert
+        /// the parameter into a symbol. If that conversion cannot be aplied it assumes the parameter is
+        /// a Python function object and not a Python representation of a Symbol.
+        /// </summary>
+        /// <param name="filter">Python function object used to filter the orders</param>
+        /// <returns>All filtered open orders this order provider currently holds</returns>
+        public List<Order> GetOpenOrders(PyObject filter)
+        {
+            Symbol pythonSymbol;
+            if (filter.TryConvert(out pythonSymbol))
+            {
+                return GetOpenOrders(pythonSymbol);
+            }
+            Func<Order, bool> csharpFilter = filter.ConvertToDelegate<Func<Order, bool>>();
+            return _orderProcessor.GetOpenOrders(x => csharpFilter(x));
+        }
+
+        /// <summary>
         /// Gets the current number of orders that have been processed
         /// </summary>
         public int OrdersCount
@@ -367,9 +437,9 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="brokerageId">The brokerage id to fetch</param>
         /// <returns>The first order matching the brokerage id, or null if no match is found</returns>
-        public Order GetOrderByBrokerageId(string brokerageId)
+        public List<Order> GetOrdersByBrokerageId(string brokerageId)
         {
-            return _orderProcessor.GetOrderByBrokerageId(brokerageId);
+            return _orderProcessor.GetOrdersByBrokerageId(brokerageId);
         }
 
         /// <summary>
@@ -378,9 +448,19 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="filter">Delegate used to filter the orders</param>
         /// <returns>All orders this order provider currently holds by the specified filter</returns>
-        public IEnumerable<Order> GetOrders(Func<Order, bool> filter)
+        public IEnumerable<Order> GetOrders(Func<Order, bool> filter = null)
         {
-            return _orderProcessor.GetOrders(filter);
+            return _orderProcessor.GetOrders(filter ?? (x => true));
+        }
+
+        /// <summary>
+        /// Gets all orders matching the specified filter.
+        /// </summary>
+        /// <param name="filter">Python function object used to filter the orders</param>
+        /// <returns>All orders this order provider currently holds by the specified filter</returns>
+        public IEnumerable<Order> GetOrders(PyObject filter)
+        {
+            return _orderProcessor.GetOrders(filter.ConvertToDelegate<Func<Order, bool>>());
         }
 
         /// <summary>
@@ -390,6 +470,15 @@ namespace QuantConnect.Securities
         public int GetIncrementOrderId()
         {
             return Interlocked.Increment(ref _orderId);
+        }
+
+        /// <summary>
+        /// Get a new group order manager id, and increment the internal counter.
+        /// </summary>
+        /// <returns>New unique int group order manager id.</returns>
+        public int GetIncrementGroupOrderManagerId()
+        {
+            return Interlocked.Increment(ref _groupOrderManagerId);
         }
 
         /// <summary>
@@ -424,11 +513,24 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Returns true when the specified order is in a completed state
+        /// Set live mode state of the algorithm
         /// </summary>
-        private static bool Completed(Order order)
+        /// <param name="isLiveMode">True, live mode is enabled</param>
+        public void SetLiveMode(bool isLiveMode)
         {
-            return order.Status == OrderStatus.Filled || order.Status == OrderStatus.PartiallyFilled || order.Status == OrderStatus.Invalid || order.Status == OrderStatus.Canceled;
+            if (isLiveMode)
+            {
+                if(MarketOrderFillTimeout == TimeSpan.MinValue)
+                {
+                    // set default value in live trading
+                    MarketOrderFillTimeout = TimeSpan.FromSeconds(5);
+                }
+            }
+            else
+            {
+                // always zero in backtesting, fills happen synchronously, there's no dedicated thread like in live
+                MarketOrderFillTimeout = TimeSpan.Zero;
+            }
         }
     }
 }

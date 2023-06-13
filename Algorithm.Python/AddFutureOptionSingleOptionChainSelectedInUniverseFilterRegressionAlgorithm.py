@@ -11,14 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datetime import datetime, timedelta
-
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Securities import *
-from QuantConnect.Securities.Future import *
-from QuantConnect import *
+from AlgorithmImports import *
 
 ### <summary>
 ### This regression algorithm tests that we only receive the option chain for a single future contract
@@ -33,8 +26,8 @@ class AddFutureOptionSingleOptionChainSelectedInUniverseFilterRegressionAlgorith
         self.expectedSymbolsReceived = []
         self.dataReceived = {}
 
-        self.SetStartDate(2020, 1, 5)
-        self.SetEndDate(2020, 1, 6)
+        self.SetStartDate(2020, 1, 4)
+        self.SetEndDate(2020, 1, 8)
 
         self.es = self.AddFuture(Futures.Indices.SP500EMini, Resolution.Minute, Market.CME)
         self.es.SetFilter(lambda futureFilter: futureFilter.Expiration(0, 365).ExpirationCycle([3, 6]))

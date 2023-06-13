@@ -32,9 +32,9 @@ namespace QuantConnect.Algorithm.CSharp
     public class RawDataRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
         private const string Ticker = "GOOGL";
-        private FactorFile _factorFile;
-        private readonly IEnumerator<decimal> _expectedRawPrices = new List<decimal> { 1158.1100m, 1158.7200m,
-            1131.7800m, 1114.2800m, 1119.6100m, 1114.5500m, 1135.3200m, 567.59000m, 571.4900m, 545.3000m, 540.6400m }.GetEnumerator();
+        private CorporateFactorProvider _factorFile;
+        private readonly IEnumerator<decimal> _expectedRawPrices = new List<decimal> { 1157.93m, 1158.72m,
+            1131.97m, 1114.28m, 1120.15m, 1114.51m, 1134.89m, 567.55m, 571.50m, 545.25m, 540.63m }.GetEnumerator();
         private Symbol _googl;
 
         public override void Initialize()
@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp
             mapFileProvider.Initialize(dataProvider);
             var factorFileProvider = new LocalDiskFactorFileProvider();
             factorFileProvider.Initialize(mapFileProvider, dataProvider);
-            _factorFile = factorFileProvider.Get(_googl);
+            _factorFile = factorFileProvider.Get(_googl) as CorporateFactorProvider;
 
             // Prime our expected values
             _expectedRawPrices.MoveNext();
@@ -81,7 +81,7 @@ namespace QuantConnect.Algorithm.CSharp
                 if (_expectedRawPrices.Current != googlData.Close)
                 {
                     // Our values don't match lets try and give a reason why
-                    var dayFactor = _factorFile.GetPriceScaleFactor(googlData.Time);
+                    var dayFactor = _factorFile.GetPriceFactor(googlData.Time, DataNormalizationMode.Adjusted);
                     var probableRawPrice = googlData.Close / dayFactor; // Undo adjustment
 
                     if (_expectedRawPrices.Current == probableRawPrice)
@@ -110,6 +110,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 92;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -117,45 +127,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-85.948%"},
+            {"Compounding Annual Return", "-86.060%"},
             {"Drawdown", "7.300%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-7.251%"},
-            {"Sharpe Ratio", "-3.008"},
-            {"Probabilistic Sharpe Ratio", "3.159%"},
+            {"Net Profit", "-7.279%"},
+            {"Sharpe Ratio", "-2.885"},
+            {"Probabilistic Sharpe Ratio", "4.001%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.831"},
-            {"Beta", "-0.223"},
-            {"Annual Standard Deviation", "0.262"},
-            {"Annual Variance", "0.069"},
-            {"Information Ratio", "-2.045"},
-            {"Tracking Error", "0.289"},
-            {"Treynor Ratio", "3.525"},
+            {"Alpha", "-0.38"},
+            {"Beta", "1.927"},
+            {"Annual Standard Deviation", "0.254"},
+            {"Annual Variance", "0.064"},
+            {"Information Ratio", "-2.852"},
+            {"Tracking Error", "0.192"},
+            {"Treynor Ratio", "-0.38"},
             {"Total Fees", "$1.00"},
             {"Estimated Strategy Capacity", "$110000000.00"},
             {"Lowest Capacity Asset", "GOOG T1AZ164W5VTX"},
-            {"Fitness Score", "0.006"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-3.445"},
-            {"Return Over Maximum Drawdown", "-11.853"},
-            {"Portfolio Turnover", "0.084"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "3702afa2a5d1634ed451768917394502"}
+            {"Portfolio Turnover", "7.21%"},
+            {"OrderListHash", "c04d0e71d4f9822034a17e618463b159"}
         };
     }
 }

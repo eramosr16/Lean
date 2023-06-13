@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -76,7 +76,7 @@ namespace QuantConnect.ToolBox.IQFeed
             { "NYMEX", Market.NYMEX },
             { "CBOT", Market.CBOT },
             { "ICEFU", Market.ICE },
-            { "CFE", Market.CBOE  }
+            { "CFE", Market.CFE }
         };
 
         // futures fundamental data resolver
@@ -531,7 +531,7 @@ namespace QuantConnect.ToolBox.IQFeed
                         if (_iqFeedNameMap.ContainsKey(underlyingString))
                             underlyingString = _iqFeedNameMap[underlyingString];
 
-                        if (underlyingString != placeholder.Symbol.Value)
+                        if (underlyingString != placeholder.Symbol.Value.TrimStart('/'))
                         {
                             continue;
                         }
@@ -647,7 +647,7 @@ namespace QuantConnect.ToolBox.IQFeed
         /// </summary>
         public class SymbolFundamentalData : IQLevel1Client
         {
-            public SymbolFundamentalData() : base(80)
+            public SymbolFundamentalData() : base(IQFeedDefault.BufferSize)
             {
             }
 

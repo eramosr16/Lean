@@ -15,6 +15,7 @@
 
 using System;
 using QuantConnect.Util;
+using QuantConnect.Data;
 using QuantConnect.Logging;
 using System.Collections.Generic;
 
@@ -49,7 +50,7 @@ namespace QuantConnect.ToolBox.AlphaVantageDownloader
                     {
                         // Download the data
                         var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
-                        var data = downloader.Get(symbol, castResolution, startDate, endDate);
+                        var data = downloader.Get(new DataDownloaderGetParameters(symbol, castResolution, startDate, endDate));
 
                         // Save the data
                         var writer = new LeanDataWriter(castResolution, symbol, Globals.DataFolder);

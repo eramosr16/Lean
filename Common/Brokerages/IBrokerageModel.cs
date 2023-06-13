@@ -24,6 +24,7 @@ using QuantConnect.Orders.Fees;
 using QuantConnect.Orders.Fills;
 using QuantConnect.Orders.Slippage;
 using QuantConnect.Securities;
+using QuantConnect.Python;
 
 namespace QuantConnect.Brokerages
 {
@@ -139,6 +140,13 @@ namespace QuantConnect.Brokerages
         ISettlementModel GetSettlementModel(Security security);
 
         /// <summary>
+        /// Gets a new margin interest rate model for the security
+        /// </summary>
+        /// <param name="security">The security to get a margin interest rate model for</param>
+        /// <returns>The margin interest rate model for this brokerage</returns>
+        IMarginInterestRateModel GetMarginInterestRateModel(Security security);
+
+        /// <summary>
         /// Gets a new settlement model for the security
         /// </summary>
         /// <param name="security">The security to get a settlement model for</param>
@@ -204,8 +212,17 @@ namespace QuantConnect.Brokerages
                 case BrokerageName.Bitfinex:
                     return new BitfinexBrokerageModel(accountType);
 
+                case BrokerageName.BinanceFutures:
+                    return new BinanceFuturesBrokerageModel(accountType);
+
+                case BrokerageName.BinanceCoinFutures:
+                    return new BinanceCoinFuturesBrokerageModel(accountType);
+
                 case BrokerageName.Binance:
                     return new BinanceBrokerageModel(accountType);
+
+                case BrokerageName.BinanceUS:
+                    return new BinanceUSBrokerageModel(accountType);
 
                 case BrokerageName.GDAX:
                     return new GDAXBrokerageModel(accountType);
@@ -215,15 +232,124 @@ namespace QuantConnect.Brokerages
 
                 case BrokerageName.Zerodha:
                     return new ZerodhaBrokerageModel(accountType);
-                
+
                 case BrokerageName.Atreyu:
                     return new AtreyuBrokerageModel(accountType);
 
                 case BrokerageName.TradingTechnologies:
                     return new TradingTechnologiesBrokerageModel(accountType);
 
+                case BrokerageName.Samco:
+                    return new SamcoBrokerageModel(accountType);
+
+                case BrokerageName.Kraken:
+                    return new KrakenBrokerageModel(accountType);
+
+                case BrokerageName.Exante:
+                    return new ExanteBrokerageModel(accountType);
+
+                case BrokerageName.FTX:
+                    return new FTXBrokerageModel(accountType);
+
+                case BrokerageName.FTXUS:
+                    return new FTXUSBrokerageModel(accountType);
+                
+                case BrokerageName.Wolverine:
+                    return new WolverineBrokerageModel(accountType);
+
+                case BrokerageName.TDAmeritrade:
+                    return new TDAmeritradeBrokerageModel(accountType);
+
+                case BrokerageName.RBI: 
+                    return new RBIBrokerageModel(accountType);
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(brokerage), brokerage, null);
+            }
+        }
+
+
+        /// <summary>
+        /// Gets the corresponding <see cref="BrokerageName"/> for the specified <see cref="IBrokerageModel"/>
+        /// </summary>
+        /// <param name="brokerageModel">The brokerage model</param>
+        /// <returns>The <see cref="BrokerageName"/> for the specified brokerage model</returns>
+        public static BrokerageName GetBrokerageName(IBrokerageModel brokerageModel)
+        {
+            var model = brokerageModel;
+            if (brokerageModel is BrokerageModelPythonWrapper)
+            {
+                model = (brokerageModel as BrokerageModelPythonWrapper).GetModel();
+            }
+
+            // Case order matters to ensure we get the correct brokerage name from the inheritance chain
+            switch (model)
+            {
+                case InteractiveBrokersBrokerageModel _:
+                    return BrokerageName.InteractiveBrokersBrokerage;
+
+                case TradierBrokerageModel _:
+                    return BrokerageName.TradierBrokerage;
+
+                case OandaBrokerageModel _:
+                    return BrokerageName.OandaBrokerage;
+
+                case FxcmBrokerageModel _:
+                    return BrokerageName.FxcmBrokerage;
+
+                case BitfinexBrokerageModel _:
+                    return BrokerageName.Bitfinex;
+
+                case BinanceUSBrokerageModel _:
+                    return BrokerageName.BinanceUS;
+
+                case BinanceBrokerageModel _:
+                    return BrokerageName.Binance;
+
+                case GDAXBrokerageModel _:
+                    return BrokerageName.GDAX;
+
+                case AlphaStreamsBrokerageModel _:
+                    return BrokerageName.AlphaStreams;
+
+                case ZerodhaBrokerageModel _:
+                    return BrokerageName.Zerodha;
+
+                case AtreyuBrokerageModel _:
+                    return BrokerageName.Atreyu;
+
+                case TradingTechnologiesBrokerageModel _:
+                    return BrokerageName.TradingTechnologies;
+
+                case SamcoBrokerageModel _:
+                    return BrokerageName.Samco;
+
+                case KrakenBrokerageModel _:
+                    return BrokerageName.Kraken;
+
+                case ExanteBrokerageModel _:
+                    return BrokerageName.Exante;
+
+                case FTXUSBrokerageModel _:
+                    return BrokerageName.FTXUS;
+
+                case FTXBrokerageModel _:
+                    return BrokerageName.FTX;
+
+                case WolverineBrokerageModel _:
+                    return BrokerageName.Wolverine;
+
+                case TDAmeritradeBrokerageModel _:
+                    return BrokerageName.TDAmeritrade;
+
+                case RBIBrokerageModel _:
+                    return BrokerageName.RBI;
+
+                case DefaultBrokerageModel _:
+                    return BrokerageName.Default;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(brokerageModel), brokerageModel, null);
             }
         }
     }

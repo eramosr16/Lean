@@ -11,20 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License
 
-from datetime import datetime, timedelta
-
-import clr
-from System import *
-from System.Reflection import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Orders import *
-from QuantConnect.Securities import *
-from QuantConnect.Securities.Future import *
-from QuantConnect import Market
-
+from AlgorithmImports import *
 
 ### <summary>
 ### This regression algorithm tests Out of The Money (OTM) future option expiry for puts.
@@ -32,8 +19,8 @@ from QuantConnect import Market
 ###
 ###   * Initial entry, buy ES Put Option (expiring OTM)
 ###     - contract expires worthless, not exercised, so never opened a position in the underlying
-###   
-###   * Liquidation of worthless ES Put OTM contract 
+###
+###   * Liquidation of worthless ES Put OTM contract
 ###
 ### Additionally, we test delistings for future options and assert that our
 ### portfolio holdings reflect the orders the algorithm has submitted.
@@ -65,7 +52,7 @@ class FutureOptionPutOTMExpiryRegressionAlgorithm(QCAlgorithm):
 
         self.expectedContract = Symbol.CreateOption(self.es19m20, Market.CME, OptionStyle.American, OptionRight.Put, 3150.0, datetime(2020, 6, 19))
         if self.esOption != self.expectedContract:
-            raise AssertionError(f"Contract {self.expectedContract} was not found in the chain");
+            raise AssertionError(f"Contract {self.expectedContract} was not found in the chain")
 
         self.Schedule.On(self.DateRules.Tomorrow, self.TimeRules.AfterMarketOpen(self.es19m20, 1), self.ScheduledMarketOrder)
 
@@ -78,12 +65,12 @@ class FutureOptionPutOTMExpiryRegressionAlgorithm(QCAlgorithm):
         for delisting in data.Delistings.Values:
             if delisting.Type == DelistingType.Warning:
                 if delisting.Time != datetime(2020, 6, 19):
-                    raise AssertionError(f"Delisting warning issued at unexpected date: {delisting.Time}");
+                    raise AssertionError(f"Delisting warning issued at unexpected date: {delisting.Time}")
 
             if delisting.Type == DelistingType.Delisted:
                 if delisting.Time != datetime(2020, 6, 20):
-                    raise AssertionError(f"Delisting happened at unexpected date: {delisting.Time}");
-        
+                    raise AssertionError(f"Delisting happened at unexpected date: {delisting.Time}")
+
 
     def OnOrderEvent(self, orderEvent: OrderEvent):
         if orderEvent.Status != OrderStatus.Filled:
@@ -96,28 +83,28 @@ class FutureOptionPutOTMExpiryRegressionAlgorithm(QCAlgorithm):
         security = self.Securities[orderEvent.Symbol]
         if security.Symbol == self.es19m20:
             raise AssertionError("Invalid state: did not expect a position for the underlying to be opened, since this contract expires OTM")
-        
+
         # Expected contract is ES19M20 Put Option expiring OTM @ 3200
         if (security.Symbol == self.expectedContract):
             self.AssertFutureOptionContractOrder(orderEvent, security)
         else:
             raise AssertionError(f"Received order event for unknown Symbol: {orderEvent.Symbol}")
 
-        self.Log(f"{orderEvent}");
-        
+        self.Log(f"{orderEvent}")
+
 
     def AssertFutureOptionContractOrder(self, orderEvent: OrderEvent, option: Security):
         if orderEvent.Direction == OrderDirection.Buy and option.Holdings.Quantity != 1:
-            raise AssertionError(f"No holdings were created for option contract {option.Symbol}");
+            raise AssertionError(f"No holdings were created for option contract {option.Symbol}")
 
         if orderEvent.Direction == OrderDirection.Sell and option.Holdings.Quantity != 0:
-            raise AssertionError("Holdings were found after a filled option exercise");
+            raise AssertionError("Holdings were found after a filled option exercise")
 
         if orderEvent.Direction == OrderDirection.Sell and "OTM" not in orderEvent.Message:
-            raise AssertionError("Contract did not expire OTM");
+            raise AssertionError("Contract did not expire OTM")
 
         if "Exercise" in orderEvent.Message:
-            raise AssertionError("Exercised option, even though it expires OTM");
+            raise AssertionError("Exercised option, even though it expires OTM")
 
     def OnEndOfAlgorithm(self):
         if self.Portfolio.Invested:

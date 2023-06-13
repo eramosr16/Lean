@@ -20,17 +20,30 @@ namespace QuantConnect.Orders
     /// <summary>
     /// Contains additional properties and settings for an order submitted to Atreyu brokerage
     /// </summary>
-    public class AtreyuOrderProperties : OrderProperties
+    public class AtreyuOrderProperties : IOrderProperties
     {
+        /// <summary>
+        /// Defines the length of time over which an order will continue working before it is cancelled
+        /// </summary>
+        public TimeInForce TimeInForce { get; set; }
+
         /// <summary>
         /// This flag will ensure the order add liquidity only
         /// </summary>
         public bool PostOnly { get; set; }
 
         /// <summary>
+        /// Creates a new instance and sets <see cref="TimeInForce"/> to Day
+        /// </summary>
+        public AtreyuOrderProperties()
+        {
+            TimeInForce = TimeInForce.Day;
+        }
+
+        /// <summary>
         /// Returns a new instance clone of this object
         /// </summary>
-        public override IOrderProperties Clone()
+        public IOrderProperties Clone()
         {
             return (AtreyuOrderProperties)MemberwiseClone();
         }

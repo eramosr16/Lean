@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -153,12 +153,9 @@ namespace QuantConnect.Tests.Common.Securities
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.GetProperty(""TradeBar"")
@@ -182,12 +179,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.HasProperty(""TradeBar"")
@@ -209,12 +203,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.Get(TradeBar)
@@ -236,12 +227,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.GetAll(TradeBar)
@@ -266,12 +254,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.Get(TradeBar)
@@ -294,12 +279,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.GetAll(TradeBar)
@@ -322,12 +304,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.Get(TradeBar)
@@ -350,12 +329,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.Get(TradeBar)
@@ -374,18 +350,14 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-AddReference(""System"")
-from System import *
-from QuantConnect import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.Get(TradeBar)").GetAttr("Test");
 
-                Assert.Throws<PythonException>(() => test(securityData));
+                Assert.Throws<KeyNotFoundException>(() => test(securityData));
             }
         }
 
@@ -398,12 +370,9 @@ def Test(dynamicData):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""QuantConnect.Common"")
-from QuantConnect import *
-from QuantConnect.Data.Market import *
+from AlgorithmImports import *
 
 def Test(dynamicData):
     data = dynamicData.GetAll(TradeBar)

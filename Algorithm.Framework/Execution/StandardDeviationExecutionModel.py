@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,25 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Algorithm.Framework")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Indicators import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Orders import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Algorithm.Framework import *
-from QuantConnect.Algorithm.Framework.Execution import *
-from QuantConnect.Algorithm.Framework.Portfolio import *
-import numpy as np
-
+from AlgorithmImports import *
 
 class StandardDeviationExecutionModel(ExecutionModel):
     '''Execution model that submits orders while the current market prices is at least the configured number of standard
@@ -65,7 +47,7 @@ class StandardDeviationExecutionModel(ExecutionModel):
         self.targetsCollection.AddRange(targets)
 
         # for performance we check count value, OrderByMarginImpact and ClearFulfilled are expensive to call
-        if self.targetsCollection.Count > 0:
+        if not self.targetsCollection.IsEmpty:
             for target in self.targetsCollection.OrderByMarginImpact(algorithm):
                 symbol = target.Symbol
 
@@ -136,9 +118,7 @@ class SymbolData:
         algorithm.RegisterIndicator(symbol, self.STD, self.Consolidator)
 
         # warmup our indicators by pushing history through the indicators
-        history = algorithm.History(symbol, period, resolution)
-        if 'close' in history:
-            history = history.close.unstack(0).squeeze()
-            for time, value in history.iteritems():
-                self.SMA.Update(time, value)
-                self.STD.Update(time, value)
+        bars = algorithm.History[self.Consolidator.InputType](symbol, period, resolution)
+        for bar in bars:
+            self.SMA.Update(bar.EndTime, bar.Close)
+            self.STD.Update(bar.EndTime, bar.Close)

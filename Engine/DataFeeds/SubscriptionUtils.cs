@@ -42,17 +42,21 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             SubscriptionRequest request,
             IEnumerator<BaseData> enumerator)
         {
+            if (enumerator == null)
+            {
+                return GetEndedSubscription(request);
+            }
             var exchangeHours = request.Security.Exchange.Hours;
-            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Security.Exchange.TimeZone, request.StartTimeUtc, request.EndTimeUtc);
+            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
             var dataEnumerator = new SubscriptionDataEnumerator(
                 request.Configuration,
                 exchangeHours,
                 timeZoneOffsetProvider,
-                enumerator
+                enumerator,
+                request.IsUniverseSubscription
             );
             return new Subscription(request, dataEnumerator, timeZoneOffsetProvider);
         }
-
 
         /// <summary>
         /// Setups a new <see cref="Subscription"/> which will consume a blocking <see cref="EnqueueableEnumerator{T}"/>
@@ -69,14 +73,17 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             IFactorFileProvider factorFileProvider,
             bool enablePriceScale)
         {
-            var factorFile = GetFactorFileToUse(request.Configuration, factorFileProvider);
+            if(enumerator == null)
+            {
+                return GetEndedSubscription(request);
+            }
             var exchangeHours = request.Security.Exchange.Hours;
             var enqueueable = new EnqueueableEnumerator<SubscriptionData>(true);
-            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Security.Exchange.TimeZone, request.StartTimeUtc, request.EndTimeUtc);
+            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
             var subscription = new Subscription(request, enqueueable, timeZoneOffsetProvider);
             var config = subscription.Configuration;
+            enablePriceScale = enablePriceScale && config.PricesShouldBeScaled();
             var lastTradableDate = DateTime.MinValue;
-            decimal? currentScale = null;
 
             Func<int, bool> produce = (workBatchSize) =>
             {
@@ -96,7 +103,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                         // Use our config filter to see if we should emit this
                         // This currently catches Auxiliary data that we don't want to emit
-                        if (data != null && !config.ShouldEmitData(data))
+                        if (data != null && !config.ShouldEmitData(data, request.IsUniverseSubscription))
                         {
                             continue;
                         }
@@ -106,16 +113,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         // if the config is changed at any point it can emit adjusted data as well
                         // See SubscriptionData.Create() and PrecalculatedSubscriptionData for more
                         var requestMode = config.DataNormalizationMode;
-                        var mode = requestMode != DataNormalizationMode.Raw
-                            ? requestMode
-                            : DataNormalizationMode.Adjusted;
+                        if (config.SecurityType == SecurityType.Equity)
+                        {
+                            requestMode = requestMode != DataNormalizationMode.Raw ? requestMode : DataNormalizationMode.Adjusted;
+                        }
+
+                        var priceScaleFrontierDate = data.GetUpdatePriceScaleFrontier().Date;
 
                         // We update our price scale factor when the date changes for non fill forward bars or if we haven't initialized yet.
                         // We don't take into account auxiliary data because we don't scale it and because the underlying price data could be fill forwarded
-                        if (enablePriceScale && data?.Time.Date > lastTradableDate && data.DataType != MarketDataType.Auxiliary && (!data.IsFillForward || lastTradableDate == DateTime.MinValue))
+                        if (enablePriceScale && priceScaleFrontierDate > lastTradableDate && data.DataType != MarketDataType.Auxiliary && (!data.IsFillForward || lastTradableDate == DateTime.MinValue))
                         {
-                            lastTradableDate = data.Time.Date;
-                            currentScale = GetScaleFactor(factorFile, mode, data.Time.Date);
+                            var factorFile = factorFileProvider.Get(request.Configuration.Symbol);
+                            lastTradableDate = priceScaleFrontierDate;
+                            request.Configuration.PriceScaleFactor = factorFile.GetPriceScale(lastTradableDate, requestMode, config.ContractDepthOffset, config.DataMappingMode);
                         }
 
                         SubscriptionData subscriptionData = SubscriptionData.Create(
@@ -123,8 +134,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             exchangeHours,
                             subscription.OffsetProvider,
                             data,
-                            mode,
-                            enablePriceScale ? currentScale : null);
+                            requestMode,
+                            enablePriceScale ? request.Configuration.PriceScaleFactor : null);
 
                         // drop the data into the back of the enqueueable
                         enqueueable.Enqueue(subscriptionData);
@@ -157,8 +168,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     {
                         return 0;
                     }
-                    var count = enqueueable.Count;
-                    return count > WeightedWorkScheduler.MaxWorkWeight ? WeightedWorkScheduler.MaxWorkWeight : count;
+                    return enqueueable.Count;
                 }
             );
 
@@ -166,56 +176,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         }
 
         /// <summary>
-        /// Gets <see cref="FactorFile"/> for configuration
+        /// Return an ended subscription so it doesn't blow up at runtime on the data worker, this can happen if there's no tradable date
         /// </summary>
-        /// <param name="config">Subscription configuration</param>
-        /// <param name="factorFileProvider">The factor file provider</param>
-        /// <returns></returns>
-        public static FactorFile GetFactorFileToUse(
-            SubscriptionDataConfig config,
-            IFactorFileProvider factorFileProvider)
+        private static Subscription GetEndedSubscription(SubscriptionRequest request)
         {
-            var factorFileToUse = new FactorFile(config.Symbol.Value, new List<FactorFileRow>());
-
-            if (!config.IsCustomData
-                && config.SecurityType == SecurityType.Equity)
-            {
-                try
-                {
-                    var factorFile = factorFileProvider.Get(config.Symbol);
-                    if (factorFile != null)
-                    {
-                        factorFileToUse = factorFile;
-                    }
-                }
-                catch (Exception err)
-                {
-                    Log.Error(err, "SubscriptionUtils.GetFactorFileToUse(): Factors File: "
-                        + config.Symbol.ID + ": ");
-                }
-            }
-
-            return factorFileToUse;
+            var result = new Subscription(request, null, null);
+            // set subscription as ended
+            result.Dispose();
+            return result;
         }
-
-        private static decimal GetScaleFactor(FactorFile factorFile, DataNormalizationMode mode, DateTime date)
-        {
-            switch (mode)
-            {
-                case DataNormalizationMode.Raw:
-                    return 1;
-
-                case DataNormalizationMode.TotalReturn:
-                case DataNormalizationMode.SplitAdjusted:
-                    return factorFile.GetSplitFactor(date);
-
-                case DataNormalizationMode.Adjusted:
-                    return factorFile.GetPriceScaleFactor(date);
-
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-        }
-
     }
 }

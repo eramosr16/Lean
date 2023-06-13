@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,14 +11,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
-import pandas as pd
+from AlgorithmImports import *
 from scipy.optimize import minimize
 
 ### <summary>
 ### Provides an implementation of a portfolio optimizer that calculate the optimal weights 
 ### with the weight range from -1 to 1 and minimize the portfolio variance with a target return of 2%
 ### </summary>
+### <remarks>The budged constrain is scaled down/up to ensure that the sum of the absolute value of the weights is 1.</remarks>
 class MinimumVariancePortfolioOptimizer:
     '''Provides an implementation of a portfolio optimizer that calculate the optimal weights 
     with the weight range from -1 to 1 and minimize the portfolio variance with a target return of 2%'''
@@ -57,14 +57,18 @@ class MinimumVariancePortfolioOptimizer:
             {'type': 'eq', 'fun': lambda weights: self.get_budget_constraint(weights)},
             {'type': 'eq', 'fun': lambda weights: self.get_target_constraint(weights, expectedReturns)}]
 
+        # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
         opt = minimize(lambda weights: self.portfolio_variance(weights, covariance),     # Objective function
                        x0,                                                        # Initial guess
                        bounds = self.get_boundary_conditions(size),               # Bounds for variables
                        constraints = constraints,                                 # Constraints definition
-                       method='SLSQP',        # Optimization method:  Sequential Least SQuares Programming
-                       options={'ftol': 1e-04}) # Precision goal for the value of f in the stopping criterion.
+                       method='SLSQP')     # Optimization method:  Sequential Least Squares Programming (SLSQP)
 
-        return opt['x'] if opt['success'] else x0
+        if not opt['success']: return x0
+
+        # Scale the solution to ensure that the sum of the absolute weights is 1
+        sum_of_absolute_weights = np.sum(np.abs(opt['x']))
+        return opt['x'] / sum_of_absolute_weights
 
     def portfolio_variance(self, weights, covariance):
         '''Computes the portfolio variance

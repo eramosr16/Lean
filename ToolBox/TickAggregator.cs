@@ -1,8 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
+using QuantConnect.Util;
 
 namespace QuantConnect.ToolBox
 {
@@ -66,16 +68,16 @@ namespace QuantConnect.ToolBox
         /// Creates the correct <see cref="TickAggregator"/> instances for the specified tick types and resolution.
         /// <see cref="QuantConnect.TickType.OpenInterest"/> will ignore <paramref name="resolution"/> and use <see cref="QuantConnect.Resolution.Daily"/>
         /// </summary>
-        public static IEnumerable<TickAggregator> ForTickTypes(Resolution resolution, params TickType[] tickTypes)
+        public static IEnumerable<TickAggregator> ForTickTypes(SecurityType securityType, Resolution resolution, params TickType[] tickTypes)
         {
             if (resolution == Resolution.Tick)
             {
-                foreach (var tickType in tickTypes)
+                foreach (var tickType in tickTypes.Where(t => LeanData.IsValidConfiguration(securityType, resolution, t)))
                 {
                     // OI is special
                     if (tickType == TickType.OpenInterest)
                     {
-                        yield return new OpenInterestTickAggregator();
+                        yield return new OpenInterestTickAggregator(resolution);
                         continue;
                     }
 
@@ -85,7 +87,7 @@ namespace QuantConnect.ToolBox
                 yield break;
             }
 
-            foreach (var tickType in tickTypes)
+            foreach (var tickType in tickTypes.Where(t => LeanData.IsValidConfiguration(securityType, resolution, t)))
             {
                 switch (tickType)
                 {
@@ -98,7 +100,7 @@ namespace QuantConnect.ToolBox
                         break;
 
                     case TickType.OpenInterest:
-                        yield return new OpenInterestTickAggregator();
+                        yield return new OpenInterestTickAggregator(resolution);
                         break;
 
                     default:
@@ -143,15 +145,15 @@ namespace QuantConnect.ToolBox
     }
 
     /// <summary>
-    /// Use <see cref="OpenInterestConsolidator"/> to consolidate open interest ticks daily.
+    /// Use <see cref="OpenInterestConsolidator"/> to consolidate open interest ticks into a specified resolution
     /// </summary>
     public class OpenInterestTickAggregator : TickAggregator
     {
-        public OpenInterestTickAggregator()
-            : base(Resolution.Daily, TickType.OpenInterest)
+        public OpenInterestTickAggregator(Resolution resolution)
+            : base(resolution, TickType.OpenInterest)
         {
             Consolidated = new List<BaseData>();
-            Consolidator = new OpenInterestConsolidator(Time.OneDay);
+            Consolidator = new OpenInterestConsolidator(resolution.ToTimeSpan());
             Consolidator.DataConsolidated += (sender, consolidated) =>
             {
                 Consolidated.Add(consolidated as OpenInterest);

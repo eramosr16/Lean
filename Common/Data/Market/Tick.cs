@@ -14,13 +14,13 @@
 */
 
 using System;
-using System.Globalization;
-using System.IO;
-using System.Runtime.CompilerServices;
-using Newtonsoft.Json;
 using ProtoBuf;
-using QuantConnect.Logging;
+using System.IO;
+using Newtonsoft.Json;
 using QuantConnect.Util;
+using QuantConnect.Logging;
+using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace QuantConnect.Data.Market
 {
@@ -32,8 +32,8 @@ namespace QuantConnect.Data.Market
     [ProtoInclude(1000, typeof(OpenInterest))]
     public class Tick : BaseData
     {
-        private string _exchange = string.Empty;
-        private byte _exchangeCode;
+        private Exchange _exchange = QuantConnect.Exchange.UNKNOWN;
+        private string _exchangeValue;
         private uint? _parsedSaleCondition;
 
         /// <summary>
@@ -51,17 +51,21 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// Exchange code this tick came from <see cref="Exchanges"/>
         /// </summary>
-        public byte ExchangeCode
+        public string ExchangeCode
         {
             get
             {
-                return _exchangeCode;
+                if (_exchange == null)
+                {
+                    _exchange = Symbol != null
+                        ? _exchangeValue.GetPrimaryExchange(Symbol.SecurityType, Symbol.ID.Market) : _exchangeValue.GetPrimaryExchange();
+                }
+                return _exchange.Code;
             }
             set
             {
-                value = Enum.IsDefined(typeof(PrimaryExchange), value) ? value : (byte)PrimaryExchange.UNKNOWN;
-                _exchangeCode = value;
-                _exchange = ((PrimaryExchange) value).ToString();
+                _exchangeValue = value;
+                _exchange = null;
             }
         }
 
@@ -73,12 +77,17 @@ namespace QuantConnect.Data.Market
         {
             get
             {
+                if (_exchange == null)
+                {
+                    _exchange = Symbol != null
+                        ? _exchangeValue.GetPrimaryExchange(Symbol.SecurityType, Symbol.ID.Market) : _exchangeValue.GetPrimaryExchange();
+                }
                 return _exchange;
             }
             set
             {
-                _exchange = value;
-                _exchangeCode = (byte) Exchanges.GetPrimaryExchange(_exchange);
+                _exchangeValue = value;
+                _exchange = null;
             }
         }
 
@@ -168,8 +177,8 @@ namespace QuantConnect.Data.Market
             Symbol = Symbol.Empty;
             TickType = TickType.Trade;
             Quantity = 0;
-            Exchange = "";
-            SaleCondition = "";
+            _exchange = QuantConnect.Exchange.UNKNOWN;
+            SaleCondition = string.Empty;
             Suspicious = false;
             BidSize = 0;
             AskSize = 0;
@@ -188,7 +197,7 @@ namespace QuantConnect.Data.Market
             AskPrice = original.AskPrice;
             // directly set privates so we don't parse the exchange
             _exchange = original._exchange;
-            _exchangeCode = original._exchangeCode;
+            _exchangeValue = original._exchangeValue;
             SaleCondition = original.SaleCondition;
             Quantity = original.Quantity;
             Suspicious = original.Suspicious;
@@ -259,6 +268,22 @@ namespace QuantConnect.Data.Market
         }
 
         /// <summary>
+        /// Trade tick type constructor
+        /// </summary>
+        /// <param name="time">Full date and time</param>
+        /// <param name="symbol">Underlying equity security symbol</param>
+        /// <param name="saleCondition">The ticks sale condition</param>
+        /// <param name="exchange">The ticks exchange</param>
+        /// <param name="quantity">The quantity traded</param>
+        /// <param name="price">The price of the trade</param>
+        public Tick(DateTime time, Symbol symbol, string saleCondition, Exchange exchange, decimal quantity, decimal price)
+            : this(time, symbol, saleCondition, string.Empty, quantity, price)
+        {
+            // we were giving the exchange, set it directly
+            _exchange = exchange;
+        }
+
+        /// <summary>
         /// Quote tick type constructor
         /// </summary>
         /// <param name="time">Full date and time</param>
@@ -282,6 +307,24 @@ namespace QuantConnect.Data.Market
             AskSize = askSize;
             BidPrice = bidPrice;
             BidSize = bidSize;
+        }
+
+        /// <summary>
+        /// Quote tick type constructor
+        /// </summary>
+        /// <param name="time">Full date and time</param>
+        /// <param name="symbol">Underlying equity security symbol</param>
+        /// <param name="saleCondition">The ticks sale condition</param>
+        /// <param name="exchange">The ticks exchange</param>
+        /// <param name="bidSize">The bid size</param>
+        /// <param name="bidPrice">The bid price</param>
+        /// <param name="askSize">The ask size</param>
+        /// <param name="askPrice">The ask price</param>
+        public Tick(DateTime time, Symbol symbol, string saleCondition, Exchange exchange, decimal bidSize, decimal bidPrice, decimal askSize, decimal askPrice)
+            : this(time, symbol, saleCondition, string.Empty, bidSize, bidPrice, askSize, askPrice)
+        {
+            // we were giving the exchange, set it directly
+            _exchange = exchange;
         }
 
         /// <summary>
@@ -312,7 +355,7 @@ namespace QuantConnect.Data.Market
             var csv = line.Split(',');
             DataType = MarketDataType.Tick;
             Symbol = symbol;
-            Time = baseDate.Date.AddMilliseconds(csv[0].ToInt32());
+            Time = baseDate.Date.AddTicks(Convert.ToInt64(10000 * csv[0].ToDecimal()));
             Value = csv[1].ToDecimal() / GetScaleFactor(symbol);
             TickType = TickType.Trade;
             Quantity = csv[2].ToDecimal();
@@ -342,7 +385,7 @@ namespace QuantConnect.Data.Market
                     case SecurityType.Equity:
                         {
                             TickType = config.TickType;
-                            Time = date.Date.AddMilliseconds((double)reader.GetDecimal()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
+                            Time = date.Date.AddTicks(Convert.ToInt64(10000 * reader.GetDecimal())).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
 
                             bool pastLineEnd;
                             if (TickType == TickType.Trade)
@@ -383,7 +426,7 @@ namespace QuantConnect.Data.Market
                     case SecurityType.Cfd:
                         {
                             TickType = TickType.Quote;
-                            Time = date.Date.AddMilliseconds((double) reader.GetDecimal())
+                            Time = date.Date.AddTicks(Convert.ToInt64(10000 * reader.GetDecimal()))
                                 .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
                             BidPrice = reader.GetDecimal();
                             AskPrice = reader.GetDecimal();
@@ -392,24 +435,22 @@ namespace QuantConnect.Data.Market
                             break;
                         }
 
+                    case SecurityType.CryptoFuture:
                     case SecurityType.Crypto:
                         {
                             TickType = config.TickType;
                             Exchange = config.Market;
+                            Time = date.Date.AddTicks(Convert.ToInt64(10000 * reader.GetDecimal()))
+                                .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
 
                             if (TickType == TickType.Trade)
                             {
-                                Time = date.Date.AddMilliseconds((double)reader.GetDecimal())
-                                    .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
                                 Value = reader.GetDecimal();
                                 Quantity = reader.GetDecimal(out var endOfLine);
                                 Suspicious = !endOfLine && reader.GetInt32() == 1;
                             }
-
-                            if (TickType == TickType.Quote)
+                            else if(TickType == TickType.Quote)
                             {
-                                Time = date.Date.AddMilliseconds((double)reader.GetDecimal())
-                                    .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
                                 BidPrice = reader.GetDecimal();
                                 BidSize = reader.GetDecimal();
                                 AskPrice = reader.GetDecimal();
@@ -426,7 +467,7 @@ namespace QuantConnect.Data.Market
                     case SecurityType.IndexOption:
                         {
                             TickType = config.TickType;
-                            Time = date.Date.AddMilliseconds((double)reader.GetDecimal())
+                            Time = date.Date.AddTicks(Convert.ToInt64(10000 * reader.GetDecimal()))
                                 .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
 
                             if (TickType == TickType.Trade)
@@ -486,7 +527,7 @@ namespace QuantConnect.Data.Market
                         var index = 0;
                         TickType = config.TickType;
                         var csv = line.ToCsv(TickType == TickType.Trade ? 6 : 8);
-                        Time = date.Date.AddMilliseconds(csv[index++].ToInt64()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
+                        Time = date.Date.AddTicks(Convert.ToInt64(10000 * csv[index++].ToDecimal())).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
 
                         if (TickType == TickType.Trade)
                         {
@@ -545,7 +586,7 @@ namespace QuantConnect.Data.Market
                         if (TickType == TickType.Trade)
                         {
                             var csv = line.ToCsv(3);
-                            Time = date.Date.AddMilliseconds((double)csv[0].ToDecimal())
+                            Time = date.Date.AddTicks(Convert.ToInt64(10000 * csv[0].ToDecimal()))
                                 .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
                             Value = csv[1].ToDecimal();
                             Quantity = csv[2].ToDecimal();
@@ -555,7 +596,7 @@ namespace QuantConnect.Data.Market
                         if (TickType == TickType.Quote)
                         {
                             var csv = line.ToCsv(6);
-                            Time = date.Date.AddMilliseconds((double)csv[0].ToDecimal())
+                            Time = date.Date.AddTicks(Convert.ToInt64(10000 * csv[0].ToDecimal()))
                                 .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
                             BidPrice = csv[1].ToDecimal();
                             BidSize = csv[2].ToDecimal();
@@ -574,7 +615,7 @@ namespace QuantConnect.Data.Market
                     {
                         var csv = line.ToCsv(7);
                         TickType = config.TickType;
-                        Time = date.Date.AddMilliseconds(csv[0].ToInt64())
+                        Time = date.Date.AddTicks(Convert.ToInt64(10000 * csv[0].ToDecimal()))
                             .ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
 
                         if (TickType == TickType.Trade)

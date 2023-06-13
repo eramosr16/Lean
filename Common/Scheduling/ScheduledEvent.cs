@@ -67,7 +67,21 @@ namespace QuantConnect.Scheduling
         /// </summary>
         public DateTime NextEventUtcTime
         {
-            get { return _endOfScheduledEvents ? DateTime.MaxValue : _orderedEventUtcTimes.Current; }
+            get
+            {
+                if (_endOfScheduledEvents)
+                {
+                    return DateTime.MaxValue;
+                }
+
+                if (_needsMoveNext)
+                {
+                    _needsMoveNext = false;
+                    _endOfScheduledEvents = !_orderedEventUtcTimes.MoveNext();
+                    return NextEventUtcTime;
+                }
+                return _orderedEventUtcTimes.Current;
+            }
         }
 
         /// <summary>
@@ -106,13 +120,12 @@ namespace QuantConnect.Scheduling
         public ScheduledEvent(string name, IEnumerator<DateTime> orderedEventUtcTimes, Action<string, DateTime> callback = null)
         {
             Name = name;
+            Enabled = true;
             _callback = callback;
+            // we don't move next until we are requested, this allows the algorithm to support the warmup period correctly
+            _needsMoveNext = true;
             _orderedEventUtcTimes = orderedEventUtcTimes;
 
-            // prime the pump
-            _endOfScheduledEvents = !_orderedEventUtcTimes.MoveNext();
-
-            Enabled = true;
         }
 
         /// <summary>Serves as the default hash function. </summary>
@@ -194,17 +207,11 @@ namespace QuantConnect.Scheduling
         /// <param name="utcTime">Frontier time</param>
         internal void SkipEventsUntil(DateTime utcTime)
         {
-            // check if our next event is in the past
-            if (utcTime <= _orderedEventUtcTimes.Current) return;
-
-            while (_orderedEventUtcTimes.MoveNext())
+            do
             {
                 // zoom through the enumerator until we get to the desired time
-                if (utcTime <= _orderedEventUtcTimes.Current)
+                if (utcTime <= NextEventUtcTime)
                 {
-                    // pump is primed and ready to go
-                    _needsMoveNext = false;
-
                     if (IsLoggingEnabled)
                     {
                         Log.Trace($"ScheduledEvent.{Name}: Skipped events before {utcTime.ToStringInvariant(DateFormat.UI)}. " +
@@ -214,6 +221,8 @@ namespace QuantConnect.Scheduling
                     return;
                 }
             }
+            while (_orderedEventUtcTimes.MoveNext());
+
             if (IsLoggingEnabled)
             {
                 Log.Trace($"ScheduledEvent.{Name}: Exhausted event stream during skip until {utcTime.ToStringInvariant(DateFormat.UI)}");
@@ -244,22 +253,11 @@ namespace QuantConnect.Scheduling
         /// <param name="triggerTime">The event's time in UTC</param>
         protected void OnEventFired(DateTime triggerTime)
         {
-            try
-            {
-                // don't fire the event if we're turned off
-                if (!Enabled) return;
+            // don't fire the event if we're turned off
+            if (!Enabled) return;
 
-                _callback?.Invoke(Name, _orderedEventUtcTimes.Current);
-                EventFired?.Invoke(Name, triggerTime);
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"ScheduledEvent.Scan(): Exception was thrown in OnEventFired: {ex}");
-
-                // This scheduled event failed, so don't repeat the same event
-                _needsMoveNext = true;
-                throw new ScheduledEventException(Name, ex.Message, ex);
-            }
+            _callback?.Invoke(Name, _orderedEventUtcTimes.Current);
+            EventFired?.Invoke(Name, triggerTime);
         }
     }
 }

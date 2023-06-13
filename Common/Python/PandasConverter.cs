@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,7 +15,9 @@
 
 using Python.Runtime;
 using QuantConnect.Data;
+using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
+using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,6 +30,7 @@ namespace QuantConnect.Python
     public class PandasConverter
     {
         private static dynamic _pandas;
+        private static PyObject _concat;
 
         /// <summary>
         /// Creates an instance of <see cref="PandasConverter"/>.
@@ -38,7 +41,10 @@ namespace QuantConnect.Python
             {
                 using (Py.GIL())
                 {
-                    _pandas = Py.Import("pandas");
+                    var pandas = Py.Import("pandas");
+                    _pandas = pandas;
+                    // keep it so we don't need to ask for it each time
+                    _concat = pandas.GetAttr("concat");
                 }
             }
         }
@@ -47,37 +53,21 @@ namespace QuantConnect.Python
         /// Converts an enumerable of <see cref="Slice"/> in a pandas.DataFrame
         /// </summary>
         /// <param name="data">Enumerable of <see cref="Slice"/></param>
+        /// <param name="dataType">Optional type of bars to add to the data frame</param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
-        public PyObject GetDataFrame(IEnumerable<Slice> data)
+        public PyObject GetDataFrame(IEnumerable<Slice> data, Type dataType = null)
         {
             var maxLevels = 0;
-            var sliceDataDict = new Dictionary<Symbol, PandasData>();
+            var sliceDataDict = new Dictionary<SecurityIdentifier, PandasData>();
+
+            // if no data type is requested we check all
+            var requestedTick = dataType == null || dataType == typeof(Tick) || dataType == typeof(OpenInterest);
+            var requestedTradeBar = dataType == null || dataType == typeof(TradeBar);
+            var requestedQuoteBar = dataType == null || dataType == typeof(QuoteBar);
 
             foreach (var slice in data)
             {
-                foreach (var key in slice.Keys)
-                {
-                    var baseData = slice[key];
-
-                    PandasData value;
-                    if (!sliceDataDict.TryGetValue(key, out value))
-                    {
-                        sliceDataDict.Add(key, value = new PandasData(baseData));
-                        maxLevels = Math.Max(maxLevels, value.Levels);
-                    }
-
-                    if (value.IsCustomData)
-                    {
-                        value.Add(baseData);
-                    }
-                    else
-                    {
-                        var ticks = slice.Ticks.ContainsKey(key) ? slice.Ticks[key] : null;
-                        var tradeBars = slice.Bars.ContainsKey(key) ? slice.Bars[key] : null;
-                        var quoteBars = slice.QuoteBars.ContainsKey(key) ? slice.QuoteBars[key] : null;
-                        value.Add(ticks, tradeBars, quoteBars);
-                    }
-                }
+                AddSliceDataTypeDataToDict(slice, requestedTick, requestedTradeBar, requestedQuoteBar, sliceDataDict, ref maxLevels);
             }
 
             using (Py.GIL())
@@ -86,8 +76,15 @@ namespace QuantConnect.Python
                 {
                     return _pandas.DataFrame();
                 }
-                var dataFrames = sliceDataDict.Select(x => x.Value.ToPandasDataFrame(maxLevels));
-                return _pandas.concat(dataFrames.ToArray(), Py.kw("sort", true));
+                using var dataFrames = sliceDataDict.Select(x => x.Value.ToPandasDataFrame(maxLevels)).ToPyListUnSafe();
+                using var sortDic = Py.kw("sort", true);
+                var result = _concat.Invoke(new[] { dataFrames }, sortDic);
+
+                foreach (var df in dataFrames)
+                {
+                    df.Dispose();
+                }
+                return result;
             }
         }
 
@@ -96,6 +93,7 @@ namespace QuantConnect.Python
         /// </summary>
         /// <param name="data">Enumerable of <see cref="Slice"/></param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
+        /// <remarks>Helper method for testing</remarks>
         public PyObject GetDataFrame<T>(IEnumerable<T> data)
             where T : IBaseData
         {
@@ -135,18 +133,51 @@ namespace QuantConnect.Python
 
                 foreach (var kvp in data)
                 {
-                    var index = new List<DateTime>();
-                    var values = new List<double>();
-
-                    foreach (var item in kvp.Value)
-                    {
-                        index.Add(item.EndTime);
-                        values.Add((double)item.Value);
-                    }
-                    pyDict.SetItem(kvp.Key.ToLowerInvariant(), _pandas.Series(values, index));
+                    AddSeriesToPyDict(kvp.Key, kvp.Value, pyDict);
                 }
 
-                return _pandas.DataFrame(pyDict, columns: data.Keys.Select(x => x.ToLowerInvariant()).OrderBy(x => x));
+                return MakeIndicatorDataFrame(pyDict);
+            }
+        }
+
+        /// <summary>
+        /// Converts a dictionary with a list of <see cref="IndicatorDataPoint"/> in a pandas.DataFrame
+        /// </summary>
+        /// <param name="data"><see cref="PyObject"/> that should be a dictionary (convertible to PyDict) of string to list of <see cref="IndicatorDataPoint"/></param>
+        /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
+        public PyObject GetIndicatorDataFrame(PyObject data)
+        {
+            using (Py.GIL())
+            {
+                using var inputPythonType = data.GetPythonType();
+                var inputTypeStr = inputPythonType.ToString();
+                var targetTypeStr = nameof(PyDict);
+                PyObject currentKvp = null;
+
+                try
+                {
+                    using var pyDictData = new PyDict(data);
+                    using var seriesPyDict = new PyDict();
+
+                    targetTypeStr = $"{nameof(String)}: {nameof(List<IndicatorDataPoint>)}";
+
+                    foreach (var kvp in pyDictData.Items())
+                    {
+                        currentKvp = kvp;
+                        AddSeriesToPyDict(kvp[0].As<string>(), kvp[1].As<List<IndicatorDataPoint>>(), seriesPyDict);
+                    }
+
+                    return MakeIndicatorDataFrame(seriesPyDict);
+                }
+                catch (Exception e)
+                {
+                    if (currentKvp != null)
+                    {
+                        inputTypeStr = $"{currentKvp[0].GetPythonType()}: {currentKvp[1].GetPythonType()}";
+                    }
+
+                    throw new ArgumentException(Messages.PandasConverter.ConvertToDictionaryFailed(inputTypeStr, targetTypeStr, e.Message), e);
+                }
             }
         }
 
@@ -157,8 +188,110 @@ namespace QuantConnect.Python
         public override string ToString()
         {
             return _pandas == null
-                ? "pandas module was not imported."
+                ? Messages.PandasConverter.PandasModuleNotImported
                 : _pandas.Repr();
+        }
+
+        /// <summary>
+        /// Creates a series from a list of <see cref="IndicatorDataPoint"/> and adds it to the
+        /// <see cref="PyDict"/> as the value of the given <paramref name="key"/>
+        /// </summary>
+        /// <param name="key">Key to insert in the <see cref="PyDict"/></param>
+        /// <param name="points">List of <see cref="IndicatorDataPoint"/> that will make up the resulting series</param>
+        /// <param name="pyDict"><see cref="PyDict"/> where the resulting key-value pair will be inserted into</param>
+        private void AddSeriesToPyDict(string key, List<IndicatorDataPoint> points, PyDict pyDict)
+        {
+            var index = new List<DateTime>();
+            var values = new List<double>();
+
+            foreach (var point in points)
+            {
+                index.Add(point.EndTime);
+                values.Add((double) point.Value);
+            }
+            pyDict.SetItem(key.ToLowerInvariant(), _pandas.Series(values, index));
+        }
+
+        /// <summary>
+        /// Converts a <see cref="PyDict"/> of string to pandas.Series in a pandas.DataFrame
+        /// </summary>
+        /// <param name="pyDict"><see cref="PyDict"/> of string to pandas.Series</param>
+        /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
+        private PyObject MakeIndicatorDataFrame(PyDict pyDict)
+        {
+            return _pandas.DataFrame(pyDict, columns: pyDict.Keys().Select(x => x.As<string>().ToLowerInvariant()).OrderBy(x => x));
+        }
+
+        /// <summary>
+        /// Gets the <see cref="PandasData"/> for the given symbol if it exists in the dictionary, otherwise it creates a new instance with the
+        /// given base data and adds it to the dictionary
+        /// </summary>
+        private PandasData GetPandasDataValue(IDictionary<SecurityIdentifier, PandasData> sliceDataDict, Symbol symbol, object data, ref int maxLevels)
+        {
+            PandasData value;
+            if (!sliceDataDict.TryGetValue(symbol.ID, out value))
+            {
+                sliceDataDict[symbol.ID] = value = new PandasData(data);
+                maxLevels = Math.Max(maxLevels, value.Levels);
+            }
+
+            return value;
+        }
+
+        /// <summary>
+        /// Adds each slice data corresponding to the requested data type to the pandas data dictionary
+        /// </summary>
+        private void AddSliceDataTypeDataToDict(Slice slice, bool requestedTick, bool requestedTradeBar, bool requestedQuoteBar, IDictionary<SecurityIdentifier, PandasData> sliceDataDict, ref int maxLevels)
+        {
+            HashSet<SecurityIdentifier> _addedData = null;
+
+            for (int i = 0; i < slice.AllData.Count; i++)
+            {
+                var baseData = slice.AllData[i];
+                var value = GetPandasDataValue(sliceDataDict, baseData.Symbol, baseData, ref maxLevels);
+
+                if (value.IsCustomData)
+                {
+                    value.Add(baseData);
+                }
+                else
+                {
+                    var tick = requestedTick ? baseData as Tick : null;
+                    if(tick == null)
+                    {
+                        // we add both quote and trade bars for each symbol at the same time, because they share the row in the data frame else it will generate 2 rows per series
+                        if (requestedTradeBar && requestedQuoteBar)
+                        {
+                            _addedData ??= new();
+                            if (!_addedData.Add(baseData.Symbol.ID))
+                            {
+                                continue;
+                            }
+                        }
+
+                        // the slice already has the data organized by symbol so let's take advantage of it using Bars/QuoteBars collections
+                        QuoteBar quoteBar = null;
+                        var tradeBar = requestedTradeBar ? baseData as TradeBar : null;
+                        if (tradeBar != null)
+                        {
+                            slice.QuoteBars.TryGetValue(tradeBar.Symbol, out quoteBar);
+                        }
+                        else
+                        {
+                            quoteBar = requestedQuoteBar ? baseData as QuoteBar : null;
+                            if (quoteBar != null)
+                            {
+                                slice.Bars.TryGetValue(quoteBar.Symbol, out tradeBar);
+                            }
+                        }
+                        value.Add(tradeBar, quoteBar);
+                    }
+                    else
+                    {
+                        value.AddTick(tick);
+                    }
+                }
+            }
         }
     }
 }

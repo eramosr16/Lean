@@ -27,8 +27,27 @@ namespace QuantConnect.Securities.Future
     /// Futures Security Object Implementation for Futures Assets
     /// </summary>
     /// <seealso cref="Security"/>
-    public class Future : Security, IDerivativeSecurity
+    public class Future : Security, IDerivativeSecurity, IContinuousSecurity
     {
+        private bool _isTradable;
+
+        /// <summary>
+        /// Gets or sets whether or not this security should be considered tradable
+        /// </summary>
+        /// <remarks>Canonical futures are not tradable</remarks>
+        public override bool IsTradable
+        {
+            get
+            {
+                // once a future is removed it is no longer tradable
+                return _isTradable && !Symbol.IsCanonical();
+            }
+            set
+            {
+                _isTradable = value;
+            }
+        }
+
         /// <summary>
         /// The default number of days required to settle a futures sale
         /// </summary>
@@ -62,24 +81,24 @@ namespace QuantConnect.Securities.Future
                 new FutureExchange(exchangeHours),
                 new FutureCache(),
                 new SecurityPortfolioModel(),
-                new ImmediateFillModel(),
+                new FutureFillModel(),
                 new InteractiveBrokersFeeModel(),
                 new ConstantSlippageModel(0),
-                new ImmediateSettlementModel(),
+                new FutureSettlementModel(),
                 Securities.VolatilityModel.Null,
                 null,
                 new SecurityDataFilter(),
                 new SecurityPriceVariationModel(),
                 currencyConverter,
-                registeredTypes
+                registeredTypes,
+                Securities.MarginInterestRateModel.Null
                 )
         {
             BuyingPowerModel = new FutureMarginModel(0, this);
             // for now all futures are cash settled as we don't allow underlying (Live Cattle?) to be posted on the account
             SettlementType = SettlementType.Cash;
             Holdings = new FutureHolding(this, currencyConverter);
-            _symbolProperties = symbolProperties;
-            SetFilter(TimeSpan.Zero, TimeSpan.FromDays(35));
+            ContractFilter = new EmptyContractFilter();
         }
 
         /// <summary>
@@ -109,29 +128,26 @@ namespace QuantConnect.Securities.Future
                 new FutureExchange(exchangeHours),
                 securityCache,
                 new SecurityPortfolioModel(),
-                new ImmediateFillModel(),
+                new FutureFillModel(),
                 new InteractiveBrokersFeeModel(),
                 new ConstantSlippageModel(0),
-                new ImmediateSettlementModel(),
+                new FutureSettlementModel(),
                 Securities.VolatilityModel.Null,
                 null,
                 new SecurityDataFilter(),
                 new SecurityPriceVariationModel(),
                 currencyConverter,
-                registeredTypes
+                registeredTypes,
+                Securities.MarginInterestRateModel.Null
                 )
         {
             BuyingPowerModel = new FutureMarginModel(0, this);
             // for now all futures are cash settled as we don't allow underlying (Live Cattle?) to be posted on the account
             SettlementType = SettlementType.Cash;
             Holdings = new FutureHolding(this, currencyConverter);
-            _symbolProperties = symbolProperties;
-            SetFilter(TimeSpan.Zero, TimeSpan.FromDays(35));
+            ContractFilter = new EmptyContractFilter();
             Underlying = underlying;
         }
-
-        // save off a strongly typed version of symbol properties
-        private readonly SymbolProperties _symbolProperties;
 
         /// <summary>
         /// Returns true if this is the future chain security, false if it is a specific future contract
@@ -168,11 +184,35 @@ namespace QuantConnect.Securities.Future
         }
 
         /// <summary>
+        /// Gets or sets the currently mapped symbol for the security
+        /// </summary>
+        public Symbol Mapped
+        {
+            get; set;
+        }
+
+        /// <summary>
         /// Gets or sets the contract filter
         /// </summary>
         public IDerivativeSecurityFilter ContractFilter
         {
             get; set;
+        }
+
+        /// <summary>
+        /// Sets the <see cref="LocalTimeKeeper"/> to be used for this <see cref="Security"/>.
+        /// This is the source of this instance's time.
+        /// </summary>
+        /// <param name="localTimeKeeper">The source of this <see cref="Security"/>'s time.</param>
+        public override void SetLocalTimeKeeper(LocalTimeKeeper localTimeKeeper)
+        {
+            base.SetLocalTimeKeeper(localTimeKeeper);
+
+            var model = SettlementModel as FutureSettlementModel;
+            if (model != null)
+            {
+                model.SetLocalDateTimeFrontier(LocalTime);
+            }
         }
 
         /// <summary>

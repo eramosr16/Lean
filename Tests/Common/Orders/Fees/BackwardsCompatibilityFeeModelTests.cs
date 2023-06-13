@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -48,9 +48,8 @@ namespace QuantConnect.Tests.Common.Orders.Fees
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class CustomFeeModel:\n" +
                     "   def __init__(self):\n" +
                     "       self.CalledGetOrderFee = False\n" +
@@ -80,11 +79,8 @@ namespace QuantConnect.Tests.Common.Orders.Fees
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(),
-                    "from clr import AddReference\n" +
-                    "AddReference(\"QuantConnect.Common\")\n" +
-                    "from QuantConnect.Orders.Fees import *\n" +
-                    "from QuantConnect.Securities import *\n" +
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
                     "class CustomFeeModel(FeeModel):\n" +
                     "   def __init__(self):\n" +
                     "       self.CalledGetOrderFee = False\n" +

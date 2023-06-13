@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -29,20 +29,24 @@ namespace QuantConnect.ToolBox.Polygon
         /// <summary>
         /// Primary entry point to the program. This program only supports SecurityType.Equity
         /// </summary>
-        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate)
+        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate, string apiKey)
         {
-            if (tickers.IsNullOrEmpty() || securityTypeString.IsNullOrEmpty() || market.IsNullOrEmpty() || resolutionString.IsNullOrEmpty())
+            if (tickers.IsNullOrEmpty() || securityTypeString.IsNullOrEmpty() || market.IsNullOrEmpty() || resolutionString.IsNullOrEmpty() || apiKey.IsNullOrEmpty())
             {
-                Console.WriteLine("PolygonDownloader ERROR: '--tickers=' or '--security-type=' or '--market=' or '--resolution=' parameter is missing");
+                Console.WriteLine("PolygonDownloader ERROR: '--tickers=' or '--security-type=' or '--market=' or '--resolution=' or '--api-key=' parameter is missing");
                 Console.WriteLine("--tickers=eg SPY,AAPL");
                 Console.WriteLine("--security-type=Equity");
                 Console.WriteLine("--market=usa");
                 Console.WriteLine("--resolution=Minute/Hour/Daily");
+                Console.WriteLine("--api-key=<apiKey>");
                 Environment.Exit(1);
             }
 
             try
             {
+                // Set API Key
+                Config.Set("polygon-api-key", apiKey);
+
                 // Load settings from command line
                 var resolution = (Resolution)Enum.Parse(typeof(Resolution), resolutionString);
                 var securityType = (SecurityType)Enum.Parse(typeof(SecurityType), securityTypeString);
@@ -53,7 +57,7 @@ namespace QuantConnect.ToolBox.Polygon
                     : SubscriptionManager.DefaultDataTypes()[securityType];
 
                 // Load settings from config.json
-                var dataDirectory = Config.Get("data-directory", "../../../Data");
+                var dataDirectory = Globals.DataFolder;
                 var startDate = fromDate.ConvertToUtc(TimeZones.NewYork);
                 var endDate = toDate.ConvertToUtc(TimeZones.NewYork);
 
@@ -72,7 +76,7 @@ namespace QuantConnect.ToolBox.Polygon
                         foreach (var tickType in tickTypes)
                         {
                             // Download the data
-                            var data = downloader.Get(symbol, resolution, startDate, endDate, tickType)
+                            var data = downloader.Get(new DataDownloaderGetParameters(symbol, resolution, startDate, endDate, tickType))
                                 .Select(x =>
                                     {
                                         x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);

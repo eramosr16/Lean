@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,9 +14,10 @@
  *
 */
 
-using NUnit.Framework;
-using Python.Runtime;
 using System;
+using Python.Runtime;
+using NUnit.Framework;
+using QuantConnect.Python;
 
 namespace QuantConnect.Tests.Python
 {
@@ -24,9 +25,613 @@ namespace QuantConnect.Tests.Python
     public class PythonPackagesTests
     {
         [Test]
+        public void Tick()
+        {
+            AssertCode(
+                @"
+import numpy as np
+
+from tick.dataset import fetch_hawkes_bund_data
+from tick.hawkes import HawkesConditionalLaw
+from tick.plot import plot_hawkes_kernel_norms
+
+def RunTest():
+    timestamps_list = fetch_hawkes_bund_data()
+
+    kernel_discretization = np.hstack((0, np.logspace(-5, 0, 50)))
+    hawkes_learner = HawkesConditionalLaw(
+        claw_method=""log"", delta_lag=0.1, min_lag=5e-4, max_lag=500,
+        quad_method=""log"", n_quad=10, min_support=1e-4, max_support=1, n_threads=4)
+
+    hawkes_learner.fit(timestamps_list)
+
+    plot_hawkes_kernel_norms(hawkes_learner,
+                             node_names=[""P_u"", ""P_d"", ""T_a"", ""T_b""])");
+        }
+
+        [Test]
+        public void FixedEffectModel()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import pandas as pd
+
+from fixedeffect.iv import ivgmm
+from fixedeffect.utils.panel_dgp import gen_data
+
+def RunTest():
+    N = 100
+    T = 10
+    beta = [-3,1,2,3,4]
+    ate = 1
+    exp_date = 5
+    df = gen_data(N, T, beta, ate, exp_date)
+    formula = 'y ~ x_1|id+time|0|(x_2~x_3+x_4)'
+    model_iv2sls = ivgmm(data_df = df, formula = formula)
+    result = model_iv2sls.fit()
+    result");
+        }
+
+        [Test]
+        public void Iisignature()
+        {
+            AssertCode(
+                @"
+import iisignature
+import numpy as np
+
+def RunTest():
+    path = np . random . uniform ( size =(20 ,3) )
+    signature = iisignature . sig ( path ,4)
+    s = iisignature . prepare (3 ,4)
+    logsignature = iisignature . logsig ( path , s )");
+        }
+
+        [Test]
+        public void PyStan()
+        {
+            AssertCode(
+                @"
+import stan
+
+def RunTest():
+    schools_code = """"""
+    data {
+      int<lower=0> J;         // number of schools
+      real y[J];              // estimated treatment effects
+      real<lower=0> sigma[J]; // standard error of effect estimates
+    }
+    parameters {
+      real mu;                // population treatment effect
+      real<lower=0> tau;      // standard deviation in treatment effects
+      vector[J] eta;          // unscaled deviation from mu by school
+    }
+    transformed parameters {
+      vector[J] theta = mu + tau * eta;        // school treatment effects
+    }
+    model {
+      target += normal_lpdf(eta | 0, 1);       // prior log-density
+      target += normal_lpdf(y | theta, sigma); // log-likelihood
+    }
+    """"""
+
+    schools_data = {""J"": 8,
+                    ""y"": [28,  8, -3,  7, -1,  1, 18, 12],
+                    ""sigma"": [15, 10, 16, 11,  9, 11, 10, 18]}
+
+    posterior = stan.build(schools_code, data=schools_data)
+    fit = posterior.sample(num_chains=4, num_samples=1000)
+    eta = fit[""eta""]  # array with shape (8, 4000)
+    df = fit.to_frame()  # pandas `DataFrame, requires pandas");
+        }
+
+        [Test]
+        public void PyvinecopulibTest()
+        {
+            AssertCode(
+                @"
+import pyvinecopulib as pv
+import numpy as np
+
+def RunTest():
+    np.random.seed(1234)  # seed for the random generator
+    n = 1000  # number of observations
+    d = 5  # the dimension
+    mean = np.random.normal(size=d)  # mean vector
+    cov = np.random.normal(size=(d, d))  # covariance matrix
+    cov = np.dot(cov.transpose(), cov)  # make it non-negative definite
+    x = np.random.multivariate_normal(mean, cov, n)
+
+    # Transform copula data using the empirical distribution
+    u = pv.to_pseudo_obs(x)
+
+    # Fit a Gaussian vine
+    # (i.e., properly specified since the data is multivariate normal)
+    controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
+    cop = pv.Vinecop(u, controls=controls)
+
+    # Sample from the copula
+    n_sim = 1000
+    u_sim = cop.simulate(n_sim, seeds=[1, 2, 3, 4])
+
+    # Transform back simulations to the original scale
+    x_sim = np.asarray([np.quantile(x[:, i], u_sim[:, i]) for i in range(0, d)])
+
+    # Both the mean and covariance matrix look ok!
+    [mean, np.mean(x_sim, 1)]
+    [cov, np.cov(x_sim)]");
+        }
+
+        [Test, Explicit("Needs to be run byitself to avoid exception on init: A colormap named \"cet_gray\" is already registered.")]
+        public void HvplotTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import pandas as pd
+import hvplot.pandas
+
+def RunTest():
+    index = pd.date_range('1/1/2000', periods=1000)
+    df = pd.DataFrame(np.random.randn(1000, 4), index=index, columns=list('ABCD')).cumsum()
+
+    df.head()
+    pd.options.plotting.backend = 'holoviews'
+    df.plot()");
+        }
+
+        [Test]
+        public void StumpyTest()
+        {
+            AssertCode(
+                @"
+import stumpy
+import numpy as np
+
+def RunTest():
+    your_time_series = np.random.rand(1000)
+    window_size = 10  # Approximately, how many data points might be found in a pattern
+
+    stumpy.stump(your_time_series, m=window_size)");
+        }
+
+        [Test]
+        public void RiverTest()
+        {
+            AssertCode(
+                @"
+from river import datasets
+
+def RunTest():
+    datasets.Phishing()");
+        }
+
+        [Test]
+        public void BokehTest()
+        {
+            AssertCode(
+                @"
+from bokeh.plotting import figure, output_file, show
+
+def RunTest():
+    # output to static HTML file
+    output_file(""line.html"")
+
+    p = figure(width=400, height=400)
+
+    # add a circle renderer with a size, color, and alpha
+    p.circle([1, 2, 3, 4, 5], [6, 7, 2, 4, 5], size=20, color=""navy"", alpha=0.5)
+
+    # show the results
+    show(p)");
+        }
+
+        [Test]
+        public void LineProfilerTest()
+        {
+            AssertCode(
+                @"
+from line_profiler import LineProfiler
+import random
+
+def RunTest():
+    def do_stuff(numbers):
+        s = sum(numbers)
+        l = [numbers[i]/43 for i in range(len(numbers))]
+        m = ['hello'+str(numbers[i]) for i in range(len(numbers))]
+
+    numbers = [random.randint(1,100) for i in range(1000)]
+    lp = LineProfiler()
+    lp_wrapper = lp(do_stuff)
+    lp_wrapper(numbers)
+    lp.print_stats()");
+        }
+
+        [Test]
+        public void FuzzyCMeansTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+from fcmeans import FCM
+from matplotlib import pyplot as plt
+
+def RunTest():
+    n_samples = 3000
+
+    X = np.concatenate((
+        np.random.normal((-2, -2), size=(n_samples, 2)),
+        np.random.normal((2, 2), size=(n_samples, 2))
+    ))
+    fcm = FCM(n_clusters=2)
+    fcm.fit(X)
+    # outputs
+    fcm_centers = fcm.centers
+    fcm.predict(X)");
+        }
+
+        [Test]
+        public void MdptoolboxTest()
+        {
+            AssertCode(
+                @"
+import mdptoolbox.example
+
+def RunTest():
+    P, R = mdptoolbox.example.forest()
+    vi = mdptoolbox.mdp.ValueIteration(P, R, 0.9)
+    vi.run()
+    vi.policy");
+        }
+
+        [Test]
+        public void NumerapiTest()
+        {
+            AssertCode(
+                @"
+import numerapi
+
+def RunTest():
+    napi = numerapi.NumerAPI(verbosity=""warning"")
+    napi.get_leaderboard()");
+        }
+
+        [Test]
+        public void StockstatsTest()
+        {
+            AssertCode(
+                @"
+import pandas as pd
+import stockstats
+
+def RunTest():
+    d = {'date': [ '20220901', '20220902' ], 'open': [ 1, 2 ], 'close': [ 1, 2 ],'high': [ 1, 2], 'low': [ 1, 2 ], 'volume': [ 1, 2 ] }
+    df = pd.DataFrame(data=d)
+    stock = stockstats.wrap(df)");
+        }
+
+        [Test]
+        public void HurstTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import matplotlib.pyplot as plt
+from hurst import compute_Hc, random_walk
+
+def RunTest():
+    # Use random_walk() function or generate a random walk series manually:
+    # series = random_walk(99999, cumprod=True)
+    np.random.seed(42)
+    random_changes = 1. + np.random.randn(99999) / 1000.
+    series = np.cumprod(random_changes)  # create a random walk from random changes
+
+    # Evaluate Hurst equation
+    H, c, data = compute_Hc(series, kind='price', simplified=True)");
+        }
+
+        [Test]
+        public void PolarsTest()
+        {
+            AssertCode(
+                @"
+import polars as pl
+
+def RunTest():
+    df = pl.DataFrame({ ""A"": [1, 2, 3, 4, 5], ""fruits"": [""banana"", ""banana"", ""apple"", ""apple"", ""banana""], ""cars"": [""beetle"", ""audi"", ""beetle"", ""beetle"", ""beetle""], })
+    df.sort(""fruits"")");
+        }
+
+        [Test, Explicit("Hangs if run along side the rest")]
+        public void TensorflowProbabilityTest()
+        {
+            AssertCode(
+                @"
+import tensorflow as tf
+import tensorflow_probability as tfp
+
+def RunTest():
+    # Pretend to load synthetic data set.
+    features = tfp.distributions.Normal(loc=0., scale=1.).sample(int(100e3))
+    labels = tfp.distributions.Bernoulli(logits=1.618 * features).sample()
+
+    # Specify model.
+    model = tfp.glm.Bernoulli()
+
+    # Fit model given data.
+    coeffs, linear_response, is_converged, num_iter = tfp.glm.fit(
+        model_matrix=features[:, tf.newaxis],
+        response=tf.cast(labels, dtype=tf.float32),
+        model=model)");
+        }
+
+        [Test]
+        public void MpmathTest()
+        {
+            AssertCode(
+                @"
+from mpmath import sin, cos
+
+def RunTest():
+    sin(1), cos(1)");
+        }
+
+        [Test]
+        public void LimeTest()
+        {
+            AssertCode(
+                @"
+from __future__ import print_function
+import sklearn
+import sklearn.datasets
+import sklearn.ensemble
+import numpy as np
+import lime
+import lime.lime_tabular
+np.random.seed(1)
+
+def RunTest():
+	iris = sklearn.datasets.load_iris()
+
+	train, test, labels_train, labels_test = sklearn.model_selection.train_test_split(iris.data, iris.target, train_size=0.80)
+
+	rf = sklearn.ensemble.RandomForestClassifier(n_estimators=500)
+	rf.fit(train, labels_train)
+
+	sklearn.metrics.accuracy_score(labels_test, rf.predict(test))
+	explainer = lime.lime_tabular.LimeTabularExplainer(train, feature_names=iris.feature_names, class_names=iris.target_names, discretize_continuous=True)"
+            );
+        }
+
+        [Test]
+        public void ShapTest()
+        {
+            AssertCode(
+                @"
+import xgboost
+import numpy as np
+import shap
+
+def RunTest():
+	# simulate some binary data and a linear outcome with an interaction term
+	# note we make the features in X perfectly independent of each other to make
+	# it easy to solve for the exact SHAP values
+	N = 2000
+	X = np.zeros((N,5))
+	X[:1000,0] = 1
+	X[:500,1] = 1
+	X[1000:1500,1] = 1
+	X[:250,2] = 1
+	X[500:750,2] = 1
+	X[1000:1250,2] = 1
+	X[1500:1750,2] = 1
+	X[:,0:3] -= 0.5
+	y = 2*X[:,0] - 3*X[:,1]
+
+	Xd = xgboost.DMatrix(X, label=y)
+	model = xgboost.train({
+	    'eta':1, 'max_depth':3, 'base_score': 0, ""lambda"": 0
+	}, Xd, 1)
+	print(""Model error ="", np.linalg.norm(y-model.predict(Xd)))
+	print(model.get_dump(with_stats=True)[0])
+
+	# make sure the SHAP values add up to marginal predictions
+	pred = model.predict(Xd, output_margin=True)
+	explainer = shap.TreeExplainer(model)
+	shap_values = explainer.shap_values(Xd)
+	np.abs(shap_values.sum(1) + explainer.expected_value - pred).max()
+
+	shap.summary_plot(shap_values, X)"
+            );
+        }
+
+        [Test]
+        public void MlxtendTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import itertools
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from mlxtend.classifier import EnsembleVoteClassifier
+from mlxtend.data import iris_data
+from mlxtend.plotting import plot_decision_regions
+
+def RunTest():
+   # Initializing Classifiers
+   clf1 = LogisticRegression(random_state=0)
+   clf2 = RandomForestClassifier(random_state=0)
+   clf3 = SVC(random_state=0, probability=True)
+   eclf = EnsembleVoteClassifier(clfs=[clf1, clf2, clf3],
+                                 weights=[2, 1, 1], voting='soft')
+   # Loading some example data
+   X, y = iris_data()
+   X = X[:,[0, 2]]
+
+   # Plotting Decision Regions
+   gs = gridspec.GridSpec(2, 2)
+   fig = plt.figure(figsize=(10, 8))
+
+   labels = ['Logistic Regression',
+             'Random Forest',
+             'RBF kernel SVM',
+             'Ensemble']
+
+   for clf, lab, grd in zip([clf1, clf2, clf3, eclf],
+                            labels,
+                            itertools.product([0, 1],
+                            repeat=2)):
+       clf.fit(X, y)
+       ax = plt.subplot(gs[grd[0], grd[1]])
+       fig = plot_decision_regions(X=X, y=y,
+                                   clf=clf, legend=2)
+       plt.title(lab)
+
+   plt.show()"
+            );
+        }
+
+        [Test, Explicit("Hangs if run along side the rest")]
+        public void IgniteTest()
+        {
+            AssertCode(
+                $@"
+import ignite
+
+def RunTest():
+    assert(ignite.__version__ == '0.4.11')"
+            );
+        }
+
+        [Test, Explicit("Hangs if run along side the rest")]
+        public void StellargraphTest()
+        {
+            AssertCode(
+                $@"
+import stellargraph
+
+def RunTest():
+    assert(stellargraph.__version__ == '1.2.1')"
+            );
+        }
+
+        [Test, Explicit("Sometimes hangs when run along side the other tests")]
+        public void TensorlyTest()
+        {
+            AssertCode(
+                @"
+import tensorly as tl
+from tensorly import random
+
+def RunTest():
+	tensor = random.random_tensor((10, 10, 10))
+	# This will be a NumPy array by default
+	tl.set_backend('pytorch')
+	# TensorLy now uses TensorLy for all operations
+
+	tensor = random.random_tensor((10, 10, 10))
+	# This will be a PyTorch array by default
+	tl.max(tensor)
+	tl.mean(tensor)
+	tl.dot(tl.unfold(tensor, 0), tl.transpose(tl.unfold(tensor, 0)))"
+            );
+        }
+
+        [Test]
+        public void SpacyTest()
+        {
+            AssertCode(
+                @"
+import spacy
+from spacy.lang.en.examples import sentences
+
+def RunTest():
+    nlp = spacy.load(""en_core_web_md"")
+    doc = nlp(sentences[0])
+    print(doc.text)"
+            );
+        }
+
+        [Test]
+        public void PyEMDTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import PyEMD
+
+def RunTest():
+    s = np.random.random(100)
+    emd = PyEMD.EMD()
+    IMFs = emd(s)"
+            );
+        }
+
+        [Test]
+        public void RipserTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import ripser
+import persim
+def RunTest():
+    data = np.random.random((100,2))
+    diagrams = ripser.ripser(data)['dgms']
+    persim.plot_diagrams(diagrams, show=True)"
+            );
+        }
+
+        [Test]
+        public void AlphalensTest()
+        {
+            AssertCode(
+                @"
+import alphalens
+import pandas
+def RunTest():
+    tickers = ['A', 'B', 'C', 'D', 'E', 'F']
+
+    factor_groups = {'A': 1, 'B': 1, 'C': 1, 'D': 2, 'E': 2, 'F': 2}
+
+    daily_rets = [1, 1, 2, 1, 1, 2]
+    price_data = [[daily_rets[0]**i, daily_rets[1]**i, daily_rets[2]**i,
+           daily_rets[3]**i, daily_rets[4]**i, daily_rets[5]**i]
+          for i in range(1, 5)]  # 4 days
+
+    start = '2015-1-11'
+    factor_end = '2015-1-13'
+    price_end = '2015-1-14'  # 1D fwd returns
+
+    price_index = pandas.date_range(start=start, end=price_end)
+    price_index.name = 'date'
+    prices = pandas.DataFrame(index=price_index, columns=tickers, data=price_data)
+
+    factor = 2
+    factor_index = pandas.date_range(start=start, end=factor_end)
+    factor_index.name = 'date'
+    factor = pandas.DataFrame(index=factor_index, columns=tickers,
+       data=factor).stack()
+
+    # Ingest and format data
+    factor_data = alphalens.utils.get_clean_factor_and_forward_returns(
+        factor, prices,
+        groupby=factor_groups,
+        quantiles=None,
+        bins=True,
+        periods=(1,))"
+            );
+        }
+
+        [Test]
         public void NumpyTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 def RunTest():
@@ -37,7 +642,7 @@ def RunTest():
         [Test]
         public void ScipyTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import scipy
 import numpy
@@ -49,7 +654,7 @@ def RunTest():
         [Test]
         public void SklearnTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from sklearn.ensemble import RandomForestClassifier
 def RunTest():
@@ -60,7 +665,7 @@ def RunTest():
         [Test]
         public void CvxoptTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import cvxopt
 def RunTest():
@@ -71,7 +676,7 @@ def RunTest():
         [Test]
         public void TalibTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 import talib
@@ -81,27 +686,9 @@ def RunTest():
         }
 
         [Test]
-        public void BlazeTest()
-        {
-            AssetCode(
-                @"
-import blaze
-def RunTest():
-    accounts = blaze.symbol('accounts', 'var * {id: int, name: string, amount: int}')
-    deadbeats = accounts[accounts.amount < 0].name
-    L = [[1, 'Alice',   100],
-         [2, 'Bob',    -200],
-         [3, 'Charlie', 300],
-         [4, 'Denis',   400],
-         [5, 'Edith',  -500]]
-    return blaze.compute(deadbeats, L)"
-            );
-        }
-
-        [Test]
         public void CvxpyTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 import cvxpy
@@ -123,7 +710,7 @@ def RunTest():
         [Test]
         public void StatsmodelsTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 import statsmodels.api as sm
@@ -146,7 +733,7 @@ def RunTest():
         [Test]
         public void PykalmanTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 from pykalman import KalmanFilter
@@ -159,31 +746,15 @@ def RunTest():
         }
 
         [Test]
-        public void CopulalibTest()
+        public void AesaraTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
-import numpy
-from copulalib.copulalib import Copula
+import aesara
 def RunTest():
-    x = numpy.random.normal(size=100)
-    y = 2.5 * x + numpy.random.normal(size=100)
-
-    #Make the instance of Copula class with x, y and clayton family::
-    return Copula(x, y, family = 'clayton')"
-            );
-        }
-
-        [Test]
-        public void TheanoTest()
-        {
-            AssetCode(
-                @"
-import theano
-def RunTest():
-    a = theano.tensor.vector()          # declare variable
+    a = aesara.tensor.vector()          # declare variable
     out = a + a ** 10               # build symbolic expression
-    f = theano.function([a], out)   # compile function
+    f = aesara.function([a], out)   # compile function
     return f([0, 1, 2])"
             );
         }
@@ -191,7 +762,7 @@ def RunTest():
         [Test]
         public void XgboostTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 import xgboost
@@ -205,7 +776,7 @@ def RunTest():
         [Test]
         public void ArchTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 from arch import arch_model
@@ -232,10 +803,10 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Hangs if run along side the rest")]
         public void KerasTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 from keras.models import Sequential
@@ -256,25 +827,32 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Hangs if run along side the rest")]
         public void TensorflowTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import tensorflow as tf
 def RunTest():
-    node1 = tf.constant(3.0, tf.float32)
-    node2 = tf.constant(4.0) # also tf.float32 implicitly
-    sess = tf.Session()
-    node3 = tf.add(node1, node2)
-    return sess.run(node3)"
+    mnist = tf.keras.datasets.mnist
+
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(10)
+    ])
+    model(x_train[:1]).numpy()"
             );
         }
 
         [Test]
         public void DeapTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy
 from deap import algorithms, base, creator, tools
@@ -313,7 +891,7 @@ def RunTest():
         [Test]
         public void QuantlibTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import QuantLib as ql
 def RunTest():
@@ -321,13 +899,13 @@ def RunTest():
     ql.Settings.instance().evaluationDate = todaysDate
     spotDates = [ql.Date(15, 1, 2015), ql.Date(15, 7, 2015), ql.Date(15, 1, 2016)]
     spotRates = [0.0, 0.005, 0.007]
-    dayCount = ql.Thirty360()
-    calendar = ql.UnitedStates()
+    dayCount = ql.Thirty360(ql.Thirty360.BondBasis)
+    calendar = ql.UnitedStates(ql.UnitedStates.NYSE)
     interpolation = ql.Linear()
     compounding = ql.Compounded
     compoundingFrequency = ql.Annual
     spotCurve = ql.ZeroCurve(spotDates, spotRates, dayCount, calendar, interpolation,
-                             compounding, compoundingFrequency)
+                                compounding, compoundingFrequency)
     return ql.YieldTermStructureHandle(spotCurve)"
             );
         }
@@ -335,7 +913,7 @@ def RunTest():
         [Test]
         public void CopulaTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from copulas.univariate.gaussian import GaussianUnivariate
 import pandas as pd
@@ -351,7 +929,7 @@ def RunTest():
         [Test]
         public void HmmlearnTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy as np
 from hmmlearn import hmm
@@ -381,10 +959,11 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Installed in specific environment. Requires older numpy")]
         public void PomegranateTest()
         {
-            AssetCode(
+            PythonInitializer.ActivatePythonVirtualEnvironment("/Foundation-Pomegranate");
+            AssertCode(
                 @"
 from pomegranate import *
 def RunTest():
@@ -400,7 +979,7 @@ def RunTest():
         [Test]
         public void LightgbmTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import lightgbm as lgb
 import numpy as np
@@ -436,10 +1015,10 @@ def RunTest():
         [Test]
         public void FbProphetTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import pandas as pd
-from fbprophet import Prophet
+from prophet import Prophet
 def RunTest():
     df=pd.DataFrame({'ds': ['2007-12-10', '2007-12-11', '2007-12-12', '2007-12-13', '2007-12-14'], 'y': [9.590761, 8.519590, 8.183677, 8.072467, 7.893572]})
     m = Prophet()
@@ -452,7 +1031,7 @@ def RunTest():
         [Test]
         public void FastAiTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from fastai.text import *
 def RunTest():
@@ -463,15 +1042,14 @@ def RunTest():
         [Test]
         public void PyramidArimaTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy as np
-import pyramid as pm
-from pyramid.datasets import load_wineind
+import pmdarima as pm
+from pmdarima.datasets import load_wineind
 def RunTest():
     # this is a dataset from R
     wineind = load_wineind().astype(np.float64)
-
     # fit stepwise auto-ARIMA
     stepwise_fit = pm.auto_arima(wineind, start_p=1, start_q=1,
                                  max_p=3, max_q=3, m=12,
@@ -480,34 +1058,549 @@ def RunTest():
                                  error_action='ignore',    # don't want to know if an order does not work
                                  suppress_warnings=True,   # don't want convergence warnings
                                  stepwise=True)            # set to stepwise
-    
+
     return stepwise_fit.summary()"
             );
         }
 
         [Test]
+        public void Ijson()
+        {
+            AssertCode(
+                @"
+import io
+import ijson
+
+def RunTest():
+    parse_events = ijson.parse(io.BytesIO(b'[""skip"", {""a"": 1}, {""b"": 2}, {""c"": 3}]'))
+    while True:
+        prefix, event, value = next(parse_events)
+        if value == ""skip"":
+            break
+    for obj in ijson.items(parse_events, 'item'):
+        print(obj)");
+        }
+
+        [Test]
+        public void MljarSupervised()
+        {
+            AssertCode(
+                @"
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from supervised.automl import AutoML
+
+def RunTest():
+    df = pd.read_csv(
+        ""https://raw.githubusercontent.com/pplonski/datasets-for-start/master/adult/data.csv"",
+        skipinitialspace=True,
+    )
+    X_train, X_test, y_train, y_test = train_test_split(
+        df[df.columns[:-1]], df[""income""], test_size=0.25
+    )
+
+    automl = AutoML()
+    automl.fit(X_train, y_train)
+
+    predictions = automl.predict(X_test)");
+        }
+
+        [Test]
+        public void DmTree()
+        {
+            AssertCode(
+                @"
+import tree
+
+def RunTest():
+    structure = [[1], [[[2, 3]]], [4]]
+    tree.flatten(structure)");
+        }
+
+        [Test]
+        public void Ortools()
+        {
+            AssertCode(
+                @"
+from ortools.linear_solver import pywraplp
+from ortools.init import pywrapinit
+
+def RunTest():
+	# Create the linear solver with the GLOP backend.
+	solver = pywraplp.Solver.CreateSolver('GLOP')
+
+	# Create the variables x and y.
+	x = solver.NumVar(0, 1, 'x')
+	y = solver.NumVar(0, 2, 'y')
+
+	print('Number of variables =', solver.NumVariables())");
+        }
+
+        [Test]
+        public void Neuralprophet()
+        {
+            AssertCode(
+                @"
+from neuralprophet import NeuralProphet
+
+def RunTest():
+    m = NeuralProphet()");
+        }
+
+        [Test]
+        public void TensorflowAddons()
+        {
+            AssertCode(
+                @"
+import tensorflow as tf
+import tensorflow_addons as tfa
+
+def RunTest():
+    train,test = tf.keras.datasets.mnist.load_data()
+    x_train, y_train = train
+    x_train = x_train[..., tf.newaxis] / 255.0");
+        }
+
+        [Test]
+        public void Yellowbrick()
+        {
+            AssertCode(
+                @"
+from yellowbrick.features import ParallelCoordinates
+from sklearn.datasets import make_classification
+
+def RunTest():
+    X, y = make_classification(n_samples=5000, n_features=2, n_informative=2,
+                               n_redundant=0, n_repeated=0, n_classes=3,
+                               n_clusters_per_class=1,
+                               weights=[0.01, 0.05, 0.94],
+                               class_sep=0.8, random_state=0)
+    visualizer = ParallelCoordinates()
+    visualizer.fit_transform(X, y)
+    visualizer.show()");
+        }
+
+        [Test]
+        public void Livelossplot()
+        {
+            AssertCode(
+                @"
+from sklearn import datasets
+from sklearn.model_selection import train_test_split
+
+import torch
+from torch import nn, optim
+from torch.utils.data import TensorDataset, DataLoader
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+
+from livelossplot import PlotLosses
+from livelossplot.outputs import matplotlib_subplots
+
+def RunTest():
+	# try with make_moons
+	X, y = datasets.make_circles(noise=0.2, factor=0.5, random_state=1)
+	X_train, X_test, y_train, y_test = \
+		train_test_split(X, y, test_size=.4, random_state=42)
+
+	# plot them
+	cm_bright = ListedColormap(['#FF0000', '#0000FF'])
+	plt.scatter(X_train[:, 0], X_train[:, 1], c=y_train, cmap=cm_bright)
+	plt.scatter(X_test[:, 0], X_test[:, 1], c=y_test, cmap=cm_bright, alpha=0.3)");
+        }
+
+        [Test]
+        public void Gymnasium()
+        {
+            AssertCode(
+                @"
+import gymnasium as gym
+
+def RunTest():
+    env = gym.make(""CartPole-v1"")
+
+    observation, info = env.reset(seed=42)
+    action = env.action_space.sample()
+    observation, reward, terminated, truncated, info = env.step(action)
+
+    env.close()");
+        }
+
+        [Test]
+        public void Interpret()
+        {
+            AssertCode(
+                @"
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from interpret.glassbox import ExplainableBoostingClassifier
+from io import StringIO
+
+def RunTest():
+    csv = StringIO(""39, State-gov, 77516, Bachelors, 13, Never-married, Adm-clerical, Not-in-family, White, Male, 2174, 0, 40, United-States, <=50K\n""
+        + ""50, Self-emp-not-inc, 83311, Bachelors, 13, Married-civ-spouse, Exec-managerial, Husband, White, Male, 0, 0, 13, United-States, <=50K\n""
+        + ""38, Private, 215646, HS-grad, 9, Divorced, Handlers-cleaners, Not-in-family, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""53, Private, 234721, 11th, 7, Married-civ-spouse, Handlers-cleaners, Husband, Black, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""28, Private, 338409, Bachelors, 13, Married-civ-spouse, Prof-specialty, Wife, Black, Female, 0, 0, 40, Cuba, <=50K\n""
+        + ""37, Private, 284582, Masters, 14, Married-civ-spouse, Exec-managerial, Wife, White, Female, 0, 0, 40, United-States, <=50K\n""
+        + ""49, Private, 160187, 9th, 5, Married-spouse-absent, Other-service, Not-in-family, Black, Female, 0, 0, 16, Jamaica, <=50K\n""
+        + ""52, Self-emp-not-inc, 209642, HS-grad, 9, Married-civ-spouse, Exec-managerial, Husband, White, Male, 0, 0, 45, United-States, >50K\n""
+        + ""31, Private, 45781, Masters, 14, Never-married, Prof-specialty, Not-in-family, White, Female, 14084, 0, 50, United-States, >50K\n""
+        + ""42, Private, 159449, Bachelors, 13, Married-civ-spouse, Exec-managerial, Husband, White, Male, 5178, 0, 40, United-States, >50K\n""
+        + ""37, Private, 280464, Some-college, 10, Married-civ-spouse, Exec-managerial, Husband, Black, Male, 0, 0, 80, United-States, >50K\n""
+        + ""30, State-gov, 141297, Bachelors, 13, Married-civ-spouse, Prof-specialty, Husband, Asian-Pac-Islander, Male, 0, 0, 40, India, >50K\n""
+        + ""23, Private, 122272, Bachelors, 13, Never-married, Adm-clerical, Own-child, White, Female, 0, 0, 30, United-States, <=50K\n""
+        + ""32, Private, 205019, Assoc-acdm, 12, Never-married, Sales, Not-in-family, Black, Male, 0, 0, 50, United-States, <=50K\n""
+        + ""40, Private, 121772, Assoc-voc, 11, Married-civ-spouse, Craft-repair, Husband, Asian-Pac-Islander, Male, 0, 0, 40, ?, >50K\n""
+        + ""34, Private, 245487, 7th-8th, 4, Married-civ-spouse, Transport-moving, Husband, Amer-Indian-Eskimo, Male, 0, 0, 45, Mexico, <=50K\n""
+        + ""25, Self-emp-not-inc, 176756, HS-grad, 9, Never-married, Farming-fishing, Own-child, White, Male, 0, 0, 35, United-States, <=50K\n""
+        + ""32, Private, 186824, HS-grad, 9, Never-married, Machine-op-inspct, Unmarried, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""38, Private, 28887, 11th, 7, Married-civ-spouse, Sales, Husband, White, Male, 0, 0, 50, United-States, <=50K\n""
+        + ""43, Self-emp-not-inc, 292175, Masters, 14, Divorced, Exec-managerial, Unmarried, White, Female, 0, 0, 45, United-States, >50K\n""
+        + ""40, Private, 193524, Doctorate, 16, Married-civ-spouse, Prof-specialty, Husband, White, Male, 0, 0, 60, United-States, >50K\n""
+        + ""54, Private, 302146, HS-grad, 9, Separated, Other-service, Unmarried, Black, Female, 0, 0, 20, United-States, <=50K\n""
+        + ""35, Federal-gov, 76845, 9th, 5, Married-civ-spouse, Farming-fishing, Husband, Black, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""43, Private, 117037, 11th, 7, Married-civ-spouse, Transport-moving, Husband, White, Male, 0, 2042, 40, United-States, <=50K\n""
+        + ""59, Private, 109015, HS-grad, 9, Divorced, Tech-support, Unmarried, White, Female, 0, 0, 40, United-States, <=50K\n""
+        + ""56, Local-gov, 216851, Bachelors, 13, Married-civ-spouse, Tech-support, Husband, White, Male, 0, 0, 40, United-States, >50K\n""
+        + ""19, Private, 168294, HS-grad, 9, Never-married, Craft-repair, Own-child, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""54, ?, 180211, Some-college, 10, Married-civ-spouse, ?, Husband, Asian-Pac-Islander, Male, 0, 0, 60, South, >50K\n""
+        + ""39, Private, 367260, HS-grad, 9, Divorced, Exec-managerial, Not-in-family, White, Male, 0, 0, 80, United-States, <=50K\n""
+        + ""49, Private, 193366, HS-grad, 9, Married-civ-spouse, Craft-repair, Husband, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""23, Local-gov, 190709, Assoc-acdm, 12, Never-married, Protective-serv, Not-in-family, White, Male, 0, 0, 52, United-States, <=50K\n""
+        + ""20, Private, 266015, Some-college, 10, Never-married, Sales, Own-child, Black, Male, 0, 0, 44, United-States, <=50K\n""
+        + ""45, Private, 386940, Bachelors, 13, Divorced, Exec-managerial, Own-child, White, Male, 0, 1408, 40, United-States, <=50K\n""
+        + ""30, Federal-gov, 59951, Some-college, 10, Married-civ-spouse, Adm-clerical, Own-child, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""22, State-gov, 311512, Some-college, 10, Married-civ-spouse, Other-service, Husband, Black, Male, 0, 0, 15, United-States, <=50K\n""
+        + ""48, Private, 242406, 11th, 7, Never-married, Machine-op-inspct, Unmarried, White, Male, 0, 0, 40, Puerto-Rico, <=50K\n""
+        + ""21, Private, 197200, Some-college, 10, Never-married, Machine-op-inspct, Own-child, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""19, Private, 544091, HS-grad, 9, Married-AF-spouse, Adm-clerical, Wife, White, Female, 0, 0, 25, United-States, <=50K\n""
+        + ""31, Private, 84154, Some-college, 10, Married-civ-spouse, Sales, Husband, White, Male, 0, 0, 38, ?, >50K\n""
+        + ""48, Self-emp-not-inc, 265477, Assoc-acdm, 12, Married-civ-spouse, Prof-specialty, Husband, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""31, Private, 507875, 9th, 5, Married-civ-spouse, Machine-op-inspct, Husband, White, Male, 0, 0, 43, United-States, <=50K\n""
+        + ""53, Self-emp-not-inc, 88506, Bachelors, 13, Married-civ-spouse, Prof-specialty, Husband, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""24, Private, 172987, Bachelors, 13, Married-civ-spouse, Tech-support, Husband, White, Male, 0, 0, 50, United-States, <=50K\n""
+        + ""49, Private, 94638, HS-grad, 9, Separated, Adm-clerical, Unmarried, White, Female, 0, 0, 40, United-States, <=50K\n""
+        + ""25, Private, 289980, HS-grad, 9, Never-married, Handlers-cleaners, Not-in-family, White, Male, 0, 0, 35, United-States, <=50K\n""
+        + ""57, Federal-gov, 337895, Bachelors, 13, Married-civ-spouse, Prof-specialty, Husband, Black, Male, 0, 0, 40, United-States, >50K\n""
+        + ""53, Private, 144361, HS-grad, 9, Married-civ-spouse, Machine-op-inspct, Husband, White, Male, 0, 0, 38, United-States, <=50K\n""
+        + ""44, Private, 128354, Masters, 14, Divorced, Exec-managerial, Unmarried, White, Female, 0, 0, 40, United-States, <=50K\n""
+        + ""41, State-gov, 101603, Assoc-voc, 11, Married-civ-spouse, Craft-repair, Husband, White, Male, 0, 0, 40, United-States, <=50K\n""
+        + ""29, Private, 271466, Assoc-voc, 11, Never-married, Prof-specialty, Not-in-family, White, Male, 0, 0, 43, United-States, <=50K"")
+
+    df = pd.read_csv(csv, header=None)
+    df.columns = [
+        ""Age"", ""WorkClass"", ""fnlwgt"", ""Education"", ""EducationNum"",
+        ""MaritalStatus"", ""Occupation"", ""Relationship"", ""Race"", ""Gender"",
+        ""CapitalGain"", ""CapitalLoss"", ""HoursPerWeek"", ""NativeCountry"", ""Income""
+    ]
+    train_cols = df.columns[0:-1]
+    label = df.columns[-1]
+    X = df[train_cols]
+    y = df[label]
+
+    seed = 1
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=seed)
+
+    ebm = ExplainableBoostingClassifier(random_state=seed)
+    ebm.fit(X_train, y_train)");
+        }
+
+        [Test]
+        public void Doubleml()
+        {
+            AssertCode(
+                @"
+import numpy as np
+from doubleml.datasets import make_plr_CCDDHNR2018
+
+def RunTest():
+    np.random.seed(1234)
+
+    n_rep = 1000
+    n_obs = 500
+    n_vars = 20
+    alpha = 0.5
+    data = list()
+
+    for i_rep in range(n_rep):
+        (x, y, d) = make_plr_CCDDHNR2018(alpha=alpha, n_obs=n_obs, dim_x=n_vars, return_type='array')
+        data.append((x, y, d))");
+        }
+
+        [Test]
+        public void ImbalancedLearn()
+        {
+            AssertCode(
+                @"
+from sklearn.datasets import make_classification
+from imblearn.over_sampling import RandomOverSampler
+from collections import Counter
+
+def RunTest():
+    X, y = make_classification(n_samples=5000, n_features=2, n_informative=2,
+                                n_redundant=0, n_repeated=0, n_classes=3,
+                                n_clusters_per_class=1,
+                                weights=[0.01, 0.05, 0.94],
+                                class_sep=0.8, random_state=0)
+
+    ros = RandomOverSampler(random_state=0)
+
+    X_resampled, y_resampled = ros.fit_resample(X, y)
+
+    print(sorted(Counter(y_resampled).items()))");
+        }
+
+        [Test, Explicit("Has issues when run along side the other tests")]
+        public void ScikerasTest()
+        {
+            AssertCode(
+                @"
+import numpy as np
+from sklearn.datasets import make_classification
+from tensorflow import keras
+from scikeras.wrappers import KerasClassifier
+
+def RunTest():
+    X, y = make_classification(1000, 20, n_informative=10, random_state=0)
+    X = X.astype(np.float32)
+    y = y.astype(np.int64)
+
+    def get_model(hidden_layer_dim, meta):
+        # note that meta is a special argument that will be
+        # handed a dict containing input metadata
+        n_features_in_ = meta[""n_features_in_""]
+        X_shape_ = meta[""X_shape_""]
+        n_classes_ = meta[""n_classes_""]
+
+        model = keras.models.Sequential()
+        model.add(keras.layers.Dense(n_features_in_, input_shape=X_shape_[1:]))
+        model.add(keras.layers.Activation(""relu""))
+        model.add(keras.layers.Dense(hidden_layer_dim))
+        model.add(keras.layers.Activation(""relu""))
+        model.add(keras.layers.Dense(n_classes_))
+        model.add(keras.layers.Activation(""softmax""))
+        return model
+
+    clf = KerasClassifier(
+        get_model,
+        loss=""sparse_categorical_crossentropy"",
+        hidden_layer_dim=100,
+    )
+
+    clf.fit(X, y)
+    y_proba = clf.predict_proba(X)");
+        }
+
+        [Test]
+        public void Lazypredict()
+        {
+            AssertCode(
+                @"
+from lazypredict.Supervised import LazyClassifier
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+
+def RunTest():
+    data = load_breast_cancer()
+    X = data.data
+    y= data.target
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y,test_size=.5,random_state =123)
+
+    clf = LazyClassifier(verbose=0,ignore_warnings=True, custom_metric=None)
+    models,predictions = clf.fit(X_train, X_test, y_train, y_test)");
+        }
+
+        [Test]
+        public void Fracdiff()
+        {
+            AssertCode(
+                @"
+import numpy as np
+from fracdiff import fdiff
+
+def RunTest():
+    a = np.array([1, 2, 4, 7, 0])
+    fdiff(a, 0.5)
+    # array([ 1.       ,  1.5      ,  2.875    ,  4.6875   , -4.1640625])
+    np.array_equal(fdiff(a, n=1), np.diff(a, n=1))
+    # True");
+        }
+
+        [Test]
+        public void Darts()
+        {
+            AssertCode(
+                @"
+from darts.datasets import ETTh2Dataset
+from darts.ad import KMeansScorer
+
+def RunTest():
+    series = ETTh2Dataset().load()[:10000][[""MUFL"", ""LULL""]]
+    train, val = series.split_before(0.6)
+    scorer = KMeansScorer(k=2, window=5)
+    scorer.fit(train)
+    anom_score = scorer.score(val)");
+        }
+
+        [Test]
+        public void Fastparquet()
+        {
+            AssertCode(
+                @"
+from fastparquet import write
+import pandas as pd
+
+def RunTest():
+    d = {'date': [ '20220901', '20220902' ], 'open': [ 1, 2 ], 'close': [ 1, 2 ],'high': [ 1, 2], 'low': [ 1, 2 ], 'volume': [ 1, 2 ] }
+    df = pd.DataFrame(data=d)
+    write('outfile.parq', df)");
+        }
+
+        [Test]
+        public void Dimod()
+        {
+            AssertCode(
+                @"
+import dimod
+
+def RunTest():
+    bqm = dimod.BinaryQuadraticModel({0: -1, 1: 1}, {(0, 1): 2}, 0.0, dimod.BINARY)
+
+    sampleset = dimod.ExactSolver().sample(bqm)
+    return sampleset");
+        }
+
+        [Test]
+        public void DwaveSamplers()
+        {
+            AssertCode(
+                @"
+from dwave.samplers import PlanarGraphSolver
+
+def RunTest():
+    solver = PlanarGraphSolver()");
+        }
+
+        [Test]
+        public void Statemachine()
+        {
+            AssertCode(
+                @"
+from statemachine import StateMachine, State
+
+def RunTest():
+    class StateObject(StateMachine):
+        aState = State(""A"", initial = True)
+        bState = State(""B"")
+
+        transitionA = aState.to(bState)
+        transitionB = bState.to(aState)
+
+    instance = StateObject()");
+        }
+
+        [Test]
+        public void pymannkendall()
+        {
+            AssertCode(
+                @"
+import numpy as np
+import pymannkendall as mk
+
+def RunTest():
+    # Data generation for analysis
+    data = np.random.rand(360,1)
+
+    result = mk.original_test(data)
+    return result");
+        }
+
+        [Test]
+        public void Pyomo()
+        {
+            AssertCode(
+                @"
+from pyomo.environ import *
+
+def RunTest():
+	V = 40     # liters
+	kA = 0.5   # 1/min
+	kB = 0.1   # l/min
+	CAf = 2.0  # moles/liter
+
+	# create a model instance
+	model = ConcreteModel()
+
+	# create x and y variables in the model
+	model.q = Var()
+
+	# add a model objective
+	model.objective = Objective(expr = model.q*V*kA*CAf/(model.q + V*kB)/(model.q + V*kA), sense=maximize)
+
+	# compute a solution using ipopt for nonlinear optimization
+	results = SolverFactory('ipopt').solve(model)
+
+	# print solutions
+	qmax = model.q()
+	CBmax = model.objective()
+	print('\nFlowrate at maximum CB = ', qmax, 'liters per minute.')
+	print('\nMaximum CB =', CBmax, 'moles per liter.')
+	print('\nProductivity = ', qmax*CBmax, 'moles per minute.')");
+        }
+
+        [Test]
+        public void Gpflow()
+        {
+            AssertCode(
+                @"
+import gpflow
+import numpy as np
+import matplotlib
+
+def RunTest():
+    X = np.array(
+        [
+            [0.865], [0.666], [0.804], [0.771], [0.147], [0.866], [0.007], [0.026],
+            [0.171], [0.889], [0.243], [0.028],
+        ]
+    )
+    Y = np.array(
+        [
+            [1.57], [3.48], [3.12], [3.91], [3.07], [1.35], [3.80], [3.82], [3.49],
+            [1.30], [4.00], [3.82],
+        ]
+    )
+
+    model = gpflow.models.GPR((X, Y), kernel=gpflow.kernels.SquaredExponential())
+    opt = gpflow.optimizers.Scipy()
+    opt.minimize(model.training_loss, model.trainable_variables)
+
+    Xnew = np.array([[0.5]])
+    model.predict_f(Xnew)");
+        }
+
+        [Test, Explicit("Sometimes hangs when run along side the other tests")]
         public void StableBaselinesTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
-from stable_baselines.common.cmd_util import make_atari_env
-from stable_baselines import PPO2
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+
 def RunTest():
-    # There already exists an environment generator that will make and wrap atari environments correctly
-    env = make_atari_env('DemonAttackNoFrameskip-v4', num_env=8, seed=0)
+    env = make_vec_env(""CartPole-v1"", n_envs=1)
 
-    model = PPO2('CnnPolicy', env)
-    model.learn(total_timesteps=10)
-
-    obs = env.reset()
-    return model.predict(obs)"
-            );
+    model = PPO(""MlpPolicy"", env, verbose=1)
+    model.learn(total_timesteps=500)");
         }
 
         [Test]
         public void GensimTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from gensim import models
 
@@ -532,7 +1625,7 @@ def RunTest():
         [Test]
         public void ScikitMultiflowTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from skmultiflow.data import WaveformGenerator
 from skmultiflow.trees import HoeffdingTree
@@ -560,7 +1653,7 @@ def RunTest():
         [Test]
         public void ScikitOptimizeTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import numpy as np
 from skopt import gp_minimize
@@ -577,7 +1670,7 @@ def RunTest():
         [Test]
         public void CremeTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from creme import datasets
 
@@ -591,7 +1684,7 @@ def RunTest():
         [Test]
         public void NltkTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import nltk.data
 
@@ -607,9 +1700,10 @@ def RunTest():
             );
         }
 
+        [Test]
         public void NltkVaderTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from nltk import tokenize
@@ -625,15 +1719,15 @@ def RunTest():
         'The book was kind of good.', # qualified positive sentence is handled correctly (intensity adjusted)
         'The plot was good, but the characters are uncompelling and the dialog is not great.', # mixed negation sentence
         'A really bad, horrible book.',       # negative sentence with booster words
-        'At least it isn't a horrible book.', # negated negative sentence with contraction
+        'At least it is not a horrible book.', # negated negative sentence with contraction
         ':) and :D',     # emoticons handled
         '',              # an empty string is correctly handled
         'Today sux',     #  negative slang handled
         'Today sux!',    #  negative slang with punctuation emphasis handled
         'Today SUX!',    #  negative slang with capitalization emphasis
-        'Today kinda sux! But I'll get by, lol' # mixed sentiment example with slang and constrastive conjunction 'but'
+        'Today kinda sux! But I will get by, lol' # mixed sentiment example with slang and constrastive conjunction 'but'
     ]
-    paragraph = 'It was one of the worst movies I've seen, despite good reviews. \
+    paragraph = 'It was one of the worst movies I have seen, despite good reviews. \
         Unbelievably bad acting!! Poor direction.VERY poor production. \
         The movie was bad.Very bad movie.VERY bad movie.VERY BAD movie.VERY BAD movie!'
 
@@ -648,10 +1742,10 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Requires mlfinlab installed")]
         public void MlfinlabTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 from mlfinlab.portfolio_optimization.mean_variance import MeanVarianceOptimisation
@@ -681,20 +1775,20 @@ def RunTest():
         [Test]
         public void JaxTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
-import jax.numpy as np
-from jax import grad, jit, vmap
+from jax import *
+import jax.numpy as jnp
 
 def predict(params, inputs):
   for W, b in params:
-    outputs = np.dot(inputs, W) + b
-    inputs = np.tanh(outputs)
+    outputs = jnp.dot(inputs, W) + b
+    inputs = jnp.tanh(outputs)
   return outputs
 
 def logprob_fun(params, inputs, targets):
   preds = predict(params, inputs)
-  return np.sum((preds - targets)**2)
+  return jnp.sum((preds - targets)**2)
 
 def RunTest():
     grad_fun = jit(grad(logprob_fun))  # compiled gradient evaluation function
@@ -702,33 +1796,35 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Has issues when run along side the other tests. random.PRNGKey call hangs")]
         public void NeuralTangentsTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
-from jax import random
+from jax import *
 import neural_tangents as nt
-from neural_tangents import stax
+from neural_tangents import *
 
 def RunTest():
+    key = random.PRNGKey(1)
+    key1, key2 = random.split(key, 2)
+    x_train = random.normal(key1, (20, 32, 32, 3))
+    y_train = random.uniform(key1, (20, 10))
+    x_test = random.normal(key2, (5, 32, 32, 3))
+
     init_fn, apply_fn, kernel_fn = stax.serial(
-        stax.Dense(512), stax.Relu(),
-        stax.Dense(512), stax.Relu(),
-        stax.Dense(1)
+        stax.Conv(128, (3, 3)),
+        stax.Relu(),
+        stax.Conv(256, (3, 3)),
+        stax.Relu(),
+        stax.Conv(512, (3, 3)),
+        stax.Flatten(),
+        stax.Dense(10)
     )
 
-    key1, key2 = random.split(random.PRNGKey(1))
-    x1 = random.normal(key1, (10, 100))
-    x2 = random.normal(key2, (20, 100))
-
-    x_train, x_test = x1, x2
-    y_train = random.uniform(key1, shape=(10, 1))  # training targets
-
-    y_test_nngp = nt.predict.gp_inference(kernel_fn, x_train, y_train, x_test, get='nngp')
-
-    # (20, 1) np.ndarray test predictions of an infinite Bayesian network
-    return nt.predict.gp_inference(kernel_fn, x_train, y_train, x_test, get='ntk')"
+    predict_fn = nt.predict.gradient_descent_mse_ensemble(kernel_fn, x_train, y_train)
+    # (5, 10) np.ndarray NNGP test prediction
+    predict_fn(x_test=x_test, get='nngp')"
             );
         }
 
@@ -736,7 +1832,7 @@ def RunTest():
         [Test]
         public void SmmTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import ssm
 
@@ -757,7 +1853,7 @@ def RunTest():
         [Test]
         public void RiskparityportfolioTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import riskparityportfolio as rp
 import numpy as np
@@ -776,7 +1872,7 @@ def RunTest():
         [Test]
         public void PyrbTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 import pandas as pd
 import numpy as np
@@ -805,7 +1901,7 @@ def RunTest():
         [Test]
         public void CopulaeTest()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from copulae import NormalCopula
 import numpy as np
@@ -829,7 +1925,7 @@ def RunTest():
         [Test]
         public void SanityClrInstallation()
         {
-            AssetCode(
+            AssertCode(
                 @"
 from os import walk
 import setuptools as _
@@ -858,33 +1954,205 @@ def RunTest():
             );
         }
 
+        [Test, Explicit("Installed in specific environment. Requires older dependencies")]
+        public void Tigramite()
+        {
+            PythonInitializer.ActivatePythonVirtualEnvironment("/Foundation-Pomegranate");
+            AssertCode(@"
+import numpy as np
+from tigramite.pcmci import PCMCI
+from tigramite.independence_tests import ParCorr
+import tigramite.data_processing as pp
+from tigramite.toymodels import structural_causal_processes as toys
+
+def RunTest():
+    # Example process to play around with
+    # Each key refers to a variable and the incoming links are supplied
+    # as a list of format [((var, -lag), coeff, function), ...]
+    def lin_f(x): return x
+    links = {0: [((0, -1), 0.9, lin_f)],
+             1: [((1, -1), 0.8, lin_f), ((0, -1), 0.8, lin_f)],
+             2: [((2, -1), 0.7, lin_f), ((1, 0), 0.6, lin_f)],
+             3: [((3, -1), 0.7, lin_f), ((2, 0), -0.5, lin_f)],
+             }
+    data, nonstat = toys.structural_causal_process(links,
+                        T=1000, seed=7)
+    # Data must be array of shape (time, variables)
+    print (data.shape)
+    (1000, 4)
+    dataframe = pp.DataFrame(data)
+    cond_ind_test = ParCorr()
+    pcmci = PCMCI(dataframe=dataframe, cond_ind_test=cond_ind_test)
+    results = pcmci.run_pcmciplus(tau_min=0, tau_max=2, pc_alpha=0.01)
+    pcmci.print_results(results, alpha_level=0.01)
+");
+        }
+
+        [Test, Explicit("Sometimes crashes when run along side the other tests")]
+        public void NBeatsTest()
+        {
+            AssertCode(@"
+import warnings
+import numpy as np
+
+from nbeats_keras.model import NBeatsNet as NBeatsKeras
+from nbeats_pytorch.model import NBeatsNet as NBeatsPytorch
+
+warnings.filterwarnings(action='ignore', message='Setting attributes')
+
+def RunTest():
+    # https://keras.io/layers/recurrent/
+    # At the moment only Keras supports input_dim > 1. In the original paper, input_dim=1.
+    num_samples, time_steps, input_dim, output_dim = 50_000, 10, 1, 1
+
+    # This example is for both Keras and Pytorch. In practice, choose the one you prefer.
+    for BackendType in [NBeatsKeras, NBeatsPytorch]:
+        # NOTE: If you choose the Keras backend with input_dim>1, you have
+        # to set the value here too (in the constructor).
+        backend = BackendType(
+            backcast_length=time_steps, forecast_length=output_dim,
+            stack_types=(NBeatsKeras.GENERIC_BLOCK, NBeatsKeras.GENERIC_BLOCK),
+            nb_blocks_per_stack=2, thetas_dim=(4, 4), share_weights_in_stack=True,
+            hidden_layer_units=64
+        )
+
+        # Definition of the objective function and the optimizer.
+        backend.compile(loss='mae', optimizer='adam')
+
+        # Definition of the data. The problem to solve is to find f such as | f(x) - y | -> 0.
+        # where f = np.mean.
+        x = np.random.uniform(size=(num_samples, time_steps, input_dim))
+        y = np.mean(x, axis=1, keepdims=True)
+
+        # Split data into training and testing datasets.
+        c = num_samples // 10
+        x_train, y_train, x_test, y_test = x[c:], y[c:], x[:c], y[:c]
+        test_size = len(x_test)
+
+        # Train the model.
+        print('Training...')
+        backend.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=5, batch_size=128)
+
+        # Save the model for later.
+        backend.save('n_beats_model.h5')
+
+        # Predict on the testing set (forecast).
+        predictions_forecast = backend.predict(x_test)
+        np.testing.assert_equal(predictions_forecast.shape, (test_size, backend.forecast_length, output_dim))
+
+        # Predict on the testing set (backcast).
+        predictions_backcast = backend.predict(x_test, return_backcast=True)
+        np.testing.assert_equal(predictions_backcast.shape, (test_size, backend.backcast_length, output_dim))
+
+        # Load the model.
+        model_2 = BackendType.load('n_beats_model.h5')
+
+        np.testing.assert_almost_equal(predictions_forecast, model_2.predict(x_test))
+");
+        }
+
+        [Test, Explicit("Sometimes hangs when run along side the other tests")]
+        public void AxPlatformTest()
+        {
+            AssertCode(@"
+from ax import optimize
+
+def RunTest():
+    best_parameters, best_values, experiment, model = optimize(
+            parameters=[
+              {
+                ""name"": ""x1"",
+                ""type"": ""range"",
+                ""bounds"": [-10.0, 10.0],
+              },
+              {
+                ""name"": ""x2"",
+                ""type"": ""range"",
+                ""bounds"": [-10.0, 10.0],
+              },
+            ],
+            # Booth function
+            evaluation_function=lambda p: (p[""x1""] + 2*p[""x2""] - 7)**2 + (2*p[""x1""] + p[""x2""] - 5)**2,
+            minimize=True,
+        )
+");
+        }
+
+        [Test]
+        public void RiskfolioLibTest()
+        {
+            AssertCode(@"
+import riskfolio as rp
+import pandas as pd
+
+def RunTest():
+	# Data
+	date_index = pd.DatetimeIndex(data=['2020-06-15', '2020-06-15', '2020-06-15'])
+	d = {'AAPL': [10, 22, 11], 'AMC': [21,  13, 45]}
+	df = pd.DataFrame(data=d).set_index(date_index)
+	df = df.pct_change().dropna()
+
+	# Building the portfolio object
+	port = rp.Portfolio(returns=df)
+
+	method_mu='hist' # Method to estimate expected returns based on historical data.
+	method_cov='hist' # Method to estimate covariance matrix based on historical data.
+
+	port.assets_stats(method_mu=method_mu, method_cov=method_cov, d=0.94)
+
+	# Estimate optimal portfolio:
+
+	model='Classic' # Could be Classic (historical), BL (Black Litterman) or FM (Factor Model)
+	rm = 'MV' # Risk measure used, this time will be variance
+	obj = 'Sharpe' # Objective function, could be MinRisk, MaxRet, Utility or Sharpe
+	hist = True # Use historical scenarios for risk measures that depend on scenarios
+	rf = 0 # Risk free rate
+	l = 0 # Risk aversion factor, only useful when obj is 'Utility'
+
+	w = port.optimization(model=model, rm=rm, obj=obj, rf=rf, l=l, hist=hist)
+
+	w.T");
+        }
+
         /// <summary>
         /// Simple test for modules that don't have short test example
         /// </summary>
         /// <param name="module">The module we are testing</param>
         /// <param name="version">The module version</param>
-        [TestCase("pulp", "1.6.8", "VERSION")]
-        [TestCase("pymc3", "3.8", "__version__")]
+        [TestCase("pulp", "2.7.0", "VERSION")]
+        [TestCase("pymc", "5.0.2", "__version__")]
         [TestCase("pypfopt", "pypfopt", "__name__")]
-        [TestCase("wrapt", "1.12.1", "__version__")]
-        [TestCase("tslearn", "0.3.1", "__version__")]
-        [TestCase("tweepy", "3.8.0", "__version__")]
-        [TestCase("pywt", "1.1.1", "__version__")]
-        [TestCase("umap", "0.4.1", "__version__")]
-        [TestCase("dtw", "1.0.5", "__version__")]
-        [TestCase("mplfinance", "0.12.3a3", "__version__")]
+        [TestCase("wrapt", "1.14.1", "__version__")]
+        [TestCase("tslearn", "0.5.3.2", "__version__")]
+        [TestCase("tweepy", "4.10.0", "__version__")]
+        [TestCase("pywt", "1.4.1", "__version__")]
+        [TestCase("umap", "0.5.3", "__version__")]
+        [TestCase("dtw", "1.3.0", "__version__")]
+        [TestCase("mplfinance", "0.12.9b7", "__version__")]
         [TestCase("cufflinks", "0.17.3", "__version__")]
-        [TestCase("ipywidgets", "7.5.1", "__version__")]
-        [TestCase("astropy", "4.0.1.post1", "__version__")]
-        [TestCase("gluonts", "0.4.3", "__version__")]
-        [TestCase("gplearn", "0.4.1", "__version__")]
-        [TestCase("h2o", "3.30.0.1", "__version__")]
-        [TestCase("cntk", "2.7", "__version__")]
-        [TestCase("featuretools", "0.13.4", "__version__")]
-        [TestCase("pennylane", "0.8.1", "version()")]
+        [TestCase("ipywidgets", "8.0.4", "__version__")]
+        [TestCase("astropy", "5.2.1", "__version__")]
+        [TestCase("gluonts", "0.12.3", "__version__")]
+        [TestCase("gplearn", "0.4.2", "__version__")]
+        [TestCase("h2o", "3.40.0.1", "__version__")]
+        [TestCase("featuretools", "0.23.1", "__version__")]
+        [TestCase("pennylane", "0.29.0", "version()")]
+        [TestCase("pyfolio", "0.9.2", "__version__")]
+        [TestCase("altair", "4.2.2", "__version__")]
+        [TestCase("modin", "0.18.1", "__version__")]
+        [TestCase("persim", "0.3.1", "__version__")]
+        [TestCase("pydmd", "0.4.0.post2301", "__version__")]
+        [TestCase("pandas_ta", "0.3.14b0", "__version__")]
+        [TestCase("finrl", "finrl", "__package__")]
+        [TestCase("tensortrade", "1.0.3", "__version__")]
+        [TestCase("quantstats", "0.0.59", "__version__")]
+        [TestCase("autokeras", "1.1.0", "__version__")]
+        [TestCase("panel", "0.14.3", "__version__")]
+        [TestCase("pyheat", "pyheat", "__name__")]
+        [TestCase("tensorflow_decision_forests", "1.2.0", "__version__")]
         public void ModuleVersionTest(string module, string value, string attribute)
         {
-            AssetCode(
+            AssertCode(
                 $@"
 import {module}
 
@@ -894,12 +2162,19 @@ def RunTest():
             );
         }
 
-        private static void AssetCode(string code)
+        private static void AssertCode(string code)
         {
             using (Py.GIL())
             {
-                dynamic module = PythonEngine.ModuleFromString(Guid.NewGuid().ToString(), code);
-                Assert.DoesNotThrow(() => module.RunTest());
+                using dynamic module = PyModule.FromString(Guid.NewGuid().ToString(), code);
+                Assert.DoesNotThrow(() =>
+                {
+                    var response = module.RunTest();
+                    if(response != null)
+                    {
+                        response.Dispose();
+                    }
+                });
             }
         }
     }

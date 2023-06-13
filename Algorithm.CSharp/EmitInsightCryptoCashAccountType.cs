@@ -67,6 +67,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 4319;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 120;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -90,28 +100,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$14.92"},
-            {"Estimated Strategy Capacity", "$85000.00"},
+            {"Total Fees", "€14.92"},
+            {"Estimated Strategy Capacity", "€85000.00"},
             {"Lowest Capacity Asset", "BTCEUR XJ"},
-            {"Fitness Score", "0.258"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-27.228"},
-            {"Portfolio Turnover", "0.516"},
-            {"Total Insights Generated", "1"},
-            {"Total Insights Closed", "1"},
-            {"Total Insights Analysis Completed", "1"},
-            {"Long Insight Count", "1"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "€-7.1039"},
-            {"Total Accumulated Estimated Alpha Value", "€-0.2762628"},
-            {"Mean Population Estimated Insight Value", "€-0.2762628"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
+            {"Portfolio Turnover", "51.69%"},
             {"OrderListHash", "21ac8e4179b36d9658f0080868c0e552"}
         };
     }

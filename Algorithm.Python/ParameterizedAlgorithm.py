@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,17 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Indicators")
-AddReference("QuantConnect.Common")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Indicators import *
-from QuantConnect.Parameters import *
+from AlgorithmImports import *
 
 ### <summary>
 ### Demonstration of the parameter system of QuantConnect. Using parameters you can pass the values required into C# algorithms for optimization.
@@ -40,12 +30,8 @@ class ParameterizedAlgorithm(QCAlgorithm):
         self.AddEquity("SPY")
 
         # Receive parameters from the Job
-        ema_fast = self.GetParameter("ema-fast")
-        ema_slow = self.GetParameter("ema-slow")
-
-        # The values 100 and 200 are just default values that only used if the parameters do not exist
-        fast_period = 100 if ema_fast is None else int(ema_fast)
-        slow_period = 200 if ema_slow is None else int(ema_slow)
+        fast_period = self.GetParameter("ema-fast", 100)
+        slow_period = self.GetParameter("ema-slow", 200)
 
         self.fast = self.EMA("SPY", fast_period)
         self.slow = self.EMA("SPY", slow_period)

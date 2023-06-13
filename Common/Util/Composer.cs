@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -27,6 +27,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
+using QuantConnect.Data;
 using QuantConnect.Logging;
 
 namespace QuantConnect.Util
@@ -58,8 +59,32 @@ namespace QuantConnect.Util
         /// </summary>
         public Composer()
         {
-            // grab assemblies from current executing directory if not defined by 'composer-dll-directory' configuration key
-            var primaryDllLookupDirectory = new DirectoryInfo(Config.Get("composer-dll-directory", AppDomain.CurrentDomain.BaseDirectory)).FullName;
+            // Determine what directory to grab our assemblies from if not defined by 'composer-dll-directory' configuration key
+            var dllDirectoryString = Config.Get("composer-dll-directory");
+            if (string.IsNullOrWhiteSpace(dllDirectoryString))
+            {
+                // Check our appdomain directory for QC Dll's, for most cases this will be true and fine to use
+                if (!string.IsNullOrEmpty(AppDomain.CurrentDomain.BaseDirectory) && Directory.GetFiles(AppDomain.CurrentDomain.BaseDirectory, "QuantConnect.*.dll").Any())
+                {
+                    dllDirectoryString = AppDomain.CurrentDomain.BaseDirectory;
+                }
+                else
+                {
+                    // Otherwise check out our parent and current working directory
+                    // this is helpful for research because kernel appdomain defaults to kernel location
+                    var currentDirectory = Directory.GetCurrentDirectory();
+                    var parentDirectory = Directory.GetParent(currentDirectory)?.FullName ?? currentDirectory; // If parent == null will just use current
+
+                    // If our parent directory contains QC Dlls use it, otherwise default to current working directory
+                    // In cloud and CLI research cases we expect the parent directory to contain the Dlls; but locally it's likely current directory
+                    dllDirectoryString = Directory.GetFiles(parentDirectory, "QuantConnect.*.dll").Any() ? parentDirectory : currentDirectory;
+                }
+            }
+
+            // Resolve full path name just to be safe
+            var primaryDllLookupDirectory = new DirectoryInfo(dllDirectoryString).FullName;
+            Log.Trace($"Composer(): Loading Assemblies from {primaryDllLookupDirectory}");
+
             var loadFromPluginDir = !string.IsNullOrWhiteSpace(PluginDirectory)
                 && Directory.Exists(PluginDirectory) &&
                 new DirectoryInfo(PluginDirectory).FullName != primaryDllLookupDirectory;
@@ -191,6 +216,25 @@ namespace QuantConnect.Util
         }
 
         /// <summary>
+        /// Will return all loaded types that are assignable to T type
+        /// </summary>
+        public IEnumerable<Type> GetExportedTypes<T>() where T : class
+        {
+            var type = typeof(T);
+            return _exportedTypes.Where(type1 =>
+                {
+                    try
+                    {
+                        return type.IsAssignableFrom(type1);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                });
+        }
+
+        /// <summary>
         /// Extension method to searches the composition container for an export that has a matching type name. This function
         /// will first try to match on Type.AssemblyQualifiedName, then Type.FullName, and finally on Type.Name
         ///
@@ -198,8 +242,10 @@ namespace QuantConnect.Util
         /// </summary>
         /// <typeparam name="T">The type of the export</typeparam>
         /// <param name="typeName">The name of the type to find. This can be an assembly qualified name, a full name, or just the type's name</param>
+        /// <param name="forceTypeNameOnExisting">When false, if any existing instance of type T is found, it will be returned even if type name doesn't match.
+        /// This is useful in cases where a single global instance is desired, like for <see cref="IDataAggregator"/></param>
         /// <returns>The export instance</returns>
-        public T GetExportedValueByTypeName<T>(string typeName)
+        public T GetExportedValueByTypeName<T>(string typeName, bool forceTypeNameOnExisting = true)
             where T : class
         {
             try
@@ -211,8 +257,8 @@ namespace QuantConnect.Util
                     var type = typeof(T);
                     if (_exportedValues.TryGetValue(type, out values))
                     {
-                        // if we've alread loaded this part, then just return the same one
-                        instance = values.OfType<T>().FirstOrDefault(x => x.GetType().MatchesTypeName(typeName));
+                        // if we've already loaded this part, then just return the same one
+                        instance = values.OfType<T>().FirstOrDefault(x => !forceTypeNameOnExisting || x.GetType().MatchesTypeName(typeName));
                         if (instance != null)
                         {
                             return instance;

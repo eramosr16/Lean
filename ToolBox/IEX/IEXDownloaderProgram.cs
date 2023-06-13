@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,10 +14,11 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using QuantConnect.Logging;
 using QuantConnect.Util;
+using QuantConnect.Data;
+using QuantConnect.Logging;
+using System.Collections.Generic;
 using QuantConnect.Configuration;
 
 namespace QuantConnect.ToolBox.IEX
@@ -43,7 +44,7 @@ namespace QuantConnect.ToolBox.IEX
                 var castResolution = (Resolution)Enum.Parse(typeof(Resolution), resolution);
 
                 // Load settings from config.json
-                var dataDirectory = Config.Get("data-directory", "../../../Data");
+                var dataDirectory = Globals.DataFolder;
                 var startDate = fromDate.ConvertToUtc(TimeZones.NewYork);
                 var endDate = toDate.ConvertToUtc(TimeZones.NewYork);
 
@@ -57,7 +58,7 @@ namespace QuantConnect.ToolBox.IEX
                     {
                         // Download the data
                         var symbolObject = Symbol.Create(ticker, securityType, market);
-                        var data = downloader.Get(symbolObject, castResolution, startDate, endDate).ToArray();
+                        var data = downloader.Get(new DataDownloaderGetParameters(symbolObject, castResolution, startDate, endDate)).ToArray();
 
                         if (data.Length == 0)
                         {

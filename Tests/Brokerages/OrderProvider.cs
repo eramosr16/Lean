@@ -29,6 +29,7 @@ namespace QuantConnect.Tests.Brokerages
     {
         private int _orderId;
         private readonly IList<Order> _orders;
+        private readonly object _lock = new object();
 
         public OrderProvider(IList<Order> orders)
         {
@@ -43,23 +44,31 @@ namespace QuantConnect.Tests.Brokerages
         public void Add(Order order)
         {
             order.Id = Interlocked.Increment(ref _orderId);
-            _orders.Add(order);
+            lock (_lock)
+            {
+                _orders.Add(order);
+            }
         }
 
         public int OrdersCount => _orders.Count;
 
         public Order GetOrderById(int orderId)
         {
-            var order = _orders.FirstOrDefault(x => x.Id == orderId);
+            Order order;
+            lock (_lock)
+            {
+                order = _orders.FirstOrDefault(x => x.Id == orderId);
+            }
 
             return order?.Clone();
         }
 
-        public Order GetOrderByBrokerageId(string brokerageId)
+        public List<Order> GetOrdersByBrokerageId(string brokerageId)
         {
-            var order = _orders.FirstOrDefault(x => x.BrokerId.Contains(brokerageId));
-
-            return order?.Clone();
+            lock (_lock)
+            {
+                return _orders.Where(o => o.BrokerId.Contains(brokerageId)).Select(o => o.Clone()).ToList();
+            }
         }
 
         public IEnumerable<OrderTicket> GetOrderTickets(Func<OrderTicket, bool> filter = null)

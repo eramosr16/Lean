@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using NodaTime;
 using NUnit.Framework;
@@ -26,6 +27,16 @@ namespace QuantConnect.Tests.Common
     [TestFixture]
     public class TimeTests
     {
+        [TestCase("20230605 08:00", "04:00")]
+        [TestCase("20230605 15:00", "21:00")]
+        public void AuxiliaryDataDueTime(string utcNow, string expectedDueTime)
+        {
+            var result = Time.GetNextLiveAuxiliaryDataDueTime(Time.ParseDate(utcNow));
+            var expected  = TimeSpan.ParseExact(expectedDueTime, "hh\\:mm", CultureInfo.InvariantCulture);
+
+            Assert.AreEqual(expected, result);
+        }
+
         [Test]
         public void UnixTimeStampSecondsToDateTimeHasSubMillisecondPrecision()
         {
@@ -40,6 +51,25 @@ namespace QuantConnect.Tests.Common
         {
             const decimal stamp = 1520711961000.55m;
             var expected = new DateTime(2018, 3, 10, 19, 59, 21, 0).AddTicks(5500);
+            var time = Time.UnixMillisecondTimeStampToDateTime(stamp);
+            Assert.AreEqual(expected, time);
+        }
+        
+        
+        [Test]
+        public void UnixTimeStampSecondsToDateTimeSubMillisecondPrecision()
+        {
+            const decimal stamp = 1520711961.00055m;
+            var expected = new DateTime(2018, 3, 10, 19, 59, 21, 0).AddTicks(5500);
+            var time = Time.UnixTimeStampToDateTime(stamp);
+            Assert.AreEqual(expected, time);
+        }
+
+        [Test]
+        public void UnixTimeStampSecondsToDateTime()
+        {
+            const long stamp = 1520711961000;
+            var expected = new DateTime(2018, 3, 10, 19, 59, 21, 0);
             var time = Time.UnixMillisecondTimeStampToDateTime(stamp);
             Assert.AreEqual(expected, time);
         }

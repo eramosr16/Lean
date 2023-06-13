@@ -80,7 +80,7 @@ namespace QuantConnect.Tests.Engine.DataProviders
         [TestCase("forex/oanda/minute/eurusd/20140501_quote.zip", 10, false)]       // Date based Forex minute data
         [TestCase("forex/oanda/second/eurusd/20140501_quote.zip", 10, false)]       // Date based Forex second data
         [TestCase("forex/oanda/tick/eurusd/20140501_quote.zip", 10, false)]         // Date based Forex tick data
-        // Future Cases ** All False because Unsupported
+        // Price Future Cases False because Unsupported
         [TestCase("future/cboe/margins/VX.csv", 0, false)]                           // Fresh Margins data
         [TestCase("future/cboe/margins/VX.csv", 10, false)]                          // Stale Margins data
         [TestCase("future/comex/minute/gc/20131007_openinterest.zip", 10, false)]   // Date based minute data
@@ -103,8 +103,8 @@ namespace QuantConnect.Tests.Engine.DataProviders
             File.Create(path).Dispose();
             File.SetLastWriteTime(path, time);
 
-
-            var result = _dataProvider.NeedToDownload(path);
+            var dataProvider = new ApiDataProviderTest();
+            var result = dataProvider.NeedToDownloadExposed(path);
             Assert.AreEqual(expected, result);
 
             // Cleanup after test
@@ -127,9 +127,12 @@ namespace QuantConnect.Tests.Engine.DataProviders
         [TestCase("option/usa/minute/aapl/20100603_quote_american.zip")]
         // Forex
         [TestCase("forex/oanda/minute/eurusd/20020516_quote.zip")]
-        // Futures          * False because unsupported
+        // Price Futures          * False because unsupported
         [TestCase("future/cbot/minute/zs/20090501_trade.zip", false)]
         [TestCase("future/sgx/margins/IN.csv", false)]
+        // Auxiliary Data Future Cases true
+        [TestCase("future/comex/map_files/map_files_20211225.zip", true)]
+        [TestCase("future/cme/factor_files/factor_files_20211225.zip", true)]
         // Future Options   * False because unsupported
         [TestCase("futureoption/comex/minute/og/20120227/20120105_quote_american.zip", false)]
         // Index            * False because unsupported
@@ -184,12 +187,16 @@ namespace QuantConnect.Tests.Engine.DataProviders
         {
             public int DownLoadCount;
 
-            protected override FileStream DownloadData(string filePath)
+            public bool NeedToDownloadExposed(string filePath)
+            {
+                return base.NeedToDownload(filePath);
+            }
+            protected override bool DownloadData(string filePath)
             {
                 Interlocked.Increment(ref DownLoadCount);
                 // simulate download delay
                 Thread.Sleep(100);
-                return null;
+                return false;
             }
         }
     }

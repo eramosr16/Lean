@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Securities import *
-import numpy as np
+from AlgorithmImports import *
 
 ### <summary>
 ### Demonstration of using custom buying power model in backtesting.
@@ -63,3 +54,12 @@ class CustomBuyingPowerModel(BuyingPowerModel):
 
     def HasSufficientBuyingPowerForOrder(self, parameters):
         return HasSufficientBuyingPowerForOrderResult(True)
+
+    # Let's always return 0 as the maintenance margin so we avoid margin call orders
+    def GetMaintenanceMargin(self, parameters):
+        return MaintenanceMargin(0)
+
+    # Override this as well because the base implementation calls GetMaintenanceMargin (overridden)
+    # because in C# it wouldn't resolve the overridden Python method
+    def GetReservedBuyingPowerForPosition(self, parameters):
+        return parameters.ResultInAccountCurrency(0);

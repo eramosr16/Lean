@@ -24,7 +24,7 @@ using QuantConnect.Interfaces;
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// In this algortihm we show how you can easily use the universe selection feature to fetch symbols
+    /// In this algorithm we show how you can easily use the universe selection feature to fetch symbols
     /// to be traded using the AddUniverse method. This method accepts a function that will return the
     /// desired current set of symbols. Return Universe.Unchanged if no universe changes should be made
     /// </summary>
@@ -48,6 +48,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // this sets the resolution for data subscriptions added by our universe
             UniverseSettings.Resolution = Resolution.Daily;
+
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
 
             // set our start and end for backtest mode
             SetStartDate(2017, 07, 04);
@@ -153,6 +157,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 5291;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -160,45 +174,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "5059"},
             {"Average Win", "0.08%"},
             {"Average Loss", "-0.08%"},
-            {"Compounding Annual Return", "14.983%"},
-            {"Drawdown", "10.600%"},
-            {"Expectancy", "0.075"},
-            {"Net Profit", "14.983%"},
-            {"Sharpe Ratio", "1.075"},
-            {"Probabilistic Sharpe Ratio", "50.443%"},
-            {"Loss Rate", "46%"},
-            {"Win Rate", "54%"},
-            {"Profit-Loss Ratio", "0.97"},
-            {"Alpha", "0.138"},
-            {"Beta", "-0.067"},
-            {"Annual Standard Deviation", "0.121"},
-            {"Annual Variance", "0.015"},
-            {"Information Ratio", "0.056"},
-            {"Tracking Error", "0.171"},
-            {"Treynor Ratio", "-1.948"},
-            {"Total Fees", "$6806.62"},
+            {"Compounding Annual Return", "15.960%"},
+            {"Drawdown", "10.400%"},
+            {"Expectancy", "0.079"},
+            {"Net Profit", "15.960%"},
+            {"Sharpe Ratio", "1.044"},
+            {"Probabilistic Sharpe Ratio", "49.486%"},
+            {"Loss Rate", "45%"},
+            {"Win Rate", "55%"},
+            {"Profit-Loss Ratio", "0.96"},
+            {"Alpha", "0.016"},
+            {"Beta", "0.985"},
+            {"Annual Standard Deviation", "0.11"},
+            {"Annual Variance", "0.012"},
+            {"Information Ratio", "0.348"},
+            {"Tracking Error", "0.041"},
+            {"Treynor Ratio", "0.116"},
+            {"Total Fees", "$5870.38"},
             {"Estimated Strategy Capacity", "$320000.00"},
             {"Lowest Capacity Asset", "BNO UN3IMQ2JU1YD"},
-            {"Fitness Score", "0.694"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "1.268"},
-            {"Return Over Maximum Drawdown", "1.411"},
-            {"Portfolio Turnover", "1.295"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "5e8e2426162c22b45935db2175c4bbfd"}
+            {"Portfolio Turnover", "107.21%"},
+            {"OrderListHash", "93805aa887cd9d15dbc6c73afa83f67e"}
         };
     }
 }

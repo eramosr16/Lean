@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -12,8 +12,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
 */
-using System;
-using QuantConnect.Orders;
 
 namespace QuantConnect.Securities.Future
 {
@@ -23,6 +21,22 @@ namespace QuantConnect.Securities.Future
     /// <seealso cref="SecurityHolding"/>
     public class FutureHolding : SecurityHolding
     {
+        /// <summary>
+        /// The cash settled profit for the current open position
+        /// </summary>
+        public virtual decimal SettledProfit { get; set; }
+
+        /// <summary>
+        /// Unsettled profit for the current open position <see cref="SettledProfit"/>
+        /// </summary>
+        public virtual decimal UnsettledProfit
+        {
+            get
+            {
+                return TotalCloseProfit() - SettledProfit;
+            }
+        }
+
         /// <summary>
         /// Future Holding Class constructor
         /// </summary>

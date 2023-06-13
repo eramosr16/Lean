@@ -14,15 +14,15 @@
 */
 
 using System;
-using System.Collections.Generic;
 using QuantConnect.Data;
-using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
+using QuantConnect.Data.Market;
+using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// Regression algorithm reproducing GH issue #5232
+    /// Regression algorithm reproducing GH issue #5232, where we expect SPWR to be mapped to SPWRA
     /// </summary>
     public class HourResolutionMappingEventRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
@@ -37,7 +37,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetStartDate(2008, 08, 20);
             SetEndDate(2008, 10, 1);
 
-            AddEquity("SPWR", Resolution.Hour, fillDataForward:false);
+            AddEquity("SPWR", Resolution.Hour, fillForward:false);
         }
 
         /// <summary>
@@ -82,6 +82,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 429;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -93,41 +103,23 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "31.700%"},
             {"Expectancy", "0"},
             {"Net Profit", "-16.363%"},
-            {"Sharpe Ratio", "-0.506"},
-            {"Probabilistic Sharpe Ratio", "27.578%"},
+            {"Sharpe Ratio", "-0.474"},
+            {"Probabilistic Sharpe Ratio", "25.138%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.45"},
-            {"Beta", "2.007"},
-            {"Annual Standard Deviation", "1.118"},
-            {"Annual Variance", "1.25"},
-            {"Information Ratio", "-0.069"},
-            {"Tracking Error", "0.869"},
-            {"Treynor Ratio", "-0.282"},
+            {"Alpha", "0.335"},
+            {"Beta", "2.004"},
+            {"Annual Standard Deviation", "0.924"},
+            {"Annual Variance", "0.854"},
+            {"Information Ratio", "-0.073"},
+            {"Tracking Error", "0.718"},
+            {"Treynor Ratio", "-0.218"},
             {"Total Fees", "$5.40"},
             {"Estimated Strategy Capacity", "$2400000.00"},
             {"Lowest Capacity Asset", "SPWR TDQZFPKOZ5UT"},
-            {"Fitness Score", "0.008"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.038"},
-            {"Return Over Maximum Drawdown", "-2.536"},
-            {"Portfolio Turnover", "0.033"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "8d5c6263fbdfa4b2338fc725e27b93e9"}
+            {"Portfolio Turnover", "2.34%"},
+            {"OrderListHash", "4bf8a2d15c6c6ac98e55d7c6ea10f54e"}
         };
     }
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -62,6 +62,11 @@ namespace QuantConnect.Lean.Engine.Results
         public string LogFilePath => IsTest
             ? $"./regression/{AlgorithmId}.{Language.ToLower()}.details.log"
             : $"./{AlgorithmId}/{DateTime.Now:yyyy-MM-dd-hh-mm-ss}.{Language.ToLower()}.details.log";
+
+        /// <summary>
+        /// True if there was a runtime error running the algorithm
+        /// </summary>
+        public bool HasRuntimeError { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RegressionResultHandler"/> class
@@ -168,40 +173,6 @@ namespace QuantConnect.Lean.Engine.Results
         }
 
         /// <summary>
-        /// Perform daily logging of the alpha runtime statistics
-        /// </summary>
-        public override void SetAlphaRuntimeStatistics(AlphaRuntimeStatistics statistics)
-        {
-            try
-            {
-                if (HighFidelityLogging || _lastAlphaRuntimeStatisticsDate != Algorithm.Time.Date)
-                {
-                    lock (_sync)
-                    {
-                        _lastAlphaRuntimeStatisticsDate = Algorithm.Time.Date;
-
-                        foreach (var kvp in statistics.ToDictionary())
-                        {
-                            string value;
-                            if (!_currentAlphaRuntimeStatistics.TryGetValue(kvp.Key, out value) || value != kvp.Value)
-                            {
-                                // only log new or updated values
-                                _currentAlphaRuntimeStatistics[kvp.Key] = kvp.Value;
-                                WriteLine($"AlphaRuntimeStatistics: {kvp.Key}: {kvp.Value}");
-                            }
-                        }
-                    }
-                }
-
-                base.SetAlphaRuntimeStatistics(statistics);
-            }
-            catch (Exception exception)
-            {
-                Log.Error(exception);
-            }
-        }
-
-        /// <summary>
         /// Send list of security asset types the algortihm uses to browser.
         /// </summary>
         public override void SecurityType(List<SecurityType> types)
@@ -254,6 +225,7 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="stacktrace">Stacktrace information string</param>
         public override void RuntimeError(string message, string stacktrace = "")
         {
+            HasRuntimeError = true;
             base.RuntimeError(message, stacktrace);
 
             stacktrace = string.IsNullOrEmpty(stacktrace) ? null : Environment.NewLine + stacktrace;
@@ -420,6 +392,20 @@ namespace QuantConnect.Lean.Engine.Results
         /// </summary>
         public override void Exit()
         {
+            if (!ExitTriggered && Algorithm != null)
+            {
+                var holdings = Algorithm.Portfolio.Values.Where(holding => holding.Invested).Select(holding => $"HOLDINGS:: {holding}").ToList();
+                if(holdings.Count > 0)
+                {
+                    Log.Trace($"{Environment.NewLine}{string.Join(Environment.NewLine, holdings)}");
+                }
+                else
+                {
+                    Log.Trace("HOLDINGS:: none");
+                }
+                Log.Trace($"{Environment.NewLine}{Algorithm.Portfolio.CashBook}");
+            }
+
             base.Exit();
             lock (_sync)
             {
@@ -490,6 +476,11 @@ namespace QuantConnect.Lean.Engine.Results
 
         private void WriteLine(string message)
         {
+            if (!Log.DebuggingEnabled)
+            {
+                return;
+            }
+
             lock (_sync)
             {
                 if (_writer == null)

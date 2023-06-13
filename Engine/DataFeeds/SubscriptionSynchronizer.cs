@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
@@ -132,6 +133,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                                     subscription.RemovedFromUniverse
                                 );
                             }
+
+                            // If our subscription is a universe, and we get a delisting event emitted for it, then
+                            // the universe itself should be unselected and removed, because the Symbol that the
+                            // universe is based on has been delisted. Doing the disposal here allows us to
+                            // process the delisting at this point in time before emitting out to the algorithm.
+                            // This is very useful for universes that can be delisted, such as ETF constituent
+                            // universes (e.g. for ETF constituent universes, since the ETF itself is used to create
+                            // the universe Symbol (and set as its underlying), once the ETF is delisted, the
+                            // universe should cease to exist, since there are no more constituents of that ETF).
+                            if (subscription.IsUniverseSelectionSubscription && subscription.Current.Data is Delisting)
+                            {
+                                subscription.Universes.Single().Dispose();
+                            }
+
                             packet.Add(subscription.Current.Data);
 
                             if (!subscription.MoveNext())
@@ -161,24 +176,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                                 if (universeData != null
                                     && universeData.TryGetValue(subscription.Universes.Single(), out collection))
                                 {
-                                    collection.Data.AddRange(packetData);
+                                    collection.AddRange(packetData);
                                 }
                                 else
                                 {
-                                    if (packetBaseDataCollection is OptionChainUniverseDataCollection)
-                                    {
-                                        var current = packetBaseDataCollection as OptionChainUniverseDataCollection;
-                                        collection = new OptionChainUniverseDataCollection(frontierUtc, subscription.Configuration.Symbol, packetData, current?.Underlying);
-                                    }
-                                    else if (packetBaseDataCollection is FuturesChainUniverseDataCollection)
-                                    {
-                                        collection = new FuturesChainUniverseDataCollection(frontierUtc, subscription.Configuration.Symbol, packetData);
-                                    }
-                                    else
-                                    {
-                                        collection = new BaseDataCollection(frontierUtc, frontierUtc, subscription.Configuration.Symbol, packetData);
-                                    }
-
+                                    collection = new BaseDataCollection(frontierUtc, frontierUtc, subscription.Configuration.Symbol, packetData, packetBaseDataCollection?.Underlying);
                                     if (universeData == null)
                                     {
                                         universeData = new Dictionary<Universe, BaseDataCollection>();

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -105,18 +105,19 @@ namespace QuantConnect
             // default to always within custom limits
             withinCustomLimits = withinCustomLimits ?? (() => new IsolatorLimitResult(TimeSpan.Zero, string.Empty));
 
-            var message = "";
+            var message = string.Empty;
             var emaPeriod = 60d;
             var memoryUsed = 0L;
-            var end = DateTime.Now + timeSpan;
-            var memoryLogger = DateTime.Now + TimeSpan.FromMinutes(1);
+            var utcNow = DateTime.UtcNow;
+            var end = utcNow + timeSpan;
+            var memoryLogger = utcNow + Time.OneMinute;
             var isolatorLimitResult = new IsolatorLimitResult(TimeSpan.Zero, string.Empty);
 
             //Convert to bytes
             memoryCap *= 1024 * 1024;
             var spikeLimit = memoryCap*2;
 
-            while (!task.IsCompleted && DateTime.Now < end)
+            while (!task.IsCompleted && utcNow < end)
             {
                 // if over 80% allocation force GC then sample
                 var sample = Convert.ToDouble(GC.GetTotalMemory(memoryUsed > memoryCap * 0.8));
@@ -127,25 +128,26 @@ namespace QuantConnect
                 // if the rolling EMA > cap; or the spike is more than 2x the allocation.
                 if (memoryUsed > memoryCap || sample > spikeLimit)
                 {
-                    message = $"Execution Security Error: Memory Usage Maxed Out - {PrettyFormatRam(memoryCap)}MB max, " +
-                              $"with last sample of {PrettyFormatRam((long) sample)}MB.";
+                    message = Messages.Isolator.MemoryUsageMaxedOut(PrettyFormatRam(memoryCap), PrettyFormatRam((long)sample));
                     break;
                 }
 
-                if (DateTime.Now > memoryLogger)
+                if (utcNow > memoryLogger)
                 {
                     if (memoryUsed > memoryCap * 0.8)
                     {
-                        Log.Error(Invariant($"Execution Security Error: Memory usage over 80% capacity. Sampled at {sample}"));
+                        Log.Error(Messages.Isolator.MemoryUsageOver80Percent(sample));
                     }
 
                     Log.Trace("Isolator.ExecuteWithTimeLimit(): " +
-                              $"Used: {PrettyFormatRam(memoryUsed)}, " +
-                              $"Sample: {PrettyFormatRam((long)sample)}, " +
-                              $"App: {PrettyFormatRam(OS.ApplicationMemoryUsed * 1024 * 1024)}, " +
-                              Invariant($"CurrentTimeStepElapsed: {isolatorLimitResult.CurrentTimeStepElapsed:mm':'ss'.'fff}"));
+                        Messages.Isolator.MemoryUsageInfo(
+                            PrettyFormatRam(memoryUsed),
+                            PrettyFormatRam((long)sample),
+                            PrettyFormatRam(OS.ApplicationMemoryUsed * 1024 * 1024),
+                            isolatorLimitResult.CurrentTimeStepElapsed,
+                            (int)Math.Ceiling(OS.CpuUsage)));
 
-                    memoryLogger = DateTime.Now.AddMinutes(1);
+                    memoryLogger = utcNow.AddMinutes(1);
                 }
 
                 // check to see if we're within other custom limits defined by the caller
@@ -156,19 +158,21 @@ namespace QuantConnect
                     break;
                 }
 
-                if (task.Wait(sleepIntervalMillis))
+                if (task.Wait(utcNow.GetSecondUnevenWait(sleepIntervalMillis)))
                 {
                     break;
                 }
+
+                utcNow = DateTime.UtcNow;
             }
 
-            if (task.IsCompleted == false && message == "")
+            if (task.IsCompleted == false && string.IsNullOrEmpty(message))
             {
-                message = $"Execution Security Error: Operation timed out - {timeSpan.TotalMinutes.ToStringInvariant()} minutes max. Check for recursive loops.";
+                message = Messages.Isolator.MemoryUsageMonitorTaskTimedOut(timeSpan);
                 Log.Trace($"Isolator.ExecuteWithTimeLimit(): {message}");
             }
 
-            if (message != "")
+            if (!string.IsNullOrEmpty(message))
             {
                 CancellationTokenSource.Cancel();
                 Log.Error($"Security.ExecuteWithTimeLimit(): {message}");

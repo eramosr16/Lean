@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,12 +16,13 @@
 
 using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using QuantConnect.Interfaces;
 using QuantConnect.Logging;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Data.Auxiliary
 {
@@ -30,7 +31,7 @@ namespace QuantConnect.Data.Auxiliary
     /// </summary>
     public class MapFile : IEnumerable<MapFileRow>
     {
-        private readonly SortedDictionary<DateTime, MapFileRow> _data;
+        private readonly List<MapFileRow> _data;
 
         /// <summary>
         /// Gets the entity's unique symbol, i.e OIH.1
@@ -53,23 +54,33 @@ namespace QuantConnect.Data.Auxiliary
         public string FirstTicker { get; }
 
         /// <summary>
+        /// Allows the consumer to specify a desired mapping mode
+        /// </summary>
+        public DataMappingMode? DataMappingMode { get; set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="MapFile"/> class.
         /// </summary>
         public MapFile(string permtick, IEnumerable<MapFileRow> data)
         {
+            if (string.IsNullOrEmpty(permtick))
+            {
+                throw new ArgumentNullException(nameof(permtick), "Provided ticker is null or empty");
+            }
+
             Permtick = permtick.LazyToUpper();
-            _data = new SortedDictionary<DateTime, MapFileRow>(data.Distinct().ToDictionary(x => x.Date));
+            _data = data.Distinct().OrderBy(row => row.Date).ToList();
 
             // for performance we set first and last date on ctr
-            if (_data.Keys.Count == 0)
+            if (_data.Count == 0)
             {
                 FirstDate = Time.BeginningOfTime;
                 DelistingDate = Time.EndOfTime;
             }
             else
             {
-                FirstDate = _data.Keys.First();
-                DelistingDate = _data.Keys.Last();
+                FirstDate = _data[0].Date;
+                DelistingDate = _data[_data.Count - 1].Date;
             }
 
             var firstTicker = GetMappedSymbol(FirstDate, Permtick);
@@ -79,7 +90,7 @@ namespace QuantConnect.Data.Auxiliary
                 if (dotIndex > 0)
                 {
                     int value;
-                    var number = firstTicker.Substring(dotIndex + 1);
+                    var number = firstTicker.AsSpan(dotIndex + 1);
                     if (int.TryParse(number, out value))
                     {
                         firstTicker = firstTicker.Substring(0, dotIndex);
@@ -100,10 +111,14 @@ namespace QuantConnect.Data.Auxiliary
         {
             var mappedSymbol = defaultReturnValue;
             //Iterate backwards to find the most recent factor:
-            foreach (var splitDate in _data.Keys)
+            for (var i = 0; i < _data.Count; i++)
             {
-                if (splitDate < searchDate) continue;
-                mappedSymbol = _data[splitDate].MappedSymbol;
+                var row = _data[i];
+                if (row.Date < searchDate || row.DataMappingMode.HasValue && row.DataMappingMode != DataMappingMode)
+                {
+                    continue;
+                }
+                mappedSymbol = row.MappedSymbol;
                 break;
             }
             return mappedSymbol;
@@ -134,27 +149,17 @@ namespace QuantConnect.Data.Auxiliary
         /// <returns>Enumerable of csv lines</returns>
         public IEnumerable<string> ToCsvLines()
         {
-            foreach (var mapRow in _data.Values)
-            {
-                yield return mapRow.ToCsv();
-            }
-        }
-
-        /// <summary>
-        /// Reads in an entire map file for the requested symbol from the DataFolder
-        /// </summary>
-        public static MapFile Read(string permtick, string market)
-        {
-            return new MapFile(permtick, MapFileRow.Read(permtick, market));
+            return _data.Select(mapRow => mapRow.ToCsv());
         }
 
         /// <summary>
         /// Writes the map file to a CSV file
         /// </summary>
         /// <param name="market">The market to save the MapFile to</param>
-        public void WriteToCsv(string market)
+        /// <param name="securityType">The map file security type</param>
+        public void WriteToCsv(string market, SecurityType securityType)
         {
-            var filePath = GetMapFilePath(Permtick, market);
+            var filePath = Path.Combine(Globals.DataFolder, GetRelativeMapFilePath(market, securityType), Permtick.ToLowerInvariant() + ".csv");
             var fileDir = Path.GetDirectoryName(filePath);
 
             if (!Directory.Exists(fileDir))
@@ -169,12 +174,12 @@ namespace QuantConnect.Data.Auxiliary
         /// <summary>
         /// Constructs the map file path for the specified market and symbol
         /// </summary>
-        /// <param name="permtick">The symbol as on disk, OIH or OIH.1</param>
         /// <param name="market">The market this symbol belongs to</param>
+        /// <param name="securityType">The map file security type</param>
         /// <returns>The file path to the requested map file</returns>
-        public static string GetMapFilePath(string permtick, string market)
+        public static string GetRelativeMapFilePath(string market, SecurityType securityType)
         {
-            return Path.Combine(Globals.CacheDataFolder, "equity", market, "map_files", permtick.ToLowerInvariant() + ".csv");
+            return Invariant($"{securityType.SecurityTypeToLower()}/{market}/map_files");
         }
 
         #region Implementation of IEnumerable
@@ -188,7 +193,7 @@ namespace QuantConnect.Data.Auxiliary
         /// <filterpriority>1</filterpriority>
         public IEnumerator<MapFileRow> GetEnumerator()
         {
-            return _data.Values.GetEnumerator();
+            return _data.GetEnumerator();
         }
 
         /// <summary>
@@ -209,17 +214,25 @@ namespace QuantConnect.Data.Auxiliary
         /// Reads all the map files in the specified directory
         /// </summary>
         /// <param name="mapFileDirectory">The map file directory path</param>
+        /// <param name="market">The map file market</param>
+        /// <param name="securityType">The map file security type</param>
+        /// <param name="dataProvider">The data provider instance to use</param>
         /// <returns>An enumerable of all map files</returns>
-        public static IEnumerable<MapFile> GetMapFiles(string mapFileDirectory)
+        public static IEnumerable<MapFile> GetMapFiles(string mapFileDirectory, string market, SecurityType securityType, IDataProvider dataProvider)
         {
-            var mapFiles = new ConcurrentBag<MapFile>();
+            var mapFiles = new List<MapFile>();
             Parallel.ForEach(Directory.EnumerateFiles(mapFileDirectory), file =>
             {
                 if (file.EndsWith(".csv"))
                 {
                     var permtick = Path.GetFileNameWithoutExtension(file);
-                    var fileRead = SafeMapFileRowRead(file);
-                    mapFiles.Add(new MapFile(permtick, fileRead));
+                    var fileRead = SafeMapFileRowRead(file, market, securityType, dataProvider);
+                    var mapFile = new MapFile(permtick, fileRead);
+                    lock (mapFiles)
+                    {
+                        // just use a list + lock, not concurrent bag, avoid garbage it creates for features we don't need here. See https://github.com/dotnet/runtime/issues/23103
+                        mapFiles.Add(mapFile);
+                    }
                 }
             });
             return mapFiles;
@@ -228,11 +241,11 @@ namespace QuantConnect.Data.Auxiliary
         /// <summary>
         /// Reads in the map file at the specified path, returning null if any exceptions are encountered
         /// </summary>
-        private static List<MapFileRow> SafeMapFileRowRead(string file)
+        private static List<MapFileRow> SafeMapFileRowRead(string file, string market, SecurityType securityType, IDataProvider dataProvider)
         {
             try
             {
-                return MapFileRow.Read(file).ToList();
+                return MapFileRow.Read(file, market, securityType, dataProvider).ToList();
             }
             catch (Exception err)
             {

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -28,14 +28,9 @@ namespace QuantConnect.Tests.Common.Data.Custom
             dynamic instance;
             using (Py.GIL())
             {
-                PyObject test = PythonEngine.ModuleFromString("testModule",
+                PyObject test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""System"")
-AddReference(""QuantConnect.Common"")
-
-from QuantConnect import *
-from QuantConnect.Python import *
+from AlgorithmImports import *
 
 class Test(PythonData):
     def Pepe(self):
@@ -54,14 +49,9 @@ class Test(PythonData):
             dynamic instance;
             using (Py.GIL())
             {
-                PyObject test = PythonEngine.ModuleFromString("testModule",
+                PyObject test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""System"")
-AddReference(""QuantConnect.Common"")
-
-from QuantConnect import *
-from QuantConnect.Python import *
+from AlgorithmImports import *
 
 class Test(PythonData):
     def IsSparseData(self):
@@ -78,14 +68,9 @@ class Test(PythonData):
             dynamic instance;
             using (Py.GIL())
             {
-                PyObject test = PythonEngine.ModuleFromString("testModule",
+                PyObject test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""System"")
-AddReference(""QuantConnect.Common"")
-
-from QuantConnect import *
-from QuantConnect.Python import *
+from AlgorithmImports import *
 
 class Test(PythonData):
     def DefaultResolution(self):
@@ -102,14 +87,9 @@ class Test(PythonData):
             dynamic instance;
             using (Py.GIL())
             {
-                PyObject test = PythonEngine.ModuleFromString("testModule",
+                PyObject test = PyModule.FromString("testModule",
                     @"
-from clr import AddReference
-AddReference(""System"")
-AddReference(""QuantConnect.Common"")
-
-from QuantConnect import *
-from QuantConnect.Python import *
+from AlgorithmImports import *
 
 class Test(PythonData):
     def SupportedResolutions(self):

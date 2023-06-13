@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,12 +14,13 @@
  *
 */
 
-using Python.Runtime;
-using QuantConnect.Data.Fundamental;
-using QuantConnect.Data.UniverseSelection;
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using Python.Runtime;
+using System.Collections.Generic;
+using QuantConnect.Data.Fundamental;
+using System.Text.RegularExpressions;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Util
 {
@@ -28,7 +29,14 @@ namespace QuantConnect.Util
     /// </summary>
     public class PythonUtil
     {
+        private static Regex LeanPathRegex = new Regex("(?:\\S*?\\\\Lean\\\\)|(?:\\S*?/Lean/)", RegexOptions.Compiled);
+        private static Regex LineRegex = new Regex("line (\\d+)", RegexOptions.Compiled);
         private static readonly Lazy<dynamic> lazyInspect = new Lazy<dynamic>(() => Py.Import("inspect"));
+
+        /// <summary>
+        /// The python exception stack trace line shift to use
+        /// </summary>
+        public static int ExceptionLineShift { get; set; } = 0;
 
         /// <summary>
         /// Encapsulates a python method with a <see cref="System.Action{T1}"/>
@@ -129,6 +137,35 @@ namespace QuantConnect.Util
         }
 
         /// <summary>
+        /// Parsers <see cref="PythonException"/> into a readable message
+        /// </summary>
+        /// <param name="pythonException">The exception to parse</param>
+        /// <returns>String with relevant part of the stacktrace</returns>
+        public static string PythonExceptionParser(PythonException pythonException)
+        {
+            return PythonExceptionMessageParser(pythonException.Message) + PythonExceptionStackParser(pythonException.StackTrace);
+        }
+
+        /// <summary>
+        /// Parsers <see cref="PythonException.Message"/> into a readable message
+        /// </summary>
+        /// <param name="message">The python exception message</param>
+        /// <returns>String with relevant part of the stacktrace</returns>
+        public static string PythonExceptionMessageParser(string message)
+        {
+            var match = LineRegex.Match(message);
+            if (match.Success)
+            {
+                foreach (Match lineCapture in match.Captures)
+                {
+                    var newLineNumber = int.Parse(lineCapture.Groups[1].Value) + ExceptionLineShift;
+                    message = Regex.Replace(message, lineCapture.ToString(), $"line {newLineNumber}");
+                }
+            }
+            return message;
+        }
+
+        /// <summary>
         /// Parsers <see cref="PythonException.StackTrace"/> into a readable message
         /// </summary>
         /// <param name="value">String with the stacktrace information</param>
@@ -140,25 +177,25 @@ namespace QuantConnect.Util
                 return string.Empty;
             }
 
-            // Get the directory where the user files are located
-            var baseScript = value.GetStringBetweenChars('\"', '\"');
-            var length = Math.Max(baseScript.LastIndexOf('/'), baseScript.LastIndexOf('\\'));
-            if (length < 0)
-            {
-                return string.Empty;
-            }
-            var directory = baseScript.Substring(0, 1 + length);
-
             // Format the information in every line
             var lines = value.Substring(1, value.Length - 1)
-                .Split(new[] { "\'  File " }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(x => x.Contains(directory))
+                .Split(new[] { "  File " }, StringSplitOptions.RemoveEmptyEntries)
                 .Where(x => x.Split(',').Length > 2)
                 .Select(x =>
                 {
+                    // Get the directory where the user files are located
+                    var baseScript = value.GetStringBetweenChars('\"', '\"');
+                    var length = Math.Max(baseScript.LastIndexOf('/'), baseScript.LastIndexOf('\\'));
+                    if (length < 0)
+                    {
+                        return string.Empty;
+                    }
+                    var directory = baseScript.Substring(0, 1 + length);
+
                     var info = x.Replace(directory, string.Empty).Split(',');
                     var line = info[0].GetStringBetweenChars('\"', '\"');
-                    line = $" in {line}:{info[1].Trim()}";
+                    var lineNumber = int.Parse(info[1].Replace("line", string.Empty).Trim()) + ExceptionLineShift;
+                    line = $" in {line}: line {lineNumber}";
 
                     info = info[2].Split(new[] { "\\n" }, StringSplitOptions.RemoveEmptyEntries);
                     line = $" {info[0].Replace(" in ", " at ")}{line}";
@@ -170,6 +207,7 @@ namespace QuantConnect.Util
                 });
 
             var errorLine = string.Join(Environment.NewLine, lines);
+            errorLine = LeanPathRegex.Replace(errorLine, string.Empty);
 
             return string.IsNullOrWhiteSpace(errorLine)
                 ? string.Empty
@@ -189,7 +227,7 @@ namespace QuantConnect.Util
                 var inspect = lazyInspect.Value;
                 if (inspect.isfunction(pyObject))
                 {
-                    var args = inspect.getargspec(pyObject).args as PyObject;
+                    var args = inspect.getfullargspec(pyObject).args as PyObject;
                     var pyList = new PyList(args);
                     length = pyList.Length();
                     pyList.Dispose();
@@ -199,7 +237,7 @@ namespace QuantConnect.Util
 
                 if (inspect.ismethod(pyObject))
                 {
-                    var args = inspect.getargspec(pyObject).args as PyObject;
+                    var args = inspect.getfullargspec(pyObject).args as PyObject;
                     var pyList = new PyList(args);
                     length = pyList.Length() - 1;
                     pyList.Dispose();
@@ -217,7 +255,7 @@ namespace QuantConnect.Util
         /// <returns>PyObject with a python module</returns>
         private static PyObject GetModule()
         {
-            return PythonEngine.ModuleFromString("x",
+            return PyModule.FromString("x",
                 "from clr import AddReference\n" +
                 "AddReference(\"System\")\n" +
                 "from System import Action, Func\n" +

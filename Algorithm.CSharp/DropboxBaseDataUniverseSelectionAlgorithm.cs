@@ -23,7 +23,7 @@ using QuantConnect.Interfaces;
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// In this algortihm we show how you can easily use the universe selection feature to fetch symbols
+    /// In this algorithm we show how you can easily use the universe selection feature to fetch symbols
     /// to be traded using the BaseData custom data system in combination with the AddUniverse{T} method.
     /// AddUniverse{T} requires a function that will return the symbols to be traded.
     /// </summary>
@@ -44,6 +44,10 @@ namespace QuantConnect.Algorithm.CSharp
         public override void Initialize()
         {
             UniverseSettings.Resolution = Resolution.Daily;
+
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
 
             SetStartDate(2017, 07, 04);
             SetEndDate(2018, 07, 04);
@@ -180,6 +184,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 5301;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -187,45 +201,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "6441"},
             {"Average Win", "0.07%"},
             {"Average Loss", "-0.07%"},
-            {"Compounding Annual Return", "13.366%"},
-            {"Drawdown", "10.700%"},
-            {"Expectancy", "0.062"},
-            {"Net Profit", "13.366%"},
-            {"Sharpe Ratio", "0.966"},
-            {"Probabilistic Sharpe Ratio", "46.330%"},
+            {"Compounding Annual Return", "14.841%"},
+            {"Drawdown", "10.400%"},
+            {"Expectancy", "0.068"},
+            {"Net Profit", "14.841%"},
+            {"Sharpe Ratio", "0.975"},
+            {"Probabilistic Sharpe Ratio", "46.586%"},
             {"Loss Rate", "46%"},
             {"Win Rate", "54%"},
             {"Profit-Loss Ratio", "0.97"},
-            {"Alpha", "0.125"},
-            {"Beta", "-0.067"},
-            {"Annual Standard Deviation", "0.121"},
-            {"Annual Variance", "0.015"},
-            {"Information Ratio", "-0.021"},
-            {"Tracking Error", "0.171"},
-            {"Treynor Ratio", "-1.747"},
-            {"Total Fees", "$8669.28"},
+            {"Alpha", "0.008"},
+            {"Beta", "0.987"},
+            {"Annual Standard Deviation", "0.11"},
+            {"Annual Variance", "0.012"},
+            {"Information Ratio", "0.166"},
+            {"Tracking Error", "0.041"},
+            {"Treynor Ratio", "0.109"},
+            {"Total Fees", "$7497.26"},
             {"Estimated Strategy Capacity", "$320000.00"},
             {"Lowest Capacity Asset", "BNO UN3IMQ2JU1YD"},
-            {"Fitness Score", "0.676"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "1.13"},
-            {"Return Over Maximum Drawdown", "1.251"},
-            {"Portfolio Turnover", "1.639"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "a5b4f8473c39a7e9d62659fa9f6a4e2f"}
+            {"Portfolio Turnover", "136.11%"},
+            {"OrderListHash", "a373decd582b478188e291f15e6a4590"}
         };
     }
 }

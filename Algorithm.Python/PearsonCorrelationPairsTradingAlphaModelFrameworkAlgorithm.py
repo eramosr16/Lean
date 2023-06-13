@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,19 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Algorithm.Framework import *
-from QuantConnect.Algorithm.Framework.Alphas import *
-from QuantConnect.Algorithm.Framework.Execution import *
-from QuantConnect.Algorithm.Framework.Portfolio import *
-from QuantConnect.Algorithm.Framework.Risk import *
-from QuantConnect.Algorithm.Framework.Selection import *
-
+from AlgorithmImports import *
 
 ### <summary>
 ### Framework algorithm that uses the PearsonCorrelationPairsTradingAlphaModel.
@@ -40,13 +28,25 @@ class PearsonCorrelationPairsTradingAlphaModelFrameworkAlgorithm(QCAlgorithm):
         self.SetStartDate(2013,10,7)
         self.SetEndDate(2013,10,11)
 
-        self.SetUniverseSelection(ManualUniverseSelectionModel(
-            Symbol.Create('AIG', SecurityType.Equity, Market.USA),
-            Symbol.Create('BAC', SecurityType.Equity, Market.USA),
-            Symbol.Create('IBM', SecurityType.Equity, Market.USA),
-            Symbol.Create('SPY', SecurityType.Equity, Market.USA)))
+        symbols = [Symbol.Create(ticker, SecurityType.Equity, Market.USA)
+            for ticker in ["SPY", "AIG", "BAC", "IBM"]]
+
+        # Manually add SPY and AIG when the algorithm starts
+        self.SetUniverseSelection(ManualUniverseSelectionModel(symbols[:2]))
+
+        # At midnight, add all securities every day except on the last data
+        # With this procedure, the Alpha Model will experience multiple universe changes
+        self.AddUniverseSelection(ScheduledUniverseSelectionModel(
+            self.DateRules.EveryDay(), self.TimeRules.Midnight,
+            lambda dt: symbols if dt.day <= (self.EndDate - timedelta(1)).day else []))
 
         self.SetAlpha(PearsonCorrelationPairsTradingAlphaModel(252, Resolution.Daily))
         self.SetPortfolioConstruction(EqualWeightingPortfolioConstructionModel())
         self.SetExecution(ImmediateExecutionModel())
         self.SetRiskManagement(NullRiskManagementModel())
+
+    def OnEndOfAlgorithm(self) -> None:
+        # We have removed all securities from the universe. The Alpha Model should remove the consolidator
+        consolidatorCount = sum(s.Consolidators.Count for s in self.SubscriptionManager.Subscriptions)
+        if consolidatorCount > 0:
+            raise Exception(f"The number of consolidator should be zero. Actual: {consolidatorCount}")

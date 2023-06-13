@@ -17,10 +17,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using Newtonsoft.Json;
 using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
+using QuantConnect.Logging;
+using QuantConnect.Securities;
 
 namespace QuantConnect.ToolBox.CoinApi
 {
@@ -37,10 +38,15 @@ namespace QuantConnect.ToolBox.CoinApi
         private readonly FileInfo _coinApiSymbolsListFile = new FileInfo(
             Config.Get("coinapi-default-symbol-list-file", "CoinApiSymbols.json"));
         // LEAN market <-> CoinAPI exchange id maps
-        private static readonly Dictionary<string, string> MapMarketsToExchangeIds = new Dictionary<string, string>
+        public static readonly Dictionary<string, string> MapMarketsToExchangeIds = new Dictionary<string, string>
         {
             { Market.GDAX, "COINBASE" },
-            { Market.Bitfinex, "BITFINEX" }
+            { Market.Bitfinex, "BITFINEX" },
+            { Market.Binance, "BINANCE" },
+            { Market.FTX, "FTX" },
+            { Market.FTXUS, "FTXUS" },
+            { Market.Kraken, "KRAKEN" },
+            { Market.BinanceUS, "BINANCEUS" },
         };
         private static readonly Dictionary<string, string> MapExchangeIdsToMarkets =
             MapMarketsToExchangeIds.ToDictionary(x => x.Value, x => x.Key);
@@ -107,7 +113,10 @@ namespace QuantConnect.ToolBox.CoinApi
         /// </summary>
         public CoinApiSymbolMapper()
         {
-            LoadSymbolMap(MapMarketsToExchangeIds.Values.ToArray());
+            MapExchangeIdsToMarkets["BINANCEFTS"] = Market.Binance;
+            MapExchangeIdsToMarkets["BINANCEFTSC"] = Market.Binance;
+
+            LoadSymbolMap(MapExchangeIdsToMarkets.Keys.ToArray());
         }
 
         /// <summary>
@@ -140,7 +149,7 @@ namespace QuantConnect.ToolBox.CoinApi
             DateTime expirationDate = new DateTime(), decimal strike = 0, OptionRight optionRight = OptionRight.Call)
         {
             var parts = brokerageSymbol.Split('_');
-            if (parts.Length != 4 || parts[1] != "SPOT")
+            if (parts.Length != 4)
             {
                 throw new Exception($"CoinApiSymbolMapper.GetLeanSymbol(): Unsupported SymbolId: {brokerageSymbol}");
             }
@@ -156,7 +165,7 @@ namespace QuantConnect.ToolBox.CoinApi
 
             var ticker = baseCurrency + quoteCurrency;
 
-            return Symbol.Create(ticker, SecurityType.Crypto, symbolMarket);
+            return Symbol.Create(ticker, securityType, symbolMarket);
         }
 
         /// <summary>
@@ -188,11 +197,7 @@ namespace QuantConnect.ToolBox.CoinApi
             }
             else
             {
-                using (var wc = new WebClient())
-                {
-                    var url = $"{RestUrl}/v1/symbols?filter_symbol_id={list}&apiKey={_apiKey}";
-                    json = wc.DownloadString(url);
-                }
+                json = $"{RestUrl}/v1/symbols?filter_symbol_id={list}&apiKey={_apiKey}".DownloadData();
             }
 
             var result = JsonConvert.DeserializeObject<List<CoinApiSymbol>>(json);
@@ -200,22 +205,38 @@ namespace QuantConnect.ToolBox.CoinApi
             // There were cases of entries in the CoinApiSymbols list with the following pattern:
             // <Exchange>_SPOT_<BaseCurrency>_<QuoteCurrency>_<ExtraSuffix>
             // Those cases should be ignored for SPOT prices.
-            _symbolMap = result
-                .Where(x => x.SymbolType == "SPOT" &&
-                    x.SymbolId.Split('_').Length == 4 &&
+            foreach (var x in  result
+                .Where(x => x.SymbolId.Split('_').Length == 4 &&
                     // exclude Bitfinex BCH pre-2018-fork as for now we don't have historical mapping data
-                    (x.ExchangeId != "BITFINEX" || x.AssetIdBase != "BCH" && x.AssetIdQuote != "BCH"))
-                .ToDictionary(
-                    x =>
-                    {
-                        var market = MapExchangeIdsToMarkets[x.ExchangeId];
-                        return Symbol.Create(
-                            ConvertCoinApiCurrencyToLeanCurrency(x.AssetIdBase, market) +
-                            ConvertCoinApiCurrencyToLeanCurrency(x.AssetIdQuote, market),
-                            SecurityType.Crypto,
-                            market);
-                    },
-                    x => x.SymbolId);
+                    (x.ExchangeId != "BITFINEX" || x.AssetIdBase != "BCH" && x.AssetIdQuote != "BCH")
+                    // solves the cases where we request 'binance' and get 'binanceus'
+                    && MapExchangeIdsToMarkets.ContainsKey(x.ExchangeId)))
+            {
+                var market = MapExchangeIdsToMarkets[x.ExchangeId];
+
+                SecurityType securityType;
+                if(x.SymbolType == "SPOT")
+                {
+                    securityType = SecurityType.Crypto;
+                }
+                else if (x.SymbolType == "PERPETUAL")
+                {
+                    securityType = SecurityType.CryptoFuture;
+                }
+                else
+                {
+                    continue;
+                }
+                var symbol = GetLeanSymbol(x.SymbolId, securityType, market);
+
+                if (_symbolMap.ContainsKey(symbol))
+                {
+                    // skipping duplicate symbols. Kraken has both USDC/AD & USD/CAD symbols
+                    Log.Error($"CoinApiSymbolMapper(): Duplicate symbol found {symbol} will be skipped!");
+                    continue;
+                }
+                _symbolMap[symbol] = x.SymbolId;
+            }
         }
 
         private static string ConvertCoinApiCurrencyToLeanCurrency(string currency, string market)

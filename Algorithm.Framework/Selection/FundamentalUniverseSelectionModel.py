@@ -11,12 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Algorithm.Framework")
-
-from QuantConnect.Data.UniverseSelection import *
+from AlgorithmImports import *
 
 class FundamentalUniverseSelectionModel:
     '''Provides a base class for defining equity coarse/fine fundamental selection models'''
@@ -27,7 +22,7 @@ class FundamentalUniverseSelectionModel:
         '''Initializes a new instance of the FundamentalUniverseSelectionModel class
         Args:
             filterFineData: True to also filter using fine fundamental data, false to only filter on coarse data
-            universeSettings: The settings used when adding symbols to the algorithm, specify null to use algorthm.UniverseSettings'''
+            universeSettings: The settings used when adding symbols to the algorithm, specify null to use algorithm.UniverseSettings'''
         self.filterFineData = filterFineData
         self.universeSettings = universeSettings
 
@@ -46,7 +41,7 @@ class FundamentalUniverseSelectionModel:
 
     def CreateCoarseFundamentalUniverse(self, algorithm):
         '''Creates the coarse fundamental universe object.
-        This is provided to allow more flexibility when creating coarse universe, such as using algorithm.Universe.DollarVolume.Top(5)
+        This is provided to allow more flexibility when creating coarse universe.
         Args:
             algorithm: The algorithm instance
         Returns:

@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,21 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Indicators")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Indicators import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Algorithm import *
-import numpy as np
-from datetime import datetime
-
+from AlgorithmImports import *
 
 class IndicatorRibbonBenchmark(QCAlgorithm):
 
@@ -46,7 +32,7 @@ class IndicatorRibbonBenchmark(QCAlgorithm):
             delay = Delay(offset*(x+1))
             # define an indicator that takes the output of the sma and pipes it into our delay indicator
             delayedSma = IndicatorExtensions.Of(delay, self.sma)
-            # register our new 'delayedSma' for automaic updates on a daily resolution
+            # register our new 'delayedSma' for automatic updates on a daily resolution
             self.RegisterIndicator(self.spy, delayedSma, Resolution.Daily)
             self.ribbon.append(delayedSma)
 

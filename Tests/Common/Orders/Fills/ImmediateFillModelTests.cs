@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,7 +14,10 @@
 */
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
+using QuantConnect.AlgorithmFactory;
 using QuantConnect.Brokerages;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
@@ -24,7 +27,6 @@ using QuantConnect.Orders.Fills;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Forex;
 using QuantConnect.Tests.Common.Data;
-using QuantConnect.Tests.Common.Securities;
 
 namespace QuantConnect.Tests.Common.Orders.Fills
 {
@@ -32,23 +34,22 @@ namespace QuantConnect.Tests.Common.Orders.Fills
     public class ImmediateFillModelTests
     {
         private static readonly DateTime Noon = new DateTime(2014, 6, 24, 12, 0, 0);
-        private static readonly TimeKeeper TimeKeeper = new TimeKeeper(Noon.ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
+        private static TimeKeeper TimeKeeper;
 
-        [Test]
-        public void PerformsMarketFillBuy()
+        [SetUp]
+        public void Setup()
+        {
+            TimeKeeper = new TimeKeeper(Noon.ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsMarketFillBuy(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new MarketOrder(Symbols.SPY, 100, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101.123m));
 
@@ -56,27 +57,21 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
             Assert.AreEqual(order.Quantity, fill.FillQuantity);
             Assert.AreEqual(security.Price, fill.FillPrice);
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsMarketFillSell()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsMarketFillSell(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new MarketOrder(Symbols.SPY, -100, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101.123m));
 
@@ -84,27 +79,66 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
             Assert.AreEqual(order.Quantity, fill.FillQuantity);
             Assert.AreEqual(security.Price, fill.FillPrice);
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsLimitFillBuy()
+        [TestCase(true, true)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(false, false)]
+        public void LimitFillExtendedMarketHours(bool isInternal, bool extendedMarketHours)
+        {
+            var model = new ImmediateFillModel();
+            // 6 AM NewYork time, pre market
+            var currentTimeNY = new DateTime(2022, 7, 19, 6, 0, 0);
+            var order = new LimitOrder(Symbols.SPY, 100, 101.5m, currentTimeNY);
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal, extendedMarketHours);
+            var security = GetSecurity(config);
+            TimeKeeper.SetUtcDateTime(currentTimeNY.ConvertToUtc(TimeZones.NewYork));
+            security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, currentTimeNY, 102m));
+
+            var fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            Assert.AreEqual(0, fill.FillQuantity);
+            Assert.AreEqual(0, fill.FillPrice);
+            Assert.AreEqual(OrderStatus.None, fill.Status);
+
+            security.SetMarketPrice(new TradeBar(currentTimeNY, Symbols.SPY, 102m, 103m, 101m, 102.3m, 100));
+
+            fill = model.LimitFill(security, order);
+
+            if (extendedMarketHours)
+            {
+                Assert.AreEqual(order.Quantity, fill.FillQuantity);
+                Assert.AreEqual(Math.Min(order.LimitPrice, security.High), fill.FillPrice);
+                Assert.AreEqual(OrderStatus.Filled, fill.Status);
+            }
+            else
+            {
+                Assert.AreEqual(0, fill.FillQuantity);
+                Assert.AreEqual(0, fill.FillPrice);
+                Assert.AreEqual(OrderStatus.None, fill.Status);
+            }
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsLimitFillBuy(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new LimitOrder(Symbols.SPY, 100, 101.5m, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 102m));
 
@@ -112,7 +146,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -128,21 +163,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsLimitFillSell()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsLimitFillSell(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new LimitOrder(Symbols.SPY, -100, 101.5m, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101m));
 
@@ -150,7 +178,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -166,21 +195,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsStopLimitFillBuy()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsStopLimitFillBuy(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new StopLimitOrder(Symbols.SPY, 100, 101.5m, 101.75m, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 100m));
 
@@ -188,7 +210,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -200,7 +223,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -216,21 +240,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsStopLimitFillSell()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsStopLimitFillSell(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new StopLimitOrder(Symbols.SPY, -100, 101.75m, 101.50m, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 102m));
 
@@ -238,7 +255,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -250,7 +268,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -266,21 +285,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsStopMarketFillBuy()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsStopMarketFillBuy(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new StopMarketOrder(Symbols.SPY, 100, 101.5m, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101m));
 
@@ -288,7 +300,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -300,7 +313,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             // this fills worst case scenario, so it's min of asset/stop price
             Assert.AreEqual(order.Quantity, fill.FillQuantity);
@@ -308,21 +322,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsStopMarketFillSell()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsStopMarketFillSell(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new StopMarketOrder(Symbols.SPY, -100, 101.5m, Noon);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 102m));
 
@@ -330,7 +337,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -342,41 +350,36 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             // this fills worst case scenario, so it's min of asset/stop price
             Assert.AreEqual(order.Quantity, fill.FillQuantity);
             Assert.AreEqual(Math.Min(security.Price, order.StopPrice), fill.FillPrice);
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
-        
-        [Test]
-        public void PerformsLimitIfTouchedFillBuy()
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsLimitIfTouchedFillBuy(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new LimitIfTouchedOrder(Symbols.SPY, 100, 101.5m, 100m, Noon);
-            var configTradeBar = CreateTradeBarConfig(Symbols.SPY);
+            var configTradeBar = CreateTradeBarConfig(Symbols.SPY, isInternal);
             var configQuoteBar = new SubscriptionDataConfig(configTradeBar, typeof(QuoteBar));
             var configProvider = new MockSubscriptionDataConfigProvider(configQuoteBar);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                configTradeBar,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
-                        // Sets price at time zero
+            var security = GetSecurity(configTradeBar);
+            // Sets price at time zero
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 102m, 102m, 102m, 102m, 100));
-            configProvider.SubscriptionDataConfigs.Add(configTradeBar); 
+            configProvider.SubscriptionDataConfigs.Add(configTradeBar);
 
             var fill = model.Fill(new FillModelParameters(
                 security,
                 order,
                 configProvider,
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -384,7 +387,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
 
             // Time jump => trigger touched but not limit
             security.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 101m, 101m, 100.5m, 101m, 100));
-            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY, 
+            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY,
                 new Bar(101m, 101m, 100.5m, 101m), 100, // Bid bar
                 new Bar(101m, 101m, 100.5m, 101m), 100) // Ask bar
             );
@@ -397,7 +400,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 configProvider,
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -405,7 +409,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
 
             // Time jump => limit reached, holdings sold
             security.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 100m, 100m, 99m, 99m, 100));
-            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY, 
+            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY,
                     new Bar(100m, 100m, 99m, 99m), 100, // Bid bar
                     new Bar(100m, 100m, 99m, 99m), 100) // Ask bar
             );
@@ -419,34 +423,28 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
 
-        [Test]
-        public void PerformsLimitIfTouchedFillSell()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsLimitIfTouchedFillSell(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new LimitIfTouchedOrder(Symbols.SPY, -100, 101.5m, 105m, Noon);
-            var configTradeBar = CreateTradeBarConfig(Symbols.SPY);
+            var configTradeBar = CreateTradeBarConfig(Symbols.SPY, isInternal);
             var configQuoteBar = new SubscriptionDataConfig(configTradeBar, typeof(QuoteBar));
             var configProvider = new MockSubscriptionDataConfigProvider(configQuoteBar);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                configTradeBar,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
-            
+            var security = GetSecurity(configTradeBar);
+
             // Sets price at time zero
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 100m, 100m, 90m, 90m, 100));
-            configProvider.SubscriptionDataConfigs.Add(configTradeBar); 
+            configProvider.SubscriptionDataConfigs.Add(configTradeBar);
 
             var fill = model.Fill(new FillModelParameters(
                 security,
                 order,
                 configProvider,
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -454,7 +452,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
 
             // Time jump => trigger touched but not limit
             security.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 102m, 103m, 102m, 102m, 100));
-            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY, 
+            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY,
                 new Bar(101m, 102m, 100m, 100m), 100, // Bid bar
                 new Bar(103m, 104m, 102m, 102m), 100) // Ask bar
             );
@@ -467,7 +465,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 configProvider,
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -475,7 +474,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
 
             // Time jump => limit reached, holdings sold
             security.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 103m, 108m, 103m, 105m, 100));
-            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY, 
+            security.SetMarketPrice(new QuoteBar(Noon, Symbols.SPY,
                     new Bar(103m, 106m, 103m, 105m), 100, // Bid bar
                     new Bar(103m, 108m, 103m, 105m), 100) // Ask bar
             );
@@ -488,23 +487,16 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(order.LimitPrice, fill.FillPrice);
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
         }
-        
-        [Test]
-        public void PerformsMarketOnOpenUsingOpenPrice()
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsMarketOnOpenUsingOpenPrice(bool isInternal)
         {
             var reference = new DateTime(2015, 06, 05, 9, 0, 0); // before market open
             var model = new ImmediateFillModel();
             var order = new MarketOnOpenOrder(Symbols.SPY, 100, reference);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             var time = reference;
             TimeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
@@ -514,7 +506,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
             Assert.AreEqual(0, fill.FillQuantity);
 
             // market opens after 30min, so this is just before market open
@@ -526,7 +519,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
             Assert.AreEqual(0, fill.FillQuantity);
 
             // market opens after 30min
@@ -539,22 +533,15 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(security.Open, fill.FillPrice);
         }
 
-        [Test]
-        public void PerformsMarketOnCloseUsingClosingPrice()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void PerformsMarketOnCloseUsingClosingPrice(bool isInternal)
         {
             var reference = new DateTime(2015, 06, 05, 15, 0, 0); // before market close
             var model = new ImmediateFillModel();
             var order = new MarketOnCloseOrder(Symbols.SPY, 100, reference);
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             var time = reference;
             TimeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
@@ -564,7 +551,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
             Assert.AreEqual(0, fill.FillQuantity);
 
             // market closes after 60min, so this is just before market Close
@@ -576,7 +564,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
             Assert.AreEqual(0, fill.FillQuantity);
 
             // market closes
@@ -589,16 +578,18 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(security.Close, fill.FillPrice);
         }
 
-        [TestCase(OrderDirection.Buy)]
-        [TestCase(OrderDirection.Sell)]
-        public void MarketOrderFillsAtBidAsk(OrderDirection direction)
+        [TestCase(OrderDirection.Buy, true)]
+        [TestCase(OrderDirection.Sell, true)]
+        [TestCase(OrderDirection.Buy, false)]
+        [TestCase(OrderDirection.Sell, false)]
+        public void MarketOrderFillsAtBidAsk(OrderDirection direction, bool isInternal)
         {
             var symbol = Symbol.Create("EURUSD", SecurityType.Forex, "fxcm");
             var exchangeHours = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
             var quoteCash = new Cash(Currencies.USD, 1000, 1);
             var symbolProperties = SymbolProperties.GetDefault(Currencies.USD);
-            var config = new SubscriptionDataConfig(typeof(Tick), symbol, Resolution.Tick, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
-            var security = new Forex(exchangeHours, quoteCash, config, symbolProperties, ErrorCurrencyConverter.Instance, RegisteredSecurityDataTypesProvider.Null);
+            var config = new SubscriptionDataConfig(typeof(Tick), symbol, Resolution.Tick, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
+            var security = new Forex(exchangeHours, quoteCash, new Cash("EUR", 0, 0), config, symbolProperties, ErrorCurrencyConverter.Instance, RegisteredSecurityDataTypesProvider.Null);
 
             var reference = DateTime.Now;
             var referenceUtc = reference.ConvertToUtc(TimeZones.NewYork);
@@ -619,29 +610,23 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             var expected = direction == OrderDirection.Buy ? askPrice : bidPrice;
             Assert.AreEqual(expected, fill.FillPrice);
             Assert.AreEqual(0, fill.OrderFee.Value.Amount);
         }
 
-        [Test]
-        public void ImmediateFillModelUsesPriceForTicksWhenBidAskSpreadsAreNotAvailable()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ImmediateFillModelUsesPriceForTicksWhenBidAskSpreadsAreNotAvailable(bool isInternal)
         {
             var noon = new DateTime(2014, 6, 24, 12, 0, 0);
             var timeKeeper = new TimeKeeper(noon.ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
             var symbol = Symbol.Create("SPY", SecurityType.Equity, Market.USA);
-            var config = new SubscriptionDataConfig(typeof(Tick), Symbols.SPY, Resolution.Tick, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = new SubscriptionDataConfig(typeof(Tick), Symbols.SPY, Resolution.Tick, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, noon, 101.123m));
 
@@ -656,30 +641,24 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             // The fill model should use the tick.Price
             Assert.AreEqual(fill.FillPrice, 100m);
             Assert.AreEqual(0, fill.OrderFee.Value.Amount);
         }
 
-        [Test]
-        public void ImmediateFillModelDoesNotUseTicksWhenThereIsNoTickSubscription()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ImmediateFillModelDoesNotUseTicksWhenThereIsNoTickSubscription(bool isInternal)
         {
             var noon = new DateTime(2014, 6, 24, 12, 0, 0);
             var timeKeeper = new TimeKeeper(noon.ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
             var symbol = Symbol.Create("SPY", SecurityType.Equity, Market.USA);
             // Minute subscription
-            var config = new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, noon, 101.123m));
 
@@ -694,31 +673,26 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             // The fill model should use the tick.Price
             Assert.AreEqual(fill.FillPrice, 1.0m);
             Assert.AreEqual(0, fill.OrderFee.Value.Amount);
         }
 
-        [TestCase(100, 290.50)]
-        [TestCase(-100, 291.50)]
-        public void LimitOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal limitPrice)
+        [TestCase(100, 290.50, true)]
+        [TestCase(-100, 291.50, true)]
+        [TestCase(100, 290.50, false)]
+        [TestCase(-100, 291.50, false)]
+        public void LimitOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal limitPrice, bool isInternal)
         {
             var time = new DateTime(2018, 9, 24, 9, 30, 0);
             var timeKeeper = new TimeKeeper(time.ConvertToUtc(TimeZones.NewYork), TimeZones.NewYork);
             var symbol = Symbol.Create("SPY", SecurityType.Equity, Market.USA);
 
-            var config = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
 
             var tradeBar = new TradeBar(time, symbol, 290m, 292m, 289m, 291m, 12345);
@@ -737,7 +711,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -757,24 +732,18 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(0, fill.OrderFee.Value.Amount);
         }
 
-        [TestCase(100, 291.50)]
-        [TestCase(-100, 290.50)]
-        public void StopMarketOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal stopPrice)
+        [TestCase(100, 291.50, false)]
+        [TestCase(-100, 290.50, false)]
+        [TestCase(100, 291.50, true)]
+        [TestCase(-100, 290.50, true)]
+        public void StopMarketOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal stopPrice, bool isInternal)
         {
             var time = new DateTime(2018, 9, 24, 9, 30, 0);
             var timeKeeper = new TimeKeeper(time.ConvertToUtc(TimeZones.NewYork), TimeZones.NewYork);
             var symbol = Symbol.Create("SPY", SecurityType.Equity, Market.USA);
 
-            var config = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
 
             var tradeBar = new TradeBar(time, symbol, 290m, 292m, 289m, 291m, 12345);
@@ -793,7 +762,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -813,24 +783,18 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(0, fill.OrderFee.Value.Amount);
         }
 
-        [TestCase(100, 291.50, 291.75)]
-        [TestCase(-100, 290.50, 290.25)]
-        public void StopLimitOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal stopPrice, decimal limitPrice)
+        [TestCase(100, 291.50, 291.75, true)]
+        [TestCase(-100, 290.50, 290.25, true)]
+        [TestCase(100, 291.50, 291.75, false)]
+        [TestCase(-100, 290.50, 290.25, false)]
+        public void StopLimitOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal stopPrice, decimal limitPrice, bool isInternal)
         {
             var time = new DateTime(2018, 9, 24, 9, 30, 0);
             var timeKeeper = new TimeKeeper(time.ConvertToUtc(TimeZones.NewYork), TimeZones.NewYork);
             var symbol = Symbol.Create("SPY", SecurityType.Equity, Market.USA);
 
-            var config = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
 
             var tradeBar = new TradeBar(time, symbol, 290m, 292m, 289m, 291m, 12345);
@@ -849,7 +813,8 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.AreEqual(0, fill.FillQuantity);
             Assert.AreEqual(0, fill.FillPrice);
@@ -869,21 +834,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(0, fill.OrderFee.Value.Amount);
         }
 
-        [Test]
-        public void MarketOrderFillWithStalePriceHasWarningMessage()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void MarketOrderFillWithStalePriceHasWarningMessage(bool isInternal)
         {
             var model = new ImmediateFillModel();
             var order = new MarketOrder(Symbols.SPY, -100, Noon.ConvertToUtc(TimeZones.NewYork).AddMinutes(61));
-            var config = CreateTradeBarConfig(Symbols.SPY);
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                config,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
             security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101.123m));
 
@@ -891,32 +849,29 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 security,
                 order,
                 new MockSubscriptionDataConfigProvider(config),
-                Time.OneHour)).OrderEvent;
+                Time.OneHour,
+                null)).Single();
 
             Assert.IsTrue(fill.Message.Contains("Warning: fill at stale price"));
         }
 
-        [TestCase(OrderDirection.Sell, 11)]
-        [TestCase(OrderDirection.Buy, 21)]
+        [TestCase(OrderDirection.Sell, 11, true)]
+        [TestCase(OrderDirection.Buy, 21, true)]
         // uses the trade bar last close
-        [TestCase(OrderDirection.Hold, 291)]
-        public void PriceReturnsQuoteBarsIfPresent(OrderDirection orderDirection, decimal expected)
+        [TestCase(OrderDirection.Hold, 291, true)]
+        [TestCase(OrderDirection.Sell, 11, false)]
+        [TestCase(OrderDirection.Buy, 21, false)]
+        // uses the trade bar last close
+        [TestCase(OrderDirection.Hold, 291, false)]
+        public void PriceReturnsQuoteBarsIfPresent(OrderDirection orderDirection, decimal expected, bool isInternal)
         {
             var time = new DateTime(2018, 9, 24, 9, 30, 0);
             var timeKeeper = new TimeKeeper(time.ConvertToUtc(TimeZones.NewYork), TimeZones.NewYork);
             var symbol = Symbol.Create("SPY", SecurityType.Equity, Market.USA);
 
-            var configTradeBar = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
+            var configTradeBar = new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, isInternal);
             var configQuoteBar = new SubscriptionDataConfig(configTradeBar, typeof(QuoteBar));
-            var security = new Security(
-                SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours(),
-                configQuoteBar,
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            var security = GetSecurity(configQuoteBar);
             security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
 
             var tradeBar = new TradeBar(time, symbol, 290m, 292m, 289m, 291m, 12345);
@@ -936,17 +891,299 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             testFillModel.SetParameters(new FillModelParameters(security,
                 null,
                 configProvider,
-                TimeSpan.FromDays(1)));
+                TimeSpan.FromDays(1),
+                null));
 
             var result = testFillModel.GetPricesPublic(security, orderDirection);
 
             Assert.AreEqual(expected, result.Close);
         }
 
-
-        private SubscriptionDataConfig CreateTradeBarConfig(Symbol symbol)
+        [Test]
+        public void PerformsComboMarketFill(
+            [Values] bool isInternal,
+            [Values(OrderDirection.Buy, OrderDirection.Sell)] OrderDirection orderDirection)
         {
-            return new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, true, false);
+            var model = new ImmediateFillModel();
+            var groupOrderManager = new GroupOrderManager(0, 2, orderDirection == OrderDirection.Buy ? 10 : -10);
+            var spyOrder = new ComboMarketOrder(
+                Symbols.SPY,
+                10m.GetOrderLegGroupQuantity(groupOrderManager),
+                Noon,
+                groupOrderManager)
+            { Id = 1 };
+            var aaplOrder = new ComboMarketOrder(
+                Symbols.AAPL,
+                5m.GetOrderLegGroupQuantity(groupOrderManager),
+                Noon,
+                groupOrderManager)
+            { Id = 2 };
+
+            groupOrderManager.OrderIds.Add(spyOrder.Id);
+            groupOrderManager.OrderIds.Add(aaplOrder.Id);
+
+            var spyConfig = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var aaplConfig = CreateTradeBarConfig(Symbols.AAPL, isInternal);
+            var spy = GetSecurity(spyConfig);
+            var aapl = GetSecurity(aaplConfig);
+            spy.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            spy.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101.123m));
+            aapl.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            aapl.SetMarketPrice(new IndicatorDataPoint(Symbols.AAPL, Noon, 55.456m));
+
+            Assert.AreEqual(orderDirection, groupOrderManager.Direction);
+
+            var securitiesForOrders = new Dictionary<Order, Security>
+            {
+                { spyOrder, spy },
+                { aaplOrder, aapl }
+            };
+
+            var fill = model.Fill(new FillModelParameters(
+                spy,
+                spyOrder,
+                new MockSubscriptionDataConfigProvider(spyConfig),
+                Time.OneHour,
+                securitiesForOrders));
+
+            Assert.AreEqual(2, fill.Count());
+
+            var spyFillEvent = fill.First();
+
+            Assert.AreEqual(spyOrder.Quantity, spyFillEvent.FillQuantity);
+            Assert.AreEqual(spy.Price, spyFillEvent.FillPrice);
+            Assert.AreEqual(OrderStatus.Filled, spyFillEvent.Status);
+
+            var aaplFillEvent = fill.Last();
+
+            Assert.AreEqual(aaplOrder.Quantity, aaplFillEvent.FillQuantity);
+            Assert.AreEqual(aapl.Price, aaplFillEvent.FillPrice);
+            Assert.AreEqual(OrderStatus.Filled, aaplFillEvent.Status);
+        }
+
+        [Test]
+        public void PerformsComboLimitFill(
+            [Values] bool isInternal,
+            [Values(OrderDirection.Buy, OrderDirection.Sell)] OrderDirection orderDirection,
+            [Values] bool debit)
+        {
+            var spyConfig = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var aaplConfig = CreateTradeBarConfig(Symbols.AAPL, isInternal);
+            var spy = GetSecurity(spyConfig);
+            var aapl = GetSecurity(aaplConfig);
+            spy.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            spy.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 301m, 302m, 299m, 300m, 10));
+            aapl.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            aapl.SetMarketPrice(new TradeBar(Noon, Symbols.AAPL, 101m, 102m, 99m, 100m, 25));
+
+            var groupOrderManager = new GroupOrderManager(0, 2, orderDirection == OrderDirection.Buy ? 10 : -10, 0m);
+            Assert.AreEqual(orderDirection, groupOrderManager.Direction);
+
+            var spyLegOrder = new ComboLimitOrder(
+                Symbols.SPY,
+                -100m.GetOrderLegGroupQuantity(groupOrderManager),
+                0m,
+                Noon,
+                groupOrderManager);
+            var aaplLegOrder = new ComboLimitOrder(
+                Symbols.AAPL,
+                100m.GetOrderLegGroupQuantity(groupOrderManager),
+                0m,
+                Noon,
+                groupOrderManager);
+            var legsOrders = new List<ComboLimitOrder>() { spyLegOrder, aaplLegOrder };
+            for (var i = 0; i < legsOrders.Count; i++)
+            {
+                legsOrders[i].Id = i + 1;
+                if (debit)
+                {
+                    legsOrders[i].Quantity *= -1;
+                }
+
+                groupOrderManager.OrderIds.Add(legsOrders[i].Id);
+            }
+
+            var securitiesForOrders = new Dictionary<Order, Security>
+            {
+                { spyLegOrder, spy },
+                { aaplLegOrder, aapl }
+            };
+
+            var getLegsPrice = (Func<Security, decimal> priceSelector) =>
+                priceSelector(spy) * spyLegOrder.Quantity.GetOrderLegRatio(groupOrderManager) / 100 +
+                priceSelector(aapl) * aaplLegOrder.Quantity.GetOrderLegRatio(groupOrderManager) / 100;
+
+            // set limit prices that won't fill.
+            // combo limit orders fill based on the total price that will be paid/received for the legs
+            if (orderDirection == OrderDirection.Buy)
+            {
+                // limit price lower than legs price
+                var price = getLegsPrice((security) => security.Low);
+                var multiplier = price > 0 ? 0.999m : 1.001m;
+                groupOrderManager.LimitPrice = price * multiplier;
+            }
+            else
+            {
+                // limit price higher than legs price
+                var price = getLegsPrice((security) => security.High);
+                var multiplier = price > 0 ? 1.001m : 0.999m;
+                groupOrderManager.LimitPrice = price * multiplier;
+            }
+
+            var model = new ImmediateFillModel();
+
+            var fill = model.Fill(new FillModelParameters(spy,
+                spyLegOrder,
+                new MockSubscriptionDataConfigProvider(spyConfig),
+                Time.OneHour,
+                securitiesForOrders));
+            // won't fill with the given limit price
+            Assert.IsEmpty(fill);
+
+            // set limit prices that will fill
+            if (orderDirection == OrderDirection.Buy)
+            {
+                var price = getLegsPrice((security) => security.Low);
+                var multiplier = price > 0 ? 1.001m : 0.999m;
+                groupOrderManager.LimitPrice = price * multiplier;
+            }
+            else
+            {
+                var price = getLegsPrice((security) => security.High);
+                var multiplier = price > 0 ? 0.999m : 1.001m;
+                groupOrderManager.LimitPrice = price * multiplier;
+            }
+
+            fill = model.Fill(new FillModelParameters(spy,
+                spyLegOrder,
+                new MockSubscriptionDataConfigProvider(spyConfig),
+                Time.OneHour,
+                securitiesForOrders));
+            Assert.AreEqual(legsOrders.Count, fill.Count());
+
+            var spyFillEvent = fill.First();
+
+            Assert.AreEqual(spyLegOrder.Quantity, spyFillEvent.FillQuantity);
+            var expectedSpyFillPrice = orderDirection == OrderDirection.Buy ? spy.Low : spy.High;
+            Assert.AreEqual(expectedSpyFillPrice, spyFillEvent.FillPrice);
+            Assert.AreEqual(OrderStatus.Filled, spyFillEvent.Status);
+
+            var aaplFillEvent = fill.Last();
+
+            Assert.AreEqual(aaplLegOrder.Quantity, aaplFillEvent.FillQuantity);
+            var expectedAaplFillPrice = orderDirection == OrderDirection.Buy ? aapl.Low : aapl.High;
+            Assert.AreEqual(expectedAaplFillPrice, aaplFillEvent.FillPrice);
+            Assert.AreEqual(OrderStatus.Filled, aaplFillEvent.Status);
+        }
+
+        [Test]
+        public void PerformsComboLegLimitFill(
+            [Values] bool isInternal,
+            [Values(OrderDirection.Buy, OrderDirection.Sell)] OrderDirection orderDirection)
+        {
+            var model = new ImmediateFillModel();
+            var multiplier = orderDirection == OrderDirection.Buy ? 1 : -1;
+            var groupOrderManager = new GroupOrderManager(0, 2, multiplier * 10, 1m);
+
+            var spyLimitPrice = orderDirection == OrderDirection.Buy ? 101.1m : 102m;
+            var spyOrder = new ComboLegLimitOrder(
+                Symbols.SPY,
+                10m.GetOrderLegGroupQuantity(groupOrderManager),
+                spyLimitPrice,
+                Noon,
+                groupOrderManager)
+            { Id = 1 };
+            var aaplLimitPrice = orderDirection == OrderDirection.Buy ? 252.5m : 251.1m;
+            var aaplOrder = new ComboLegLimitOrder(
+                Symbols.AAPL,
+                multiplier * 5m.GetOrderLegGroupQuantity(groupOrderManager),
+                aaplLimitPrice,
+                Noon,
+                groupOrderManager)
+            { Id = 2 };
+
+            groupOrderManager.OrderIds.Add(spyOrder.Id);
+            groupOrderManager.OrderIds.Add(aaplOrder.Id);
+
+            Assert.AreEqual(orderDirection, groupOrderManager.Direction);
+
+            var spyConfig = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var aaplConfig = CreateTradeBarConfig(Symbols.AAPL, isInternal);
+            var spy = GetSecurity(spyConfig);
+            var aapl = GetSecurity(aaplConfig);
+            spy.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            spy.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 101.123m));
+            aapl.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+            aapl.SetMarketPrice(new IndicatorDataPoint(Symbols.AAPL, Noon, 252.456m));
+
+            var securitiesForOrders = new Dictionary<Order, Security>
+            {
+                { spyOrder, spy },
+                { aaplOrder, aapl }
+            };
+
+            var fill = model.Fill(new FillModelParameters(
+                spy,
+                spyOrder,
+                new MockSubscriptionDataConfigProvider(spyConfig),
+                Time.OneHour,
+                securitiesForOrders));
+
+            // Won't fill, the limit price condition is not met
+            Assert.IsEmpty(fill);
+
+            spy.SetMarketPrice(new TradeBar(Noon, Symbols.SPY, 102m, 103m, 101m, 102.3m, 100));
+            aapl.SetMarketPrice(new TradeBar(Noon, Symbols.AAPL, 252m, 253m, 251m, 252.3m, 250));
+
+            fill = model.Fill(new FillModelParameters(
+                spy,
+                spyOrder,
+                new MockSubscriptionDataConfigProvider(spyConfig),
+                Time.OneHour,
+                securitiesForOrders));
+
+            Assert.AreEqual(2, fill.Count());
+
+            var spyFillEvent = fill.First();
+
+            Assert.AreEqual(spyOrder.Quantity, spyFillEvent.FillQuantity);
+            var expectedSpyFillPrice = orderDirection == OrderDirection.Buy
+                ? Math.Min(spyOrder.LimitPrice, spy.High)
+                : Math.Max(spyOrder.LimitPrice, spy.Low);
+            Assert.AreEqual(expectedSpyFillPrice, spyFillEvent.FillPrice);
+            Assert.AreEqual(OrderStatus.Filled, spyFillEvent.Status);
+
+            var aaplFillEvent = fill.Last();
+
+            Assert.AreEqual(aaplOrder.Quantity, aaplFillEvent.FillQuantity);
+            var expectedAaplFillPrice = orderDirection == OrderDirection.Buy
+                ? Math.Min(aaplOrder.LimitPrice, aapl.High)
+                : Math.Max(aaplOrder.LimitPrice, aapl.Low);
+            Assert.AreEqual(expectedAaplFillPrice, aaplFillEvent.FillPrice);
+            Assert.AreEqual(OrderStatus.Filled, aaplFillEvent.Status);
+        }
+
+        private SubscriptionDataConfig CreateTradeBarConfig(Symbol symbol, bool isInternal = false, bool extendedMarketHours = true)
+        {
+            return new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, extendedMarketHours, isInternal);
+        }
+
+        private Security GetSecurity(SubscriptionDataConfig config)
+        {
+            var entry = MarketHoursDatabase.FromDataFolder().GetEntry(config.Symbol.ID.Market, config.Symbol, config.SecurityType);
+            var security = new Security(
+                entry.ExchangeHours,
+                config,
+                new Cash(Currencies.USD, 0, 1m),
+                SymbolProperties.GetDefault(Currencies.USD),
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCache()
+            );
+
+            security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+
+            return security;
         }
 
         private class TestFillModel : FillModel

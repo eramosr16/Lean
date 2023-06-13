@@ -37,6 +37,10 @@ namespace QuantConnect.Algorithm.CSharp
             // Set requested data resolution
             UniverseSettings.Resolution = Resolution.Minute;
 
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
+
             SetStartDate(2013, 10, 07);  //Set Start Date
             SetEndDate(2013, 10, 11);    //Set End Date
             SetCash(100000);             //Set Strategy Cash
@@ -70,52 +74,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 14082;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 256;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "18"},
+            {"Total Trades", "14"},
             {"Average Win", "0%"},
-            {"Average Loss", "-0.16%"},
-            {"Compounding Annual Return", "72.095%"},
+            {"Average Loss", "-0.23%"},
+            {"Compounding Annual Return", "63.336%"},
             {"Drawdown", "1.100%"},
             {"Expectancy", "-1"},
-            {"Net Profit", "0.746%"},
-            {"Sharpe Ratio", "4.081"},
-            {"Probabilistic Sharpe Ratio", "61.076%"},
+            {"Net Profit", "0.674%"},
+            {"Sharpe Ratio", "4.042"},
+            {"Probabilistic Sharpe Ratio", "58.892%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.312"},
-            {"Beta", "0.554"},
-            {"Annual Standard Deviation", "0.113"},
-            {"Annual Variance", "0.013"},
-            {"Information Ratio", "-10.031"},
-            {"Tracking Error", "0.093"},
-            {"Treynor Ratio", "0.834"},
-            {"Total Fees", "$41.71"},
-            {"Estimated Strategy Capacity", "$3200000.00"},
+            {"Alpha", "-0.592"},
+            {"Beta", "0.57"},
+            {"Annual Standard Deviation", "0.133"},
+            {"Annual Variance", "0.018"},
+            {"Information Ratio", "-13.918"},
+            {"Tracking Error", "0.104"},
+            {"Treynor Ratio", "0.943"},
+            {"Total Fees", "$40.20"},
+            {"Estimated Strategy Capacity", "$4400000.00"},
             {"Lowest Capacity Asset", "AIG R735QTJ8XC9X"},
-            {"Fitness Score", "0.634"},
-            {"Kelly Criterion Estimate", "13.28"},
-            {"Kelly Criterion Probability Value", "0.237"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "79.93"},
-            {"Portfolio Turnover", "0.634"},
-            {"Total Insights Generated", "13"},
-            {"Total Insights Closed", "10"},
-            {"Total Insights Analysis Completed", "10"},
-            {"Long Insight Count", "6"},
-            {"Short Insight Count", "7"},
-            {"Long/Short Ratio", "85.71%"},
-            {"Estimated Monthly Alpha Value", "$50520.5824"},
-            {"Total Accumulated Estimated Alpha Value", "$8700.7670"},
-            {"Mean Population Estimated Insight Value", "$870.0767"},
-            {"Mean Population Direction", "70%"},
-            {"Mean Population Magnitude", "70%"},
-            {"Rolling Averaged Population Direction", "94.5154%"},
-            {"Rolling Averaged Population Magnitude", "94.5154%"},
-            {"OrderListHash", "5ed2af23481b1a27f69f36ed69d5b546"}
+            {"Portfolio Turnover", "64.47%"},
+            {"OrderListHash", "7e43a08e470a1709c7f7066d6ed1d445"}
         };
     }
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -53,9 +53,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             ISecurityService securityService,
             Resolution defaultResolution)
         {
-            cashBook.Updated += (sender, updateType) =>
+            cashBook.Updated += (sender, args) =>
             {
-                if (updateType == CashBook.UpdateType.Added)
+                if (args.UpdateType == CashBookUpdateType.Added)
                 {
                     _ensureCurrencyDataFeeds = true;
                 }
@@ -80,6 +80,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         public SubscriptionDataConfig GetSubscriptionDataConfigToRemove(Symbol addedSymbol)
         {
             if (addedSymbol.SecurityType == SecurityType.Crypto
+                || addedSymbol.SecurityType == SecurityType.CryptoFuture
                 || addedSymbol.SecurityType == SecurityType.Forex
                 || addedSymbol.SecurityType == SecurityType.Cfd)
             {

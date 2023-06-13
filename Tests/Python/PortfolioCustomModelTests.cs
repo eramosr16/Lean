@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -39,7 +39,7 @@ namespace QuantConnect.Tests.Python
             algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
             algorithm.SetDateTime(new DateTime(2018, 8, 20, 15, 0, 0));
             algorithm.Transactions.SetOrderProcessor(new FakeOrderProcessor());
-            
+
             var spy = algorithm.AddEquity("SPY", Resolution.Daily);
             spy.SetMarketPrice(new Tick(algorithm.Time, Symbols.SPY, 100m, 100m));
 
@@ -84,7 +84,7 @@ namespace QuantConnect.Tests.Python
         {
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString("CustomMarginCallModel", code);
+                var module = PyModule.FromString("CustomMarginCallModel", code);
                 dynamic CustomMarginCallModel = module.GetAttr("CustomMarginCallModel");
                 return CustomMarginCallModel(portfolio, null);
             }
@@ -94,11 +94,7 @@ namespace QuantConnect.Tests.Python
 import os, sys
 sys.path.append(os.getcwd())
 
-from clr import AddReference
-AddReference('QuantConnect.Common')
-from QuantConnect import *
-from QuantConnect.Securities import *
-from QuantConnect.Orders import *
+from AlgorithmImports import *
 
 class CustomMarginCallModel:
     def __init__(self, portfolio, defaultOrderProperties):
@@ -127,14 +123,11 @@ class CustomMarginCallModel:
 import os, sys
 sys.path.append(os.getcwd())
 
-from clr import AddReference
-AddReference('QuantConnect.Common')
-from QuantConnect import *
-from QuantConnect.Securities import *
-from QuantConnect.Orders import *
+from AlgorithmImports import *
 
 class CustomMarginCallModel(DefaultMarginCallModel):
     def __init__(self, portfolio, defaultOrderProperties):
+        super().__init__(portfolio, defaultOrderProperties)
         self.porfolio = portfolio
         self.defaultOrderProperties = defaultOrderProperties
 

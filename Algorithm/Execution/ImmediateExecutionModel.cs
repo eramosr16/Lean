@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -13,9 +13,10 @@
  * limitations under the License.
 */
 
-using QuantConnect.Algorithm.Framework.Portfolio;
-using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Orders;
+using QuantConnect.Securities;
+using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Algorithm.Framework.Portfolio;
 
 namespace QuantConnect.Algorithm.Framework.Execution
 {
@@ -35,16 +36,27 @@ namespace QuantConnect.Algorithm.Framework.Execution
         public override void Execute(QCAlgorithm algorithm, IPortfolioTarget[] targets)
         {
             _targetsCollection.AddRange(targets);
-            // for performance we check count value, OrderByMarginImpact and ClearFulfilled are expensive to call
-            if (_targetsCollection.Count > 0)
+            // for performance we if empty, OrderByMarginImpact and ClearFulfilled are expensive to call
+            if (!_targetsCollection.IsEmpty)
             {
                 foreach (var target in _targetsCollection.OrderByMarginImpact(algorithm))
                 {
+                    var security = algorithm.Securities[target.Symbol];
+
                     // calculate remaining quantity to be ordered
-                    var quantity = OrderSizing.GetUnorderedQuantity(algorithm, target);
+                    var quantity = OrderSizing.GetUnorderedQuantity(algorithm, target, security);
                     if (quantity != 0)
                     {
-                        algorithm.MarketOrder(target.Symbol, quantity);
+                        if (security.BuyingPowerModel.AboveMinimumOrderMarginPortfolioPercentage(security, quantity,
+                            algorithm.Portfolio, algorithm.Settings.MinimumOrderMarginPortfolioPercentage))
+                        {
+                            algorithm.MarketOrder(security, quantity);
+                        }
+                        else if (!PortfolioTarget.MinimumOrderMarginPercentageWarningSent.HasValue)
+                        {
+                            // will trigger the warning if it has not already been sent
+                            PortfolioTarget.MinimumOrderMarginPercentageWarningSent = false;
+                        }
                     }
                 }
 

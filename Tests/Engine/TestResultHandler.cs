@@ -18,11 +18,13 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using QuantConnect.Brokerages;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
+using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Engine
 {
@@ -115,6 +117,10 @@ namespace QuantConnect.Tests.Engine
             Messages.Enqueue(new RuntimeErrorPacket(_job.UserId, _job.AlgorithmId, message, stacktrace));
         }
 
+        public void BrokerageMessage(BrokerageMessageEvent brokerageMessageEvent)
+        {
+        }
+
         protected override void Sample(string chartName, string seriesName, int seriesIndex, SeriesType seriesType, DateTime time, decimal value, string unit = "$")
         {
             //Add a copy locally:
@@ -185,6 +191,7 @@ namespace QuantConnect.Tests.Engine
         public override void Exit()
         {
             _cancellationTokenSource.Cancel();
+            _cancellationTokenSource.DisposeSafely();
         }
 
         public void ProcessSynchronousEvents(bool forceProcess = false)

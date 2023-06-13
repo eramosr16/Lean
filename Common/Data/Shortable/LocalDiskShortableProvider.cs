@@ -14,7 +14,6 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.IO;
 using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
@@ -27,8 +26,8 @@ namespace QuantConnect.Data.Shortable
     /// </summary>
     public class LocalDiskShortableProvider : IShortableProvider
     {
-        private readonly DirectoryInfo _shortableDataDirectory;
-        private IDataProvider _dataProvider =
+        protected readonly DirectoryInfo ShortableDataDirectory;
+        protected IDataProvider DataProvider =
             Composer.Instance.GetExportedValueByTypeName<IDataProvider>(Config.Get("data-provider",
                 "DefaultDataProvider"));
 
@@ -41,54 +40,7 @@ namespace QuantConnect.Data.Shortable
         public LocalDiskShortableProvider(SecurityType securityType, string brokerage, string market)
         {
             var shortableDataDirectory = Path.Combine(Globals.DataFolder, securityType.SecurityTypeToLower(), market, "shortable", brokerage.ToLowerInvariant());
-            _shortableDataDirectory = Directory.CreateDirectory(shortableDataDirectory);
-        }
-
-        /// <summary>
-        /// Gets a list of all shortable Symbols, including the quantity shortable as a Dictionary.
-        /// </summary>
-        /// <param name="localTime">The algorithm's local time</param>
-        /// <returns>Symbol/quantity shortable as a Dictionary. Returns null if no entry data exists for this date or brokerage</returns>
-        public Dictionary<Symbol, long> AllShortableSymbols(DateTime localTime)
-        {
-            var allSymbols = new Dictionary<Symbol, long>();
-
-            // Check backwards up to one week to see if we can source a previous file.
-            // If not, then we return a list of all Symbols with quantity set to zero.
-            var i = 0;
-            while (i <= 7)
-            {
-                var shortableListFile = Path.Combine(_shortableDataDirectory.FullName, "dates", $"{localTime.AddDays(-i):yyyyMMdd}.csv");
-                var stream = _dataProvider.Fetch(shortableListFile);
-
-                if (stream != null)
-                {
-                    using (var streamReader = new StreamReader(stream))
-                    {
-                        foreach (var line in streamReader.ReadAllLines())
-                        {
-                            var csv = line.Split(',');
-                            var ticker = csv[0];
-
-                            var symbol =
-                                new Symbol(
-                                    SecurityIdentifier.GenerateEquity(ticker, QuantConnect.Market.USA,
-                                        mappingResolveDate: localTime), ticker);
-                            var quantity = Parse.Long(csv[1]);
-
-                            allSymbols[symbol] = quantity;
-                        }
-                    }
-
-                    stream.Dispose();
-                    return allSymbols;
-                }
-
-                i++;
-            }
-
-            // Return our empty dictionary if we did not find a file to extract
-            return allSymbols;
+            ShortableDataDirectory = Directory.CreateDirectory(shortableDataDirectory);
         }
 
         /// <summary>
@@ -99,36 +51,24 @@ namespace QuantConnect.Data.Shortable
         /// <returns>Quantity shortable. Null if the data for the brokerage/date does not exist.</returns>
         public long? ShortableQuantity(Symbol symbol, DateTime localTime)
         {
-            if (_shortableDataDirectory == null)
+            if (ShortableDataDirectory == null)
             {
                 return 0;
             }
 
             // Implicitly trusts that Symbol.Value has been mapped and updated to the latest ticker
-            var shortableSymbolFile = Path.Combine(_shortableDataDirectory.FullName, "symbols", $"{symbol.Value.ToLowerInvariant()}.csv");
+            var shortableSymbolFile = Path.Combine(ShortableDataDirectory.FullName, "symbols", $"{symbol.Value.ToLowerInvariant()}.csv");
 
-            using (var stream = _dataProvider.Fetch(shortableSymbolFile))
+            var localDate = localTime.Date;
+            foreach (var line in DataProvider.ReadLines(shortableSymbolFile))
             {
-                if (stream == null)
-                {
-                    // Don't allow shorting if data is missing for the provided Symbol.
-                    return 0;
-                }
+                var csv = line.Split(',');
+                var date = Parse.DateTimeExact(csv[0], "yyyyMMdd");
 
-                var localDate = localTime.Date;
-                using (var streamReader = new StreamReader(stream))
+                if (localDate == date)
                 {
-                    foreach (var line in streamReader.ReadAllLines())
-                    {
-                        var csv = line.Split(',');
-                        var date = Parse.DateTimeExact(csv[0], "yyyyMMdd");
-                        
-                        if (localDate == date)
-                        {
-                            var quantity = Parse.Long(csv[1]);
-                            return quantity;
-                        }
-                    }
+                    var quantity = Parse.Long(csv[1]);
+                    return quantity;
                 }
             }
 

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -31,11 +31,16 @@ namespace QuantConnect.Tests.Python
         [Test, TestCaseSource(nameof(TestDataFrameNonExceptionFunctions))]
         public void BackwardsCompatibilityDataFrameDataFrameNonExceptionFunctions(string method, string index, bool cache)
         {
+            if(method == ".to_orc()" && OS.IsWindows)
+            {
+                // not supported in windows
+                return;
+            }
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(df, symbol):
     df = df.lastprice.unstack(level=0){method}").GetAttr("Test");
@@ -51,7 +56,7 @@ def Test(df, symbol):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(df, symbol):
     df = df.lastprice.unstack(level=0){method}
@@ -67,12 +72,18 @@ def Test(df, symbol):
 
         [Test, TestCaseSource(nameof(TestDataFrameOtherParameterFunctions))]
         public void BackwardsCompatibilityDataFrameOtherParameterFunctions(string method, string index, bool cache)
-        {
+        {   
+            // Cannot compare non identically indexed dataframes
+            if (method == ".compare(other)" && _newerPandas)
+            {
+                return;
+            }
+
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(df, other, symbol):
     df = df{method}
@@ -94,7 +105,7 @@ def Test(df, other, symbol):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(df, symbol):
     series = df.lastprice
@@ -111,7 +122,7 @@ def Test(df, symbol):
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(df, symbol):
     series = df.lastprice
@@ -129,11 +140,17 @@ def Test(df, symbol):
         [Test, TestCaseSource(nameof(TestSeriesOtherParameterFunctions))]
         public void BackwardsCompatibilitySeriesOtherParameterFunctions(string method, string index, bool cache)
         {
+            // Cannot compare non identically indexed dataframes
+            if (method == ".compare(other)" && _newerPandas)
+            {
+                return;
+            }
+
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
             using (Py.GIL())
             {
-                dynamic test = PythonEngine.ModuleFromString("testModule",
+                dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(df, other, symbol):
     series, other = other.lastprice, df.lastprice
@@ -157,23 +174,31 @@ def Test(df, other, symbol):
                     ".agg('mean', axis=0)",
                     ".aggregate('mean', axis=0)",
                     ".clip(100, 200)",
-                    ".clip_lower(100)",
-                    ".clip_upper(200)",
                     ".fillna(value=999)",
                     ".first('2S')",
                     ".isin([100])",
                     ".last('2S')",
                     ".melt()"
+                };
+                
+                if (!IsNewerPandas()){
+                    var additionalFunctions = new[]
+                    {
+                    ".clip_lower(100)",
+                    ".clip_upper(200)",
+                    };
+                    functions.Concat(additionalFunctions);
                 }
-                .SelectMany(x => new[]
+
+                var testCases = functions.SelectMany(x => new[]
                 {
                     new TestCaseData(x, "'SPY'", true),
                     new TestCaseData(x, "symbol", false),
                     new TestCaseData(x, "str(symbol.ID)", false)
                 }).ToList();
 
-                functions.AddRange(_parameterlessFunctions["DataFrame"]);
-                return functions.ToArray();
+                testCases.AddRange(_parameterlessFunctions["DataFrame"]);
+                return testCases.ToArray();
             }
         }
 
@@ -188,14 +213,23 @@ def Test(df, other, symbol):
                     ".agg('mean', axis=0)",
                     ".aggregate('mean', axis=0)",
                     ".clip(100, 200)",
-                    ".clip_lower(100)",
-                    ".clip_upper(200)",
                     ".fillna(value=999)",
                     ".isin([100])",
                     ".searchsorted(200)",
                     ".value_counts()"
+                };
+
+                if (!IsNewerPandas()){
+                    var additionalFunctions = new[]
+                    {
+                    ".clip_lower(100)",
+                    ".clip_upper(200)",
+                    };
+                    functions.Concat(additionalFunctions);
                 }
-                .SelectMany(x => new[]
+
+
+                var testCases = functions.SelectMany(x => new[]
                 {
                     new TestCaseData(x, "'SPY'", true),
                     new TestCaseData(x, "symbol", false),
@@ -203,8 +237,8 @@ def Test(df, other, symbol):
                 })
                 .ToList();
 
-                functions.AddRange(_parameterlessFunctions["Series"]);
-                return functions.ToArray();
+                testCases.AddRange(_parameterlessFunctions["Series"]);
+                return testCases.ToArray();
             }
         }
 
@@ -275,7 +309,7 @@ def Test(df, other, symbol):
 
             using (Py.GIL())
             {
-                var module = PythonEngine.ModuleFromString("Test",
+                var module = PyModule.FromString("Test",
                     @"import pandas
 from inspect import getmembers, isfunction, signature
 
@@ -284,11 +318,16 @@ skipped = [ 'boxplot', 'hist', 'plot',        # <- Graphics
     'equals', 'ewm', 'fillna', 'filter', 'groupby', 'join', 'mask', 'melt',
     'pivot', 'pivot_table', 'reindex_like', 'rename', 'reset_index', 'select_dtypes',
     'slice_shift', 'swaplevel', 'to_clipboard', 'to_excel', 'to_feather', 'to_gbq',
-    'to_hdf', 'to_list', 'tolist', 'to_parquet', 'to_period', 'to_pickle', 'to_sql',
+    'to_hdf', 'to_list', 'tolist', 'to_parquet', 'to_period', 'to_pickle', 'to_sql', 'to_xml',
     'to_stata', 'to_timestamp', 'to_xarray', 'tshift', 'update', 'value_counts', 'where']
 
+newPandas = int(pandas.__version__.split('.')[0]) >= 1
+
 def getSimpleExceptionTestFunctions(cls):
-    functions = [ 'describe', 'get_dtype_counts', 'get_ftype_counts', 'mode' ]
+    functions = [ 'describe', 'mode']
+    if not newPandas:
+        functions.append('get_dtype_counts')
+        functions.append('get_ftype_counts')
     for name, member in getmembers(cls):
         if isfunction(member) and name.startswith('to') and name not in skipped:
             functions.append(name)

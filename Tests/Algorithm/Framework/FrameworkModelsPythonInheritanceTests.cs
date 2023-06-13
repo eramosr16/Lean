@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -43,8 +43,7 @@ class MockUniverseSelectionModel(ManualUniverseSelectionModel):
 
             using (Py.GIL())
             {
-                dynamic pyModel = PythonEngine
-                    .ModuleFromString(Guid.NewGuid().ToString(), code)
+                dynamic pyModel = PyModule.FromString(Guid.NewGuid().ToString(), code)
                     .GetAttr("MockUniverseSelectionModel");
 
                 var model = new UniverseSelectionModelPythonWrapper(pyModel());
@@ -66,10 +65,7 @@ class MockUniverseSelectionModel(ManualUniverseSelectionModel):
         public void FundamentalUniverseSelectionModelCanBeInherited()
         {
             var code = @"
-from clr import AddReference
-AddReference('QuantConnect.Common')
-
-from QuantConnect import Market, SecurityType, Symbol
+from AlgorithmImports import *
 from Selection.FundamentalUniverseSelectionModel import FundamentalUniverseSelectionModel
 
 class MockUniverseSelectionModel(FundamentalUniverseSelectionModel):
@@ -80,8 +76,7 @@ class MockUniverseSelectionModel(FundamentalUniverseSelectionModel):
 
             using (Py.GIL())
             {
-                dynamic pyModel = PythonEngine
-                    .ModuleFromString(Guid.NewGuid().ToString(), code)
+                dynamic pyModel = PyModule.FromString(Guid.NewGuid().ToString(), code)
                     .GetAttr("MockUniverseSelectionModel");
 
                 var model = new UniverseSelectionModelPythonWrapper(pyModel());
@@ -90,7 +85,7 @@ class MockUniverseSelectionModel(FundamentalUniverseSelectionModel):
                 Assert.AreEqual(1, universes.Count);
 
                 var data = new BaseDataCollection();
-                data.Data.Add(new CoarseFundamental());
+                data.Add(new CoarseFundamental());
 
                 var universe = universes.First();
                 var symbols = universe.SelectSymbols(DateTime.Now, data).ToList();

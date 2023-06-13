@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,53 +11,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Algorithm.Framework")
-AddReference("QuantConnect.Common")
+from AlgorithmImports import *
 
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Algorithm.Framework import *
-from QuantConnect.Algorithm.Framework.Alphas import *
-from QuantConnect.Algorithm.Framework.Execution import *
-from QuantConnect.Algorithm.Framework.Portfolio import *
-from QuantConnect.Algorithm.Framework.Risk import *
-from QuantConnect.Algorithm.Framework.Selection import *
-from QuantConnect.Data import *
-from QuantConnect.Python import *
-from datetime import datetime
-import decimal
+from custom_data import *
 
 class Test_CustomDataAlgorithm(QCAlgorithm):
 
     def Initialize(self):
         self.AddData(Nifty, "NIFTY")
-        self.AddData(QuandlFuture, "SCF/CME_CL1_ON", Resolution.Daily)
-
-
-class QuandlFuture(PythonQuandl):
-    '''Custom quandl data type for setting customized value column name. Value column is used for the primary trading calculations and charting.'''
-    def __init__(self):
-        # Define ValueColumnName: cannot be None, Empty or non-existant column name
-        # If ValueColumnName is "Close", do not use PythonQuandl, use Quandl:
-        # self.AddData[QuandlFuture](self.crude, Resolution.Daily)
-        self.ValueColumnName = "Settle"
-
+        self.AddData(CustomPythonData, "IBM", Resolution.Daily)
 
 class Nifty(PythonData):
     '''NIFTY Custom Data Class'''
     def GetSource(self, config, date, isLiveMode):
-        return SubscriptionDataSource("https://www.dropbox.com/s/rsmg44jr6wexn2h/CNXNIFTY.csv?dl=1", SubscriptionTransportMedium.RemoteFile);
+        return SubscriptionDataSource("https://www.dropbox.com/s/rsmg44jr6wexn2h/CNXNIFTY.csv?dl=1", SubscriptionTransportMedium.RemoteFile)
 
 
     def Reader(self, config, line, date, isLiveMode):
         if not (line.strip() and line[0].isdigit()): return None
 
         # New Nifty object
-        index = Nifty();
+        index = Nifty()
         index.Symbol = config.Symbol
 
         try:

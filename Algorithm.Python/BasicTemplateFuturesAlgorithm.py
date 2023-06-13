@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Securities import *
-from datetime import timedelta
+from AlgorithmImports import *
 
 ### <summary>
 ### This example demonstrates how to add futures for a given underlying asset.
@@ -45,13 +36,15 @@ class BasicTemplateFuturesAlgorithm(QCAlgorithm):
 
         # set our expiry filter for this futures chain
         # SetFilter method accepts timedelta objects or integer for days.
-        # The following statements yield the same filtering criteria 
+        # The following statements yield the same filtering criteria
         futureSP500.SetFilter(timedelta(0), timedelta(182))
         futureGold.SetFilter(0, 182)
 
-        benchmark = self.AddEquity("SPY");
-        self.SetBenchmark(benchmark.Symbol);
+        benchmark = self.AddEquity("SPY")
+        self.SetBenchmark(benchmark.Symbol)
 
+        seeder = FuncSecuritySeeder(self.GetLastKnownPrices)
+        self.SetSecurityInitializer(lambda security: seeder.SeedSecurity(security))
 
     def OnData(self,slice):
         if not self.Portfolio.Invested:
@@ -79,3 +72,8 @@ class BasicTemplateFuturesAlgorithm(QCAlgorithm):
         maintenanceOvernight = buyingPowerModel.MaintenanceOvernightMarginRequirement
         initialIntraday = buyingPowerModel.InitialIntradayMarginRequirement
         maintenanceIntraday = buyingPowerModel.MaintenanceIntradayMarginRequirement
+
+    def OnSecuritiesChanged(self, changes):
+        for addedSecurity in changes.AddedSecurities:
+            if addedSecurity.Symbol.SecurityType == SecurityType.Future and not addedSecurity.Symbol.IsCanonical() and not addedSecurity.HasData:
+                raise Exception(f"Future contracts did not work up as expected: {addedSecurity.Symbol}")

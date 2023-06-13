@@ -78,52 +78,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 7238;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "17"},
+            {"Total Trades", "10"},
             {"Average Win", "0.12%"},
-            {"Average Loss", "-0.02%"},
-            {"Compounding Annual Return", "-34.957%"},
-            {"Drawdown", "2.200%"},
-            {"Expectancy", "1.477"},
-            {"Net Profit", "-1.636%"},
-            {"Sharpe Ratio", "-3.528"},
-            {"Probabilistic Sharpe Ratio", "9.517%"},
-            {"Loss Rate", "71%"},
-            {"Win Rate", "29%"},
-            {"Profit-Loss Ratio", "7.67"},
-            {"Alpha", "-0.296"},
-            {"Beta", "-0.029"},
-            {"Annual Standard Deviation", "0.082"},
-            {"Annual Variance", "0.007"},
-            {"Information Ratio", "-0.707"},
-            {"Tracking Error", "0.133"},
-            {"Treynor Ratio", "9.887"},
-            {"Total Fees", "$24.46"},
-            {"Estimated Strategy Capacity", "$8800000.00"},
-            {"Lowest Capacity Asset", "GOOCV VP83T1ZUHROL"},
-            {"Fitness Score", "0.005"},
-            {"Kelly Criterion Estimate", "-7.074"},
-            {"Kelly Criterion Probability Value", "0.699"},
-            {"Sortino Ratio", "-4.4"},
-            {"Return Over Maximum Drawdown", "-16.099"},
-            {"Portfolio Turnover", "0.1"},
-            {"Total Insights Generated", "27"},
-            {"Total Insights Closed", "25"},
-            {"Total Insights Analysis Completed", "25"},
-            {"Long Insight Count", "27"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$-3609656"},
-            {"Total Accumulated Estimated Alpha Value", "$-1704560"},
-            {"Mean Population Estimated Insight Value", "$-68182.39"},
-            {"Mean Population Direction", "32%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "57.5578%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "4c38206b66a42890dcaf60a294158848"}
+            {"Average Loss", "-0.07%"},
+            {"Compounding Annual Return", "-34.838%"},
+            {"Drawdown", "2.100%"},
+            {"Expectancy", "0.865"},
+            {"Net Profit", "-1.629%"},
+            {"Sharpe Ratio", "-4.208"},
+            {"Probabilistic Sharpe Ratio", "4.273%"},
+            {"Loss Rate", "33%"},
+            {"Win Rate", "67%"},
+            {"Profit-Loss Ratio", "1.80"},
+            {"Alpha", "-0.194"},
+            {"Beta", "0.674"},
+            {"Annual Standard Deviation", "0.075"},
+            {"Annual Variance", "0.006"},
+            {"Information Ratio", "-2.776"},
+            {"Tracking Error", "0.048"},
+            {"Treynor Ratio", "-0.47"},
+            {"Total Fees", "$22.09"},
+            {"Estimated Strategy Capacity", "$27000000.00"},
+            {"Lowest Capacity Asset", "AIG R735QTJ8XC9X"},
+            {"Portfolio Turnover", "8.61%"},
+            {"OrderListHash", "a2f005326c549bf9f8f90168369d6cb7"}
         };
     }
 }

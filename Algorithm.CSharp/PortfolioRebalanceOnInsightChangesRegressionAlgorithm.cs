@@ -39,6 +39,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             UniverseSettings.Resolution = Resolution.Daily;
 
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
+
             SetStartDate(2015, 1, 1);
             SetEndDate(2017, 1, 1);
 
@@ -83,52 +87,44 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 6075;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "83"},
-            {"Average Win", "0.15%"},
+            {"Total Trades", "78"},
+            {"Average Win", "0.17%"},
             {"Average Loss", "-0.05%"},
-            {"Compounding Annual Return", "9.856%"},
-            {"Drawdown", "18.200%"},
-            {"Expectancy", "2.254"},
-            {"Net Profit", "20.683%"},
-            {"Sharpe Ratio", "0.604"},
-            {"Probabilistic Sharpe Ratio", "25.593%"},
-            {"Loss Rate", "17%"},
-            {"Win Rate", "83%"},
-            {"Profit-Loss Ratio", "2.93"},
-            {"Alpha", "0.093"},
-            {"Beta", "0.012"},
-            {"Annual Standard Deviation", "0.155"},
-            {"Annual Variance", "0.024"},
-            {"Information Ratio", "0.156"},
-            {"Tracking Error", "0.201"},
-            {"Treynor Ratio", "8.035"},
-            {"Total Fees", "$83.80"},
-            {"Estimated Strategy Capacity", "$73000000.00"},
+            {"Compounding Annual Return", "9.833%"},
+            {"Drawdown", "18.100%"},
+            {"Expectancy", "2.369"},
+            {"Net Profit", "20.634%"},
+            {"Sharpe Ratio", "0.548"},
+            {"Probabilistic Sharpe Ratio", "21.159%"},
+            {"Loss Rate", "19%"},
+            {"Win Rate", "81%"},
+            {"Profit-Loss Ratio", "3.15"},
+            {"Alpha", "0.024"},
+            {"Beta", "1.033"},
+            {"Annual Standard Deviation", "0.142"},
+            {"Annual Variance", "0.02"},
+            {"Information Ratio", "0.364"},
+            {"Tracking Error", "0.071"},
+            {"Treynor Ratio", "0.075"},
+            {"Total Fees", "$82.57"},
+            {"Estimated Strategy Capacity", "$83000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.001"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "1"},
-            {"Sortino Ratio", "0.817"},
-            {"Return Over Maximum Drawdown", "0.542"},
-            {"Portfolio Turnover", "0.002"},
-            {"Total Insights Generated", "2028"},
-            {"Total Insights Closed", "2024"},
-            {"Total Insights Analysis Completed", "2024"},
-            {"Long Insight Count", "2028"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "fe67f274338c2b50b5b1dd24f8936d1f"}
+            {"Portfolio Turnover", "0.23%"},
+            {"OrderListHash", "689191a67204433bdb656ca26133f1a4"}
         };
     }
 }

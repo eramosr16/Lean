@@ -22,6 +22,7 @@ using QuantConnect.Data.UniverseSelection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Tests.Common.Data.UniverseSelection;
 
 namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
 {
@@ -120,7 +121,7 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
             Assert.AreEqual(1, targets.Count);
 
             // Removing SPY should clear the key in the insight collection
-            var changes = SecurityChanges.Removed(Algorithm.Securities[Symbols.SPY]);
+            var changes = SecurityChangesTests.RemovedNonInternal(Algorithm.Securities[Symbols.SPY]);
             Algorithm.PortfolioConstruction.OnSecuritiesChanged(Algorithm, changes);
 
             // Equity will be divided by all securities minus 1, since SPY is already invested and we want to remove it
@@ -210,10 +211,11 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
 
         public override Insight GetInsight(Symbol symbol, InsightDirection direction, DateTime generatedTimeUtc, TimeSpan? period = null, double? weight = 0.01)
         {
-            period = period ?? TimeSpan.FromDays(1);
+            period ??= TimeSpan.FromDays(1);
             var insight = Insight.Price(symbol, period.Value, direction, weight: Math.Max(0.01, Algorithm.Securities.Count));
             insight.GeneratedTimeUtc = generatedTimeUtc;
             insight.CloseTimeUtc = generatedTimeUtc.Add(period.Value);
+            Algorithm.Insights.Add(insight);
             return insight;
         }
 

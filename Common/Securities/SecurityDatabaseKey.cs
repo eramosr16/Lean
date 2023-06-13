@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,9 +14,6 @@
 */
 
 using System;
-using System.Collections.Generic;
-using QuantConnect.Logging;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Securities
 {
@@ -59,6 +56,14 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Based on this entry will initializes the generic market and security type instance of the <see cref="SecurityDatabaseKey"/> class
+        /// </summary>
+        public SecurityDatabaseKey CreateCommonKey()
+        {
+            return new SecurityDatabaseKey(Market, null, SecurityType);
+        }
+
+        /// <summary>
         /// Parses the specified string as a <see cref="SecurityDatabaseKey"/>
         /// </summary>
         /// <param name="key">The string representation of the key</param>
@@ -68,7 +73,7 @@ namespace QuantConnect.Securities
             var parts = key.Split('-');
             if (parts.Length != 3 || parts[0] == Wildcard)
             {
-                throw new FormatException($"The specified key was not in the expected format: {key}");
+                throw new FormatException(Messages.SecurityDatabaseKey.KeyNotInExpectedFormat(key));
             }
             SecurityType type;
             if (!parts[0].TryParseSecurityType(out type))
@@ -157,7 +162,7 @@ namespace QuantConnect.Securities
         /// </returns>
         public override string ToString()
         {
-            return Invariant($"{SecurityType}-{Market}-{Symbol}");
+            return Messages.SecurityDatabaseKey.ToString(this);
         }
     }
 }

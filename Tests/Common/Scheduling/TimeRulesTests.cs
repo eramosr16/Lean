@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,6 +16,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NodaTime;
 using NUnit.Framework;
 using QuantConnect.Data;
@@ -28,6 +29,8 @@ namespace QuantConnect.Tests.Common.Scheduling
     [TestFixture, Parallelizable(ParallelScope.All)]
     public class TimeRulesTests
     {
+        private static DateTime _utcNow = new DateTime(2021, 07, 27, 1, 10, 10, 500);
+
         [Test]
         public void AtSpecificTimeFromUtc()
         {
@@ -106,6 +109,104 @@ namespace QuantConnect.Tests.Common.Scheduling
                 Assert.AreEqual(TimeSpan.FromHours(4 + 5), time.TimeOfDay);
             }
             Assert.AreEqual(1, count);
+        }
+
+        [Test]
+        public void RegularMarketOpenNoDeltaForContinuousSchedules()
+        {
+            var rules = GetFutureTimeRules(TimeZones.Utc);
+            var rule = rules.AfterMarketOpen(Symbols.ES_Future_Chain, 0);
+            var times = rule.CreateUtcEventTimes(new[] {
+                new DateTime(2022, 01, 03),
+                new DateTime(2022, 01, 04),
+                new DateTime(2022, 01, 05),
+                new DateTime(2022, 01, 06),
+                new DateTime(2022, 01, 07),
+                new DateTime(2022, 01, 10)
+            });
+
+            var expectedMarketOpenDates = new[] {
+                new DateTime(2022, 01, 03, 14, 30, 0),
+                new DateTime(2022, 01, 04, 14, 30, 0),
+                new DateTime(2022, 01, 05, 14, 30, 0),
+                new DateTime(2022, 01, 06, 14, 30, 0),
+                new DateTime(2022, 01, 07, 14, 30, 0),
+                new DateTime(2022, 01, 10, 14, 30, 0)
+            };
+            int count = 0;
+            foreach (var time in times)
+            {
+                Assert.AreEqual(expectedMarketOpenDates[count], time);
+                count++;
+            }
+            Assert.AreEqual(6, count);
+        }
+
+        [Test]
+        public void ExtendedMarketOpenNoDeltaForContinuousSchedules()
+        {
+            var rules = GetFutureTimeRules(TimeZones.Utc, true);
+            var rule = rules.AfterMarketOpen(Symbols.ES_Future_Chain, 0, true);
+            var times = rule.CreateUtcEventTimes(new[] {
+                new DateTime(2022, 01, 01),
+                new DateTime(2022, 01, 02),
+                new DateTime(2022, 01, 03),
+                new DateTime(2022, 01, 04),
+                new DateTime(2022, 01, 05),
+                new DateTime(2022, 01, 06),
+                new DateTime(2022, 01, 07),
+                new DateTime(2022, 01, 08),
+                new DateTime(2022, 01, 09)
+            });
+
+            var expectedMarketOpenDates = new[] {
+                new DateTime(2022, 01, 02, 23, 0, 0),
+                new DateTime(2022, 01, 03, 23, 0, 0),
+                new DateTime(2022, 01, 04, 23, 0, 0),
+                new DateTime(2022, 01, 05, 23, 0, 0),
+                new DateTime(2022, 01, 06, 23, 0, 0),
+                new DateTime(2022, 01, 09, 23, 0, 0)
+            };
+            int count = 0;
+            foreach (var time in times)
+            {
+                Assert.AreEqual(expectedMarketOpenDates[count], time);
+                count++;
+            }
+            Assert.AreEqual(6, count);
+        }
+
+        [Test]
+        public void ExtendedMarketCloseNoDeltaForContinuousSchedules()
+        {
+            var rules = GetTimeRules(TimeZones.Utc);
+            var rule = rules.BeforeMarketClose(Symbols.SPY, 0, true);
+            var times = rule.CreateUtcEventTimes(new[] {
+                new DateTime(2022, 01, 01),
+                new DateTime(2022, 01, 02),
+                new DateTime(2022, 01, 03),
+                new DateTime(2022, 01, 04),
+                new DateTime(2022, 01, 05),
+                new DateTime(2022, 01, 06),
+                new DateTime(2022, 01, 07),
+                new DateTime(2022, 01, 08),
+                new DateTime(2022, 01, 09)
+            });
+
+            var expectedMarketOpenDates = new[] {
+                new DateTime(2022, 01, 04, 01, 00, 00),
+                new DateTime(2022, 01, 05, 01, 00, 00),
+                new DateTime(2022, 01, 06, 01, 00, 00),
+                new DateTime(2022, 01, 07, 01, 00, 00),
+                new DateTime(2022, 01, 08, 01, 00, 00)
+            };
+            int count = 0;
+            foreach (var time in times)
+            {
+                Assert.AreEqual(expectedMarketOpenDates[count], time);
+                count++;
+            }
+            Assert.AreEqual(5, count);
         }
 
         [Test]
@@ -213,15 +314,53 @@ namespace QuantConnect.Tests.Common.Scheduling
             }
         }
 
+        [Test]
+        public void SetTimeZone()
+        {
+            var rules = GetTimeRules(TimeZones.NewYork);
+            var nowNewYork = rules.Now.CreateUtcEventTimes(new [] { _utcNow.Date }).Single();
+
+            rules.SetDefaultTimeZone(TimeZones.Utc);
+
+            var nowUtc = rules.Now.CreateUtcEventTimes(new [] { _utcNow.Date }).Single();
+
+            Assert.AreEqual(_utcNow, nowUtc);
+            Assert.AreEqual(nowUtc, nowNewYork);
+        }
+
         private static TimeRules GetTimeRules(DateTimeZone dateTimeZone)
         {
-            var timeKeeper = new TimeKeeper(DateTime.Today, new List<DateTimeZone>());
+            var timeKeeper = new TimeKeeper(_utcNow, new List<DateTimeZone>());
             var manager = new SecurityManager(timeKeeper);
             var marketHourDbEntry = MarketHoursDatabase.FromDataFolder().GetEntry(Market.USA, (string)null, SecurityType.Equity);
             var securityExchangeHours = marketHourDbEntry.ExchangeHours;
             var config = new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Daily, marketHourDbEntry.DataTimeZone, securityExchangeHours.TimeZone, true, false, false);
             manager.Add(
                 Symbols.SPY,
+                new Security(
+                    securityExchangeHours,
+                    config,
+                    new Cash(Currencies.USD, 0, 1m),
+                    SymbolProperties.GetDefault(Currencies.USD),
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null,
+                    new SecurityCache()
+                )
+            );
+            var rules = new TimeRules(manager, dateTimeZone);
+            return rules;
+        }
+
+        private static TimeRules GetFutureTimeRules(DateTimeZone dateTimeZone, bool extendedMarket = false)
+        {
+            var timeKeeper = new TimeKeeper(_utcNow, new List<DateTimeZone>());
+            var manager = new SecurityManager(timeKeeper);
+            var marketHourDbEntry = MarketHoursDatabase.FromDataFolder().GetEntry(Market.CME, "ES", SecurityType.Future);
+            var securityExchangeHours = marketHourDbEntry.ExchangeHours;
+            var config = new SubscriptionDataConfig(typeof(TradeBar), Symbols.ES_Future_Chain, Resolution.Daily, marketHourDbEntry.DataTimeZone,
+                securityExchangeHours.TimeZone, true, extendedMarket, false);
+            manager.Add(
+                Symbols.ES_Future_Chain,
                 new Security(
                     securityExchangeHours,
                     config,

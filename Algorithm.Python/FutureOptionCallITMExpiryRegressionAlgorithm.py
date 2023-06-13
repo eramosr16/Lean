@@ -11,20 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License
 
-from datetime import datetime, timedelta
-
-import clr
-from System import *
-from System.Reflection import *
-from QuantConnect import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Orders import *
-from QuantConnect.Securities import *
-from QuantConnect.Securities.Future import *
-from QuantConnect import Market
-
+from AlgorithmImports import *
 
 ### <summary>
 ### This regression algorithm tests In The Money (ITM) future option expiry for calls.
@@ -97,13 +84,13 @@ class FutureOptionCallITMExpiryRegressionAlgorithm(QCAlgorithm):
         self.Log(f"{self.Time} -- {orderEvent.Symbol} :: Price: {self.Securities[orderEvent.Symbol].Holdings.Price} Qty: {self.Securities[orderEvent.Symbol].Holdings.Quantity} Direction: {orderEvent.Direction} Msg: {orderEvent.Message}")
 
     def AssertFutureOptionOrderExercise(self, orderEvent: OrderEvent, future: Security, optionContract: Security):
-        expectedLiquidationTimeUtc = datetime(2020, 6, 19, 20, 0, 0)
+        expectedLiquidationTimeUtc = datetime(2020, 6, 20, 4, 0, 0)
 
         if orderEvent.Direction == OrderDirection.Sell and future.Holdings.Quantity != 0:
             # We expect the contract to have been liquidated immediately
             raise AssertionError(f"Did not liquidate existing holdings for Symbol {future.Symbol}")
         if orderEvent.Direction == OrderDirection.Sell and orderEvent.UtcTime.replace(tzinfo=None) != expectedLiquidationTimeUtc:
-            raise AssertionError(f"Liquidated future contract, but not at the expected time. Expected: {expectedLiquidationTimeUtc} - found {orderEvent.UtcTime.replace(tzinfo=None)}");
+            raise AssertionError(f"Liquidated future contract, but not at the expected time. Expected: {expectedLiquidationTimeUtc} - found {orderEvent.UtcTime.replace(tzinfo=None)}")
 
         # No way to detect option exercise orders or any other kind of special orders
         # other than matching strings, for now.

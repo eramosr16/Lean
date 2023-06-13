@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,11 +15,11 @@
 */
 
 using System;
-using System.Collections.Generic;
 using Newtonsoft.Json;
-using QuantConnect.Logging;
 using QuantConnect.Orders;
+using QuantConnect.Logging;
 using QuantConnect.Statistics;
+using System.Collections.Generic;
 
 namespace QuantConnect.Packets
 {
@@ -204,8 +204,8 @@ namespace QuantConnect.Packets
         {
             return new BacktestResultPacket(job, new BacktestResult(new BacktestResultParameters(
                 new Dictionary<string, Chart>(), new Dictionary<int, Order>(), new Dictionary<DateTime, decimal>(),
-                new Dictionary<string, string>(), new Dictionary<string, string>(), new Dictionary<string, AlgorithmPerformance>(),
-                new List<OrderEvent>(), new AlgorithmPerformance(), new AlphaRuntimeStatistics()
+                new Dictionary<string, string>(), new SortedDictionary<string, string>(), new Dictionary<string, AlgorithmPerformance>(),
+                new List<OrderEvent>(), new AlgorithmPerformance(), new AlgorithmConfiguration(), new Dictionary<string, string>()
             )), DateTime.UtcNow, DateTime.UtcNow);
         }
     } // End Queue Packet:
@@ -247,7 +247,8 @@ namespace QuantConnect.Packets
             RollingWindow = parameters.RollingWindow;
             OrderEvents = parameters.OrderEvents;
             TotalPerformance = parameters.TotalPerformance;
-            AlphaRuntimeStatistics = parameters.AlphaRuntimeStatistics;
+            AlgorithmConfiguration = parameters.AlgorithmConfiguration;
+            State = parameters.State;
         }
     }
 } // End of Namespace:

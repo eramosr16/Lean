@@ -11,11 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Algorithm.Framework")
-
-from QuantConnect.Algorithm.Framework.Alphas import *
+from AlgorithmImports import *
 from Portfolio.EqualWeightingPortfolioConstructionModel import *
 
 class AccumulativeInsightPortfolioConstructionModel(EqualWeightingPortfolioConstructionModel):
@@ -51,7 +47,7 @@ class AccumulativeInsightPortfolioConstructionModel(EqualWeightingPortfolioConst
             activeInsights: The active insights to generate a target for'''
         percentPerSymbol = {}
 
-        insights = sorted(self.InsightCollection.GetActiveInsights(self.currentUtcTime), key=lambda insight: insight.GeneratedTimeUtc)
+        insights = sorted(self.Algorithm.Insights.GetActiveInsights(self.currentUtcTime), key=lambda insight: insight.GeneratedTimeUtc)
 
         for insight in insights:
             targetPercent = 0

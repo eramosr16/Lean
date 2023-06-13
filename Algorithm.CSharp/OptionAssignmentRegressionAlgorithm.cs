@@ -42,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void Initialize()
         {
             SetStartDate(2015, 12, 23);
-            SetEndDate(2015, 12, 24);
+            SetEndDate(2015, 12, 28);
             SetCash(100000);
             Stock = AddEquity("GOOG", Resolution.Minute);
 
@@ -67,58 +67,67 @@ namespace QuantConnect.Algorithm.CSharp
             if (!Portfolio.Invested && Stock.Price != 0 && PutOption.Price != 0 && CallOption.Price != 0)
             {
                 // this gets executed on start and after each auto-assignment, finally ending with expiration assignment
-                MarketOrder(PutOptionSymbol, -1);
-                MarketOrder(CallOptionSymbol, -1);
+                if (Time < PutOptionSymbol.ID.Date)
+                {
+                    MarketOrder(PutOptionSymbol, -1);
+                }
+
+                if (Time < CallOptionSymbol.ID.Date)
+                {
+                    MarketOrder(CallOptionSymbol, -1);
+                }
             }
         }
 
+        /// <summary>
+        /// This is used by the regression test system to indicate if the open source Lean repository has the required data to run this algorithm.
+        /// </summary>
         public bool CanRunLocally { get; } = true;
-        public Language[] Languages { get; } = {Language.CSharp};
 
-        public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
+        /// <summary>
+        /// This is used by the regression test system to indicate which languages this algorithm is written in.
+        /// </summary>
+        public virtual Language[] Languages { get; } = { Language.CSharp };
+
+        /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 4025;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
+        /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
+        /// </summary>
+        public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "24"},
-            {"Average Win", "0%"},
-            {"Average Loss", "0%"},
-            {"Compounding Annual Return", "0%"},
-            {"Drawdown", "0%"},
-            {"Expectancy", "0"},
-            {"Net Profit", "0%"},
-            {"Sharpe Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "0%"},
-            {"Loss Rate", "0%"},
-            {"Win Rate", "0%"},
-            {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0"},
-            {"Beta", "0"},
-            {"Annual Standard Deviation", "0"},
+            {"Total Trades", "32"},
+            {"Average Win", "9.60%"},
+            {"Average Loss", "-16.91%"},
+            {"Compounding Annual Return", "-84.836%"},
+            {"Drawdown", "2.900%"},
+            {"Expectancy", "0.045"},
+            {"Net Profit", "-2.886%"},
+            {"Sharpe Ratio", "-6.759"},
+            {"Probabilistic Sharpe Ratio", "1.125%"},
+            {"Loss Rate", "33%"},
+            {"Win Rate", "67%"},
+            {"Profit-Loss Ratio", "0.57"},
+            {"Alpha", "-0.01"},
+            {"Beta", "0.458"},
+            {"Annual Standard Deviation", "0.014"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "0"},
-            {"Tracking Error", "0"},
-            {"Treynor Ratio", "0"},
-            {"Total Fees", "$12.00"},
-            {"Estimated Strategy Capacity", "$310000.00"},
-            {"Lowest Capacity Asset", "GOOCV VP83T1ZUHROL"},
-            {"Fitness Score", "0.5"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-50.725"},
-            {"Portfolio Turnover", "8.14"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "58557574cf0489dd38fb37768f509ca1"}
+            {"Information Ratio", "5.991"},
+            {"Tracking Error", "0.015"},
+            {"Treynor Ratio", "-0.207"},
+            {"Total Fees", "$16.00"},
+            {"Estimated Strategy Capacity", "$710000.00"},
+            {"Lowest Capacity Asset", "GOOCV 305RBQ20WHPNQ|GOOCV VP83T1ZUHROL"},
+            {"Portfolio Turnover", "218.80%"},
+            {"OrderListHash", "171733fe6c2c8d178457baa8fd562952"}
         };
     }
 }

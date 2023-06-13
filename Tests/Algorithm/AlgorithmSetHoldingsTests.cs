@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -95,7 +95,7 @@ namespace QuantConnect.Tests.Algorithm
             }
         }
 
-        private static TestCaseData[] TestParameters
+        private static IEnumerable<object[]> TestParameters
         {
             get
             {
@@ -117,17 +117,21 @@ namespace QuantConnect.Tests.Algorithm
                 Permuter<object>.Permute(data, permutations);
 
                 var ret = permutations
-                    .Where(row => (Position)row[0] != (Position)row[1])     // initialPosition != finalPosition
-                    .Select(row => new TestCaseData(row).SetName(string.Join("_", row)))
-                    .ToArray();
+                    .Where(row => (Position)row[0] != (Position)row[1]);     // initialPosition != finalPosition
 
                 return ret;
             }
         }
 
         [Test, TestCaseSource(nameof(TestParameters))]
-        public void Run(Position initialPosition, Position finalPosition, FeeType feeType, PriceMovement priceMovement, int leverage)
+        public void Run(object[] parameters)
         {
+            Position initialPosition = (Position)parameters[0];
+            Position finalPosition = (Position)parameters[1];
+            FeeType feeType = (FeeType)parameters[2];
+            PriceMovement priceMovement = (PriceMovement)parameters[3];
+            int leverage = (int)parameters[4];
+
             //Console.WriteLine("----------");
             //Console.WriteLine("PARAMETERS");
             //Console.WriteLine("Initial position: " + initialPosition);
@@ -184,7 +188,7 @@ namespace QuantConnect.Tests.Algorithm
                 orderFee = security.FeeModel.GetOrderFee(
                     new OrderFeeParameters(security, order));
                 fill = new OrderEvent(order, DateTime.UtcNow, orderFee) { FillPrice = security.Price, FillQuantity = orderQuantity };
-                algorithm.Portfolio.ProcessFill(fill);
+                algorithm.Portfolio.ProcessFills(new List<OrderEvent> { fill });
 
                 //Console.WriteLine("Portfolio.Cash: " + algorithm.Portfolio.Cash);
                 //Console.WriteLine("Portfolio.TotalPortfolioValue: " + algorithm.Portfolio.TotalPortfolioValue);
@@ -230,7 +234,7 @@ namespace QuantConnect.Tests.Algorithm
             orderFee = security.FeeModel.GetOrderFee(
                 new OrderFeeParameters(security, order));
             fill = new OrderEvent(order, DateTime.UtcNow, orderFee) { FillPrice = security.Price, FillQuantity = orderQuantity };
-            algorithm.Portfolio.ProcessFill(fill);
+            algorithm.Portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             //Console.WriteLine("Portfolio.Cash: " + algorithm.Portfolio.Cash);
             //Console.WriteLine("Portfolio.TotalPortfolioValue: " + algorithm.Portfolio.TotalPortfolioValue);
@@ -241,7 +245,12 @@ namespace QuantConnect.Tests.Algorithm
         {
             security.SetMarketPrice(new TradeBar
             {
-                Time = DateTime.Now, Symbol = security.Symbol, Open = price, High = price, Low = price, Close = price
+                Time = DateTime.Now,
+                Symbol = security.Symbol,
+                Open = price,
+                High = price,
+                Low = price,
+                Close = price
             });
         }
     }

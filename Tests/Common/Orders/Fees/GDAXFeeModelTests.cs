@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -29,6 +29,7 @@ namespace QuantConnect.Tests.Common.Orders.Fees
     {
         private Crypto _btcusd;
         private Crypto _btceur;
+        private Crypto _daiusdc;
         private readonly IFeeModel _feeModel = new GDAXFeeModel();
 
         [SetUp]
@@ -38,6 +39,7 @@ namespace QuantConnect.Tests.Common.Orders.Fees
             _btcusd = new Crypto(
                 SecurityExchangeHours.AlwaysOpen(tz),
                 new Cash(Currencies.USD, 0, 1),
+                new Cash("BTC", 0, 0),
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.BTCUSD, Resolution.Minute, tz, tz, true, false, false),
                 new SymbolProperties("BTCUSD", Currencies.USD, 1, 0.01m, 0.00000001m, string.Empty),
                 ErrorCurrencyConverter.Instance,
@@ -48,12 +50,24 @@ namespace QuantConnect.Tests.Common.Orders.Fees
             _btceur = new Crypto(
                 SecurityExchangeHours.AlwaysOpen(tz),
                 new Cash("EUR", 0, 10),
+                new Cash("BTC", 0, 0),
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.BTCEUR, Resolution.Minute, tz, tz, true, false, false),
                 new SymbolProperties("BTCEUR", "EUR", 1, 0.01m, 0.00000001m, string.Empty),
                 ErrorCurrencyConverter.Instance,
                 RegisteredSecurityDataTypesProvider.Null
             );
             _btceur.SetMarketPrice(new Tick(DateTime.UtcNow, _btceur.Symbol, 100, 100));
+
+            _daiusdc = new Crypto(
+                SecurityExchangeHours.AlwaysOpen(tz),
+                new Cash("USDC", 0, 10),
+                new Cash("DAI", 0, 0),
+                new SubscriptionDataConfig(typeof(TradeBar), Symbol.Create("DAIUSDC", SecurityType.Crypto, Market.GDAX), Resolution.Minute, tz, tz, true, false, false),
+                new SymbolProperties("DAIUSDC", "USDC", 1, 0.01m, 0.00000001m, string.Empty),
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
+            );
+            _daiusdc.SetMarketPrice(new Tick(DateTime.UtcNow, _daiusdc.Symbol, 100, 100));
         }
 
         [Test]
@@ -86,6 +100,29 @@ namespace QuantConnect.Tests.Common.Orders.Fees
             Assert.AreEqual("EUR", fee.Value.Currency);
             // 100 (price) * 0.003 (taker fee)
             Assert.AreEqual(0.3m, fee.Value.Amount);
+        }
+
+        [Test]
+        public void ReturnsExpectedFeeWithStableCoins()
+        {
+            var time = new DateTime(2019, 2, 1);
+            var stablePairFee = _feeModel.GetOrderFee(
+                new OrderFeeParameters(
+                    _daiusdc,
+                    new MarketOrder(_daiusdc.Symbol, 1, time)
+                )
+            );
+
+            var normalPairFee = _feeModel.GetOrderFee(
+                new OrderFeeParameters(
+                    _btcusd,
+                    new MarketOrder(_btcusd.Symbol, 1, time)
+                )
+            );
+
+            // 100 (price) * 0.001 (taker fee)
+            Assert.AreEqual(0.1m, stablePairFee.Value.Amount);
+            Assert.AreNotEqual(normalPairFee.Value.Amount, stablePairFee.Value.Amount);
         }
 
         [TestCase(2019, 2, 1, 0, 0, 0, 0.3)]

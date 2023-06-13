@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,30 +15,33 @@
 */
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using QuantConnect.Data;
-using QuantConnect.Data.Market;
-using QuantConnect.Interfaces;
+using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
 using QuantConnect.Securities;
-using QuantConnect.Util;
+using QuantConnect.Interfaces;
+using QuantConnect.Data.Market;
+using System.Collections.Generic;
+using QuantConnect.Configuration;
 using Timer = System.Timers.Timer;
+using QuantConnect.Lean.Engine.HistoricalData;
 
 namespace QuantConnect.Lean.Engine.DataFeeds.Queues
 {
     /// <summary>
-    /// This is an implementation of <see cref="IDataQueueHandler"/> used for testing
+    /// This is an implementation of <see cref="IDataQueueHandler"/> used for testing. <see cref="FakeHistoryProvider"/>
     /// </summary>
-    public class FakeDataQueue : IDataQueueHandler
+    public class FakeDataQueue : IDataQueueHandler, IDataQueueUniverseProvider
     {
         private int _count;
         private readonly Random _random = new Random();
+        private int _dataPointsPerSecondPerSymbol;
 
         private readonly Timer _timer;
+        private readonly IDataCacheProvider _dataCacheProvider;
+        private readonly IOptionChainProvider _optionChainProvider;
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
-        private readonly object _sync = new object();
         private readonly IDataAggregator _aggregator;
         private readonly MarketHoursDatabase _marketHoursDatabase;
         private readonly Dictionary<Symbol, TimeZoneOffsetProvider> _symbolExchangeTimeZones;
@@ -47,6 +50,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         /// Continuous UTC time provider
         /// </summary>
         protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
+
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FakeDataQueue"/> class to randomly emit data for each symbol
@@ -60,20 +64,18 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         /// <summary>
         /// Initializes a new instance of the <see cref="FakeDataQueue"/> class to randomly emit data for each symbol
         /// </summary>
-        public FakeDataQueue(IDataAggregator dataAggregator)
+        public FakeDataQueue(IDataAggregator dataAggregator, int dataPointsPerSecondPerSymbol = 500000)
         {
             _aggregator = dataAggregator;
+            _dataPointsPerSecondPerSymbol = dataPointsPerSecondPerSymbol;
+            _dataCacheProvider = new ZipDataCacheProvider(new DefaultDataProvider(), true);
+            var mapFileProvider = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(Config.Get("map-file-provider", "LocalDiskMapFileProvider"), false);
+            _optionChainProvider = new LiveOptionChainProvider(_dataCacheProvider, mapFileProvider);
             _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
             _symbolExchangeTimeZones = new Dictionary<Symbol, TimeZoneOffsetProvider>();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (s, t) => true;
             _subscriptionManager.UnsubscribeImpl += (s, t) => true;
-
-            // load it up to start
-            PopulateQueue();
-            PopulateQueue();
-            PopulateQueue();
-            PopulateQueue();
 
             _timer = new Timer
             {
@@ -148,6 +150,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         {
             _timer.Stop();
             _timer.DisposeSafely();
+            _dataCacheProvider.DisposeSafely();
         }
 
         /// <summary>
@@ -160,22 +163,28 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
 
             foreach (var symbol in symbols)
             {
+                if (symbol.IsCanonical() || symbol.Contains("UNIVERSE"))
+                {
+                    continue;
+                }
                 var offsetProvider = GetTimeZoneOffsetProvider(symbol);
                 var trades = SubscriptionManager.DefaultDataTypes()[symbol.SecurityType].Contains(TickType.Trade);
                 var quotes = SubscriptionManager.DefaultDataTypes()[symbol.SecurityType].Contains(TickType.Quote);
 
                 // emits 500k per second
-                for (var i = 0; i < 500000; i++)
+                for (var i = 0; i < _dataPointsPerSecondPerSymbol; i++)
                 {
                     var now = TimeProvider.GetUtcNow();
+                    var exchangeTime = offsetProvider.ConvertFromUtc(now);
+                    var lastTrade = 100 + (decimal)Math.Abs(Math.Sin(now.TimeOfDay.TotalMilliseconds));
                     if (trades)
                     {
                         _count++;
                         _aggregator.Update(new Tick
                         {
-                            Time = offsetProvider.ConvertFromUtc(now),
+                            Time = exchangeTime,
                             Symbol = symbol,
-                            Value = 10 + (decimal)Math.Abs(Math.Sin(now.TimeOfDay.TotalMinutes)),
+                            Value = lastTrade,
                             TickType = TickType.Trade,
                             Quantity = _random.Next(10, (int)_timer.Interval)
                         });
@@ -184,11 +193,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
                     if (quotes)
                     {
                         _count++;
-                        var bid = 10 + (decimal) Math.Abs(Math.Sin(now.TimeOfDay.TotalMinutes));
+                        var bidPrice = lastTrade * 0.95m;
+                        var askPrice = lastTrade * 1.05m;
                         var bidSize = _random.Next(10, (int) _timer.Interval);
                         var askSize = _random.Next(10, (int)_timer.Interval);
-                        var time = offsetProvider.ConvertFromUtc(now);
-                        _aggregator.Update(new Tick(time, symbol, "", "",bid, bidSize, bid * 1.01m, askSize));
+                        _aggregator.Update(new Tick(exchangeTime, symbol, "", "", bidSize: bidSize, bidPrice: bidPrice, askPrice: askPrice, askSize: askSize));
                     }
                 }
             }
@@ -204,6 +213,35 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
                 _symbolExchangeTimeZones[symbol] = offsetProvider = new TimeZoneOffsetProvider(exchangeTimeZone, TimeProvider.GetUtcNow(), Time.EndOfTime);
             }
             return offsetProvider;
+        }
+
+        /// <summary>
+        /// Method returns a collection of Symbols that are available at the data source.
+        /// </summary>
+        /// <param name="symbol">Symbol to lookup</param>
+        /// <param name="includeExpired">Include expired contracts</param>
+        /// <param name="securityCurrency">Expected security currency(if any)</param>
+        /// <returns>Enumerable of Symbols, that are associated with the provided Symbol</returns>
+        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
+        {
+            switch (symbol.SecurityType)
+            {
+                case SecurityType.Option:
+                case SecurityType.IndexOption:
+                case SecurityType.FutureOption:
+                    foreach (var result in _optionChainProvider.GetOptionContractList(symbol, DateTime.UtcNow.Date))
+                    {
+                        yield return result;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        public bool CanPerformSelection()
+        {
+            return true;
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -38,6 +38,7 @@ namespace QuantConnect.Tests.Common.Orders.Fees
             _btcusd = new Crypto(
                 SecurityExchangeHours.AlwaysOpen(tz),
                 new Cash(Currencies.USD, 0, 1),
+                new Cash("BTC", 0, 0),
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.BTCUSD, Resolution.Minute, tz, tz, true, false, false),
                 new SymbolProperties("BTCUSD", Currencies.USD, 1, 0.01m, 0.00000001m, string.Empty),
                 ErrorCurrencyConverter.Instance,
@@ -48,6 +49,7 @@ namespace QuantConnect.Tests.Common.Orders.Fees
             _btceur = new Crypto(
                 SecurityExchangeHours.AlwaysOpen(tz),
                 new Cash("EUR", 0, 10),
+                new Cash("BTC", 0, 0),
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.BTCEUR, Resolution.Minute, tz, tz, true, false, false),
                 new SymbolProperties("BTCEUR", "EUR", 1, 0.01m, 0.00000001m, string.Empty),
                 ErrorCurrencyConverter.Instance,
@@ -56,34 +58,54 @@ namespace QuantConnect.Tests.Common.Orders.Fees
             _btceur.SetMarketPrice(new Tick(DateTime.UtcNow, _btceur.Symbol, 100, 100));
         }
 
-        [Test]
-        public void ReturnsFeeInQuoteCurrencyInAccountCurrency()
+        [TestCase(1)]
+        [TestCase(-1)]
+        public void ReturnsFeeInQuoteCurrencyInAccountCurrency(decimal quantity)
         {
             var fee = _feeModel.GetOrderFee(
                 new OrderFeeParameters(
                     _btcusd,
-                    new MarketOrder(_btcusd.Symbol, 1, DateTime.UtcNow)
+                    new MarketOrder(_btcusd.Symbol, quantity, DateTime.UtcNow)
                 )
             );
 
-            Assert.AreEqual(Currencies.USD, fee.Value.Currency);
-            // 100 (price) * 0.002 (taker fee)
-            Assert.AreEqual(0.2m, fee.Value.Amount);
+            if (quantity > 0)
+            {
+                Assert.AreEqual("BTC", fee.Value.Currency);
+                // 1 (quantity) * 0.002 (taker fee)
+                Assert.AreEqual(0.002m, fee.Value.Amount);
+            }
+            else
+            {
+                Assert.AreEqual(Currencies.USD, fee.Value.Currency);
+                // 100 (price) * 0.002 (taker fee)
+                Assert.AreEqual(0.2m, fee.Value.Amount);
+            }
         }
 
-        [Test]
-        public void ReturnsFeeInQuoteCurrencyInOtherCurrency()
+        [TestCase(1)]
+        [TestCase(-1)]
+        public void ReturnsFeeInQuoteCurrencyInOtherCurrency(decimal quantity)
         {
             var fee = _feeModel.GetOrderFee(
                 new OrderFeeParameters(
                     _btceur,
-                    new MarketOrder(_btceur.Symbol, 1, DateTime.UtcNow)
+                    new MarketOrder(_btceur.Symbol, quantity, DateTime.UtcNow)
                 )
             );
 
-            Assert.AreEqual("EUR", fee.Value.Currency);
-            // 100 (price) * 0.002 (taker fee)
-            Assert.AreEqual(0.2m, fee.Value.Amount);
+            if (quantity > 0)
+            {
+                Assert.AreEqual("BTC", fee.Value.Currency);
+                // 1 (quantity) * 0.002 (taker fee)
+                Assert.AreEqual(0.002m, fee.Value.Amount);
+            }
+            else
+            {
+                Assert.AreEqual("EUR", fee.Value.Currency);
+                // 100 (price) * 0.002 (taker fee)
+                Assert.AreEqual(0.2m, fee.Value.Amount);
+            }
         }
     }
 }

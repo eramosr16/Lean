@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -13,24 +13,25 @@
  * limitations under the License.
 */
 
-using System;
-using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Data;
+using QuantConnect.Util;
+using QuantConnect.Securities;
+using System.Collections.Generic;
+using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Algorithm.Framework.Risk;
 using QuantConnect.Algorithm.Framework.Alphas;
-using QuantConnect.Algorithm.Framework.Alphas.Analysis;
 using QuantConnect.Algorithm.Framework.Execution;
 using QuantConnect.Algorithm.Framework.Portfolio;
-using QuantConnect.Algorithm.Framework.Risk;
 using QuantConnect.Algorithm.Framework.Selection;
-using QuantConnect.Data;
-using QuantConnect.Data.UniverseSelection;
-using QuantConnect.Util;
+using QuantConnect.Algorithm.Framework.Alphas.Analysis;
 
 namespace QuantConnect.Algorithm
 {
     public partial class QCAlgorithm
     {
-        private readonly ISecurityValuesProvider _securityValuesProvider;
+        // this is so that later during 'UniverseSelection.CreateUniverses' we wont remove the user universes from the UniverseManager
+        private readonly HashSet<Symbol> _universeSelectionUniverses = new ();
         private bool _isEmitWarmupInsightWarningSent;
         private bool _isEmitDelistedInsightWarningSent;
 
@@ -38,53 +39,56 @@ namespace QuantConnect.Algorithm
         /// Enables additional logging of framework models including:
         /// All insights, portfolio targets, order events, and any risk management altered targets
         /// </summary>
+        [DocumentationAttribute(Logging)]
         public bool DebugMode { get; set; }
 
         /// <summary>
         /// Gets or sets the universe selection model.
         /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
         public IUniverseSelectionModel UniverseSelection { get; set; }
 
         /// <summary>
         /// Gets or sets the alpha model
         /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
         public IAlphaModel Alpha { get; set; }
+
+        /// <summary>
+        /// Gets the insight manager
+        /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
+        public InsightManager Insights { get; private set; }
 
         /// <summary>
         /// Gets or sets the portfolio construction model
         /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
         public IPortfolioConstructionModel PortfolioConstruction { get; set; }
 
         /// <summary>
         /// Gets or sets the execution model
         /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
         public IExecutionModel Execution { get; set; }
 
         /// <summary>
         /// Gets or sets the risk management model
         /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
         public IRiskManagementModel RiskManagement { get; set; }
 
         /// <summary>
         /// Called by setup handlers after Initialize and allows the algorithm a chance to organize
         /// the data gather in the Initialize method
         /// </summary>
+        [DocumentationAttribute(AlgorithmFramework)]
         public void FrameworkPostInitialize()
         {
-            //Prevents execution in the case of cash brokerage with IExecutionModel and IPortfolioConstructionModel
-            if (PortfolioConstruction.GetType() != typeof(NullPortfolioConstructionModel)
-                && Execution.GetType() != typeof(NullExecutionModel)
-                && BrokerageModel.AccountType == AccountType.Cash)
-            {
-                throw new InvalidOperationException($"Non null {nameof(IExecutionModel)} and {nameof(IPortfolioConstructionModel)} are currently unsuitable for Cash Modeled brokerages (e.g. GDAX) and may result in unexpected trades."
-                                                    + " To prevent possible user error we've restricted them to Margin trading. You can select margin account types with"
-                                                    + $" SetBrokerage( ... AccountType.Margin). Or please set them to {nameof(NullExecutionModel)}, {nameof(NullPortfolioConstructionModel)}");
-            }
             foreach (var universe in UniverseSelection.CreateUniverses(this))
             {
-                // on purpose we don't call 'AddUniverse' here so that these universes don't get registered as user added
-                // this is so that later during 'UniverseSelection.CreateUniverses' we wont remove them from UniverseManager
-                _pendingUniverseAdditions.Add(universe);
+                AddUniverse(universe);
+                _universeSelectionUniverses.Add(universe.Configuration.Symbol);
             }
 
             if (DebugMode)
@@ -97,49 +101,47 @@ namespace QuantConnect.Algorithm
         /// Used to send data updates to algorithm framework models
         /// </summary>
         /// <param name="slice">The current data slice</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(HandlingData)]
         public void OnFrameworkData(Slice slice)
         {
             if (UtcTime >= UniverseSelection.GetNextRefreshTimeUtc())
             {
-                var universes = UniverseSelection.CreateUniverses(this).ToDictionary(u => u.Configuration.Symbol);
-
-                // remove deselected universes by symbol
-                foreach (var ukvp in UniverseManager)
+                // remove deselected universes by symbol before we create new universes
+                foreach (var ukvp in UniverseManager.Where(kvp => kvp.Value.DisposeRequested))
                 {
                     var universeSymbol = ukvp.Key;
-                    if (_userAddedUniverses.Contains(universeSymbol))
-                    {
-                        // prevent removal of qc algorithm created user defined universes
-                        continue;
-                    }
-
-                    if (ukvp.Value.DisposeRequested)
-                    {
-                        // have to remove in the next loop after the universe is marked as disposed, when 'Dispose()' is called it will trigger universe selection
-                        // and deselect all symbols, sending the removed security changes, which are picked up by the AlgorithmManager and tags securities
-                        // as non tradable as long as they are not active in any universe (uses UniverseManager.ActiveSecurities)
-                        // but they will remain tradable if a position is still being hold since they won't be remove from the UniverseManager
-                        // but this last part will not happen if we remove the universe from the UniverseManager right away, since it won't be part of 'UniverseManager'. 
-                        // And we have to remove the universe even if it's present at 'universes' because that one is another New universe that should get added!
-                        // 'UniverseManager' will skip duplicate entries getting added.
-                        UniverseManager.Remove(universeSymbol);
-                    }
-
-                    Universe universe;
-                    if (!universes.TryGetValue(universeSymbol, out universe))
-                    {
-                        // mark this universe as disposed to remove all child subscriptions
-                        ukvp.Value.Dispose();
-                    }
+                    // have to remove in the next loop after the universe is marked as disposed, when 'Dispose()' is called it will trigger universe selection
+                    // and deselect all symbols, sending the removed security changes, which are picked up by the AlgorithmManager and tags securities
+                    // as non tradable as long as they are not active in any universe (uses UniverseManager.ActiveSecurities)
+                    // but they will remain tradable if a position is still being hold since they won't be remove from the UniverseManager
+                    // but this last part will not happen if we remove the universe from the UniverseManager right away, since it won't be part of 'UniverseManager'.
+                    // And we have to remove the universe even if it's present at 'universes' because that one is another New universe that should get added!
+                    // 'UniverseManager' will skip duplicate entries getting added.
+                    UniverseManager.Remove(universeSymbol);
+                    _universeSelectionUniverses.Remove(universeSymbol);
                 }
 
-                // add newly selected universes
-                foreach (var ukvp in universes)
+                var toRemove = new HashSet<Symbol>(_universeSelectionUniverses);
+                foreach (var universe in UniverseSelection.CreateUniverses(this))
                 {
-                    // note: UniverseManager.Add uses TryAdd, so don't need to worry about duplicates here
-                    UniverseManager.Add(ukvp);
+                    // add newly selected universes
+                    _universeSelectionUniverses.Add(universe.Configuration.Symbol);
+                    AddUniverse(universe);
+
+                    toRemove.Remove(universe.Configuration.Symbol);
+                }
+
+                // remove deselected universes by symbol but prevent removal of qc algorithm created user defined universes
+                foreach (var universeSymbol in toRemove)
+                {
+                    // mark this universe as disposed to remove all child subscriptions
+                    UniverseManager[universeSymbol].Dispose();
                 }
             }
+
+            // update scores
+            Insights.Step(UtcTime);
 
             // we only want to run universe selection if there's no data available in the slice
             if (!slice.HasData)
@@ -170,6 +172,7 @@ namespace QuantConnect.Algorithm
         /// and the <see cref="IExecutionModel"/> will execute the <see cref="IPortfolioTarget"/>
         /// </summary>
         /// <param name="insights">The insight to process</param>
+        [DocumentationAttribute(AlgorithmFramework)]
         private void ProcessInsights(Insight[] insights)
         {
             // construct portfolio targets from insights
@@ -244,11 +247,13 @@ namespace QuantConnect.Algorithm
         /// Used to send security changes to algorithm framework models
         /// </summary>
         /// <param name="changes">Security additions/removals for this time step</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(Universes)]
         public void OnFrameworkSecuritiesChanged(SecurityChanges changes)
         {
             if (DebugMode)
             {
-                Log($"{Time}: {changes}");
+                Debug($"{Time}: {changes}");
             }
 
             Alpha.OnSecuritiesChanged(this, changes);
@@ -261,6 +266,8 @@ namespace QuantConnect.Algorithm
         /// Sets the universe selection model
         /// </summary>
         /// <param name="universeSelection">Model defining universes for the algorithm</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(Universes)]
         public void SetUniverseSelection(IUniverseSelectionModel universeSelection)
         {
             UniverseSelection = universeSelection;
@@ -270,6 +277,8 @@ namespace QuantConnect.Algorithm
         /// Adds a new universe selection model
         /// </summary>
         /// <param name="universeSelection">Model defining universes for the algorithm to add</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(Universes)]
         public void AddUniverseSelection(IUniverseSelectionModel universeSelection)
         {
             if (UniverseSelection.GetType() != typeof(NullUniverseSelectionModel))
@@ -294,6 +303,7 @@ namespace QuantConnect.Algorithm
         /// Sets the alpha model
         /// </summary>
         /// <param name="alpha">Model that generates alpha</param>
+        [DocumentationAttribute(AlgorithmFramework)]
         public void SetAlpha(IAlphaModel alpha)
         {
             Alpha = alpha;
@@ -303,6 +313,7 @@ namespace QuantConnect.Algorithm
         /// Adds a new alpha model
         /// </summary>
         /// <param name="alpha">Model that generates alpha to add</param>
+        [DocumentationAttribute(AlgorithmFramework)]
         public void AddAlpha(IAlphaModel alpha)
         {
             if (Alpha.GetType() != typeof(NullAlphaModel))
@@ -327,6 +338,8 @@ namespace QuantConnect.Algorithm
         /// Sets the portfolio construction model
         /// </summary>
         /// <param name="portfolioConstruction">Model defining how to build a portfolio from insights</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(TradingAndOrders)]
         public void SetPortfolioConstruction(IPortfolioConstructionModel portfolioConstruction)
         {
             PortfolioConstruction = portfolioConstruction;
@@ -336,6 +349,8 @@ namespace QuantConnect.Algorithm
         /// Sets the execution model
         /// </summary>
         /// <param name="execution">Model defining how to execute trades to reach a portfolio target</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(TradingAndOrders)]
         public void SetExecution(IExecutionModel execution)
         {
             Execution = execution;
@@ -345,6 +360,8 @@ namespace QuantConnect.Algorithm
         /// Sets the risk management model
         /// </summary>
         /// <param name="riskManagement">Model defining how risk is managed</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(TradingAndOrders)]
         public void SetRiskManagement(IRiskManagementModel riskManagement)
         {
             RiskManagement = riskManagement;
@@ -354,6 +371,8 @@ namespace QuantConnect.Algorithm
         /// Adds a new risk management model
         /// </summary>
         /// <param name="riskManagement">Model defining how risk is managed to add</param>
+        [DocumentationAttribute(AlgorithmFramework)]
+        [DocumentationAttribute(TradingAndOrders)]
         public void AddRiskManagement(IRiskManagementModel riskManagement)
         {
             if (RiskManagement.GetType() != typeof(NullRiskManagementModel))
@@ -380,6 +399,7 @@ namespace QuantConnect.Algorithm
         /// QCAlgorithm that have been ported into the algorithm framework.
         /// </summary>
         /// <param name="insights">The array of insights to be emitted</param>
+        [DocumentationAttribute(AlgorithmFramework)]
         public void EmitInsights(params Insight[] insights)
         {
             if (IsWarmingUp)
@@ -403,6 +423,7 @@ namespace QuantConnect.Algorithm
         /// QCAlgorithm that have been ported into the algorithm framework.
         /// </summary>
         /// <param name="insight">The insight to be emitted</param>
+        [DocumentationAttribute(AlgorithmFramework)]
         public void EmitInsights(Insight insight)
         {
             EmitInsights(new[] { insight });
@@ -418,7 +439,8 @@ namespace QuantConnect.Algorithm
             List<Insight> validInsights = null;
             for (var i = 0; i < insights.Length; i++)
             {
-                if (Securities[insights[i].Symbol].IsDelisted)
+                var security = Securities[insights[i].Symbol];
+                if (security.IsDelisted)
                 {
                     if (!_isEmitDelistedInsightWarningSent)
                     {
@@ -439,7 +461,7 @@ namespace QuantConnect.Algorithm
                 else
                 {
                     // Initialize the insight fields
-                    insights[i] = InitializeInsightFields(insights[i]);
+                    insights[i] = InitializeInsightFields(insights[i], security);
 
                     // If we already had an invalid insight, this will have been initialized storing the valid ones.
                     if (validInsights != null)
@@ -457,11 +479,20 @@ namespace QuantConnect.Algorithm
         /// Helper class used to set values not required to be set by alpha models
         /// </summary>
         /// <param name="insight">The <see cref="Insight"/> to set the values for</param>
+        /// <param name="security">The <see cref="Security"/> instance associated with this insight</param>
         /// <returns>The same <see cref="Insight"/> instance with the values set</returns>
-        private Insight InitializeInsightFields(Insight insight)
+        private Insight InitializeInsightFields(Insight insight, Security security)
         {
             insight.GeneratedTimeUtc = UtcTime;
-            insight.ReferenceValue = _securityValuesProvider.GetValues(insight.Symbol).Get(insight.Type);
+            switch (insight.Type)
+            {
+                case InsightType.Price:
+                    insight.ReferenceValue = security.Price;
+                    break;
+                case InsightType.Volatility:
+                    insight.ReferenceValue = security.VolatilityModel.Volatility;
+                    break;
+            }
             insight.SourceModel = string.IsNullOrEmpty(insight.SourceModel) ? Alpha.GetModelName() : insight.SourceModel;
 
             var exchangeHours = MarketHoursDatabase.GetExchangeHours(insight.Symbol.ID.Market, insight.Symbol, insight.Symbol.SecurityType);

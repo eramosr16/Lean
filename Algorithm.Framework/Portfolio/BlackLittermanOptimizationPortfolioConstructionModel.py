@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,26 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Logging")
-AddReference("QuantConnect.Indicators")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Indicators import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Logging import Log
-from QuantConnect.Algorithm.Framework import *
-from QuantConnect.Algorithm.Framework.Alphas import InsightCollection, InsightDirection
-from QuantConnect.Algorithm.Framework.Portfolio import PortfolioConstructionModel, PortfolioTarget, PortfolioBias
+from AlgorithmImports import *
 from Portfolio.MaximumSharpeRatioPortfolioOptimizer import MaximumSharpeRatioPortfolioOptimizer
-from datetime import datetime, timedelta
 from itertools import groupby
-import pandas as pd
-import numpy as np
 from numpy import dot, transpose
 from numpy.linalg import inv
 
@@ -68,6 +51,7 @@ class BlackLittermanOptimizationPortfolioConstructionModel(PortfolioConstruction
             risk_free_rate(float): The risk free rate
             delta(float): The risk aversion coeffficient of the market portfolio
             tau(float): The model parameter indicating the uncertainty of the CAPM prior"""
+        super().__init__()
         self.lookback = lookback
         self.period = period
         self.resolution = resolution
@@ -94,7 +78,7 @@ class BlackLittermanOptimizationPortfolioConstructionModel(PortfolioConstruction
             self.SetRebalancingFunc(rebalancingFunc)
 
     def ShouldCreateTargetForInsight(self, insight):
-        return len(PortfolioConstructionModel.FilterInvalidInsightMagnitude(self.Algorithm, [ insight ])) != 0
+        return PortfolioConstructionModel.FilterInvalidInsightMagnitude(self.Algorithm, [ insight ])
 
     def DetermineTargetPercent(self, lastActiveInsights):
         targets = {}
@@ -133,13 +117,14 @@ class BlackLittermanOptimizationPortfolioConstructionModel(PortfolioConstruction
                         if self.portfolioBias != PortfolioBias.LongShort and self.sign(weight) != self.portfolioBias:
                             weight = 0
                         targets[insight] = weight
-                        break;
+                        break
 
         return targets
 
     def GetTargetInsights(self):
         # Get insight that haven't expired of each symbol that is still in the universe
-        activeInsights = self.InsightCollection.GetActiveInsights(self.Algorithm.UtcTime)
+        activeInsights = filter(self.ShouldCreateTargetForInsight,
+            self.Algorithm.Insights.GetActiveInsights(self.Algorithm.UtcTime))
 
         # Get the last generated active insight for each symbol
         lastActiveInsights = []
@@ -245,6 +230,8 @@ class BlackLittermanOptimizationPortfolioConstructionModel(PortfolioConstruction
         try:
             P = {}
             Q = {}
+            symbols = set(insight.Symbol for insight in insights)
+            
             for model, group in groupby(insights, lambda x: x.SourceModel):
                 group = list(group)
 
@@ -268,7 +255,7 @@ class BlackLittermanOptimizationPortfolioConstructionModel(PortfolioConstruction
                     value = insight.Direction * np.abs(insight.Magnitude)
                     P[model][insight.Symbol] = value / q
                 # Add zero for other symbols that are listed but active insight
-                for symbol in self.symbolDataBySymbol.keys():
+                for symbol in symbols:
                     if symbol not in P[model]:
                         P[model][symbol] = 0
 
@@ -304,7 +291,7 @@ class BlackLittermanOptimizationPortfolioConstructionModel(PortfolioConstruction
 
         def Add(self, time, value):
             if self.window.Samples > 0 and self.window[0].EndTime == time:
-                return;
+                return
 
             item = IndicatorDataPoint(self.symbol, time, value)
             self.window.Add(item)

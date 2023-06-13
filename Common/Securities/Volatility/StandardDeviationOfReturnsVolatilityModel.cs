@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,14 +14,13 @@
 */
 
 using System;
+using System.Collections.Generic;
+
 using MathNet.Numerics.Statistics;
+
 using QuantConnect.Data;
 using QuantConnect.Indicators;
-using QuantConnect.Data.Market;
-using System.Collections.Generic;
-using System.Linq;
 using QuantConnect.Securities.Volatility;
-using QuantConnect.Util;
 
 namespace QuantConnect.Securities
 {
@@ -35,10 +34,10 @@ namespace QuantConnect.Securities
         private decimal _volatility;
         private DateTime _lastUpdate = DateTime.MinValue;
         private decimal _lastPrice;
-        private readonly Resolution? _resolution;
-        private readonly TimeSpan _periodSpan;
+        private Resolution? _resolution;
+        private TimeSpan _periodSpan;
         private readonly object _sync = new object();
-        private readonly RollingWindow<double> _window;
+        private RollingWindow<double> _window;
 
         /// <summary>
         /// Gets the volatility of the security as a percentage
@@ -92,12 +91,36 @@ namespace QuantConnect.Securities
         {
             if (periods < 2)
             {
-                throw new ArgumentOutOfRangeException("periods", "'periods' must be greater than or equal to 2.");
+                throw new ArgumentOutOfRangeException(nameof(periods), "'periods' must be greater than or equal to 2.");
             }
 
             _window = new RollingWindow<double>(periods);
             _resolution = resolution;
             _periodSpan = updateFrequency ?? resolution?.ToTimeSpan() ?? TimeSpan.FromDays(1);
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="StandardDeviationOfReturnsVolatilityModel"/> class
+        /// </summary>
+        /// <param name="resolution">
+        /// Resolution of the price data inserted into the rolling window series to calculate standard deviation.
+        /// Will be used as the default value for update frequency if a value is not provided for <paramref name="updateFrequency"/>.
+        /// This only has a material effect in live mode. For backtesting, this value does not cause any behavioral changes.
+        /// </param>
+        /// <param name="updateFrequency">Frequency at which we insert new values into the rolling window for the standard deviation calculation</param>
+        /// <remarks>
+        /// The volatility model will be updated with the most granular/highest resolution data that was added to your algorithm.
+        /// That means that if I added <see cref="Resolution.Tick"/> data for my Futures strategy, that this model will be
+        /// updated using <see cref="Resolution.Tick"/> data as the algorithm progresses in time.
+        ///
+        /// Keep this in mind when setting the period and update frequency. The Resolution parameter is only used for live mode, or for
+        /// the default value of the <paramref name="updateFrequency"/> if no value is provided.
+        /// </remarks>
+        public StandardDeviationOfReturnsVolatilityModel(
+            Resolution resolution,
+            TimeSpan? updateFrequency = null
+            ) : this(PeriodsInResolution(resolution), resolution, updateFrequency)
+        {
         }
 
         /// <summary>
@@ -133,11 +156,49 @@ namespace QuantConnect.Securities
         /// <returns>History request object list, or empty if no requirements</returns>
         public override IEnumerable<HistoryRequest> GetHistoryRequirements(Security security, DateTime utcTime)
         {
-            return base.GetHistoryRequirements(
+            // Let's reset the model since it will get warmed up again using these history requirements
+            Reset();
+
+            return GetHistoryRequirements(
                 security,
                 utcTime,
                 _resolution,
                 _window.Size + 1);
+        }
+
+        /// <summary>
+        /// Resets the model to its initial state
+        /// </summary>
+        private void Reset()
+        {
+            _needsUpdate = false;
+            _volatility = 0m;
+            _lastUpdate = DateTime.MinValue;
+            _lastPrice = 0m;
+            _window.Reset();
+        }
+
+        private static int PeriodsInResolution(Resolution resolution)
+        {
+            int periods;
+            switch (resolution)
+            {
+                case Resolution.Tick:
+                case Resolution.Second:
+                    periods = 600;
+                    break;
+                case Resolution.Minute:
+                    periods = 60 * 24;
+                    break;
+                case Resolution.Hour:
+                    periods = 24 * 30;
+                    break;
+                default:
+                    periods = 30;
+                    break;
+            }
+
+            return periods;
         }
     }
 }

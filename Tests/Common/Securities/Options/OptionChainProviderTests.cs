@@ -30,9 +30,61 @@ namespace QuantConnect.Tests.Common.Securities.Options
     public class OptionChainProviderTests
     {
         [Test]
+        public void UsesMultipleResolutionsFutureOption()
+        {
+            // we don't have minute data for this date
+            var date = new DateTime(2020, 01, 7);
+            var future = Symbol.CreateFuture(QuantConnect.Securities.Futures.Indices.SP500EMini, Market.CME, new DateTime(2020, 6, 19));
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+            var optionChain = provider.GetOptionContractList(future, date).OrderBy(s => s.ID.StrikePrice).ToList();
+
+            Assert.IsTrue(optionChain.All(x => x.SecurityType == SecurityType.FutureOption));
+            Assert.IsTrue(optionChain.All(x => x.ID.Symbol == "ES"));
+            Assert.IsTrue(optionChain.All(x => x.Underlying == future));
+            Assert.IsTrue(optionChain.All(x => x.ID.Date.Date >= date));
+            Assert.AreEqual(107, optionChain.Count);
+            Assert.AreEqual(2900m, optionChain.First().ID.StrikePrice);
+            Assert.AreEqual(3500, optionChain.Last().ID.StrikePrice);
+        }
+
+        [Test]
+        public void UsesMultipleResolutionsEquityOption()
+        {
+            // we don't have minute data for this date
+            var date = new DateTime(2014, 10, 7);
+
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+            var optionChain = provider.GetOptionContractList(Symbols.AAPL, date).OrderBy(s => s.ID.StrikePrice).ToList();
+
+            Assert.IsTrue(optionChain.All(x => x.SecurityType == SecurityType.Option));
+            Assert.IsTrue(optionChain.All(x => x.ID.Symbol == "AAPL"));
+            Assert.IsTrue(optionChain.All(x => x.Underlying == Symbols.AAPL));
+            Assert.IsTrue(optionChain.All(x => x.ID.Date.Date >= date));
+            Assert.AreEqual(1828, optionChain.Count);
+            Assert.AreEqual(27.86m, optionChain.First().ID.StrikePrice);
+            Assert.AreEqual(1050m, optionChain.Last().ID.StrikePrice);
+        }
+
+        [Test]
+        public void BacktestingOptionChainProviderUsesPreviousTradableDateChain()
+        {
+            // the 7th is a saturday should fetch fridays data instead
+            var date = new DateTime(2014, 6, 7);
+            Assert.AreEqual(DayOfWeek.Saturday, date.DayOfWeek);
+
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+            var twxOptionChain = provider.GetOptionContractList(Symbol.Create("TWX", SecurityType.Equity, Market.USA), date)
+                .ToList();
+
+            Assert.AreEqual(184, twxOptionChain.Count);
+            Assert.AreEqual(23m, twxOptionChain.OrderBy(s => s.ID.StrikePrice).First().ID.StrikePrice);
+            Assert.AreEqual(105m, twxOptionChain.OrderBy(s => s.ID.StrikePrice).Last().ID.StrikePrice);
+        }
+
+        [Test]
         public void BacktestingOptionChainProviderLoadsEquityOptionChain()
         {
-            var provider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var twxOptionChain = provider.GetOptionContractList(Symbol.Create("TWX", SecurityType.Equity, Market.USA), new DateTime(2014, 6, 5))
                 .ToList();
 
@@ -44,7 +96,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
         [Test]
         public void BacktestingOptionChainProviderLoadsFutureOptionChain()
         {
-            var provider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var esOptionChain = provider.GetOptionContractList(
                 Symbol.CreateFuture(
                     QuantConnect.Securities.Futures.Indices.SP500EMini,
@@ -56,6 +108,75 @@ namespace QuantConnect.Tests.Common.Securities.Options
             Assert.AreEqual(107, esOptionChain.Count);
             Assert.AreEqual(2900m, esOptionChain.OrderBy(s => s.ID.StrikePrice).First().ID.StrikePrice);
             Assert.AreEqual(3500m, esOptionChain.OrderBy(s => s.ID.StrikePrice).Last().ID.StrikePrice);
+        }
+
+        [Test]
+        public void BacktestingOptionChainProviderIndexOption()
+        {
+            var spxOption = Symbol.CreateCanonicalOption(Symbols.SPX);
+            foreach (var option in new [] { Symbols.SPX, spxOption })
+            {
+                var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+
+                var optionChain = provider.GetOptionContractList(option, new DateTime(2021, 01, 04)).ToList();
+
+                Assert.AreEqual(6, optionChain.Count);
+                Assert.AreEqual(3200, optionChain.OrderBy(s => s.ID.StrikePrice).First().ID.StrikePrice);
+                Assert.AreEqual(4250, optionChain.OrderBy(s => s.ID.StrikePrice).Last().ID.StrikePrice);
+
+                foreach (var optionSymbol in optionChain)
+                {
+                    Assert.AreEqual("SPX", optionSymbol.ID.Symbol);
+                    Assert.AreEqual("SPX", optionSymbol.Underlying.ID.Symbol);
+                }
+            }
+        }
+
+        [Test]
+        public void BacktestingOptionChainProviderWeeklyIndexOption()
+        {
+            var spxWeeklyOption = Symbol.CreateCanonicalOption(Symbols.SPX, "SPXW", null, null);
+            foreach (var option in new[] { spxWeeklyOption })
+            {
+                var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+
+                var optionChain = provider.GetOptionContractList(option, new DateTime(2021, 01, 04)).ToList();
+
+                Assert.AreEqual(12, optionChain.Count);
+                Assert.AreEqual(3700, optionChain.OrderBy(s => s.ID.StrikePrice).First().ID.StrikePrice);
+                Assert.AreEqual(3800, optionChain.OrderBy(s => s.ID.StrikePrice).Last().ID.StrikePrice);
+
+                foreach (var optionSymbol in optionChain)
+                {
+                    Assert.AreEqual("SPXW", optionSymbol.ID.Symbol);
+                    Assert.AreEqual("SPX", optionSymbol.Underlying.ID.Symbol);
+                }
+            }
+        }
+
+        [Test]
+        public void BacktestingOptionChainProviderResolvesSymbolMapping()
+        {
+            var ticker = "GOOCV"; // Old ticker, should resolve and fetch GOOG
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+
+            var underlyingSymbol = QuantConnect.Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+            var alias = "?" + underlyingSymbol.Value;
+            var optionSymbol = Symbol.CreateOption(
+                underlyingSymbol,
+                underlyingSymbol.ID.Market,
+                Symbol.GetOptionTypeFromUnderlying(underlyingSymbol).DefaultOptionStyle(),
+                default(OptionRight),
+                0,
+                SecurityIdentifier.DefaultDate,
+                alias);
+
+            var googOptionChain = provider.GetOptionContractList(optionSymbol.Underlying, new DateTime(2015, 12, 23))
+                .ToList();
+
+            Assert.AreEqual(118, googOptionChain.Count);
+            Assert.AreEqual(600m, googOptionChain.OrderBy(s => s.ID.StrikePrice).First().ID.StrikePrice);
+            Assert.AreEqual(800m, googOptionChain.OrderBy(s => s.ID.StrikePrice).Last().ID.StrikePrice);
         }
 
         [Test]
@@ -88,9 +209,12 @@ namespace QuantConnect.Tests.Common.Securities.Options
         [Test]
         public void LiveOptionChainProviderReturnsData()
         {
-            var provider = new LiveOptionChainProvider();
+            var provider = new LiveOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
 
-            foreach (var symbol in new[] { Symbols.SPY, Symbols.AAPL, Symbols.MSFT })
+            var spxOption = Symbol.CreateCanonicalOption(Symbols.SPX);
+            var spxwOption = Symbol.CreateCanonicalOption(Symbols.SPX, "SPXW", null, null);
+
+            foreach (var symbol in new[] { Symbols.SPY, Symbols.AAPL, Symbols.MSFT, Symbols.SPX, spxOption, spxwOption })
             {
                 var result = provider.GetOptionContractList(symbol, DateTime.Today).ToList();
                 var countCall = result.Count(x => x.ID.OptionRight == OptionRight.Call);
@@ -98,6 +222,18 @@ namespace QuantConnect.Tests.Common.Securities.Options
 
                 Assert.Greater(countCall, 0);
                 Assert.Greater(countPut, 0);
+
+                var expectedOptionTicker = symbol.ID.Symbol;
+                var expectedUnderlyingTicker = symbol.ID.Symbol;
+                if (symbol.ID.Symbol == "SPXW")
+                {
+                    expectedUnderlyingTicker = "SPX";
+                }
+                foreach (var optionSymbol in result)
+                {
+                    Assert.AreEqual(expectedOptionTicker, optionSymbol.ID.Symbol);
+                    Assert.AreEqual(expectedUnderlyingTicker, optionSymbol.Underlying.ID.Symbol);
+                }
             }
         }
 
@@ -106,13 +242,13 @@ namespace QuantConnect.Tests.Common.Securities.Options
         {
             var symbol = Symbol.Create("ABCDEF123", SecurityType.Equity, Market.USA);
 
-            var provider = new LiveOptionChainProvider();
+            var provider = new LiveOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var result = provider.GetOptionContractList(symbol, DateTime.Today);
 
             Assert.IsFalse(result.Any());
         }
 
-        [Test, Ignore("Failing due to timeout, track issue at #5645")]
+        [Test]
         public void LiveOptionChainProviderReturnsFutureOptionData()
         {
             var now = DateTime.Now;
@@ -130,7 +266,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
             }
 
             var underlyingFuture = Symbol.CreateFuture("ES", Market.CME, expiry);
-            var provider = new LiveOptionChainProvider();
+            var provider = new LiveOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var result = provider.GetOptionContractList(underlyingFuture, now).ToList();
 
             Assert.AreNotEqual(0, result.Count);
@@ -145,14 +281,14 @@ namespace QuantConnect.Tests.Common.Securities.Options
             }
         }
 
-        [Test, Ignore("Failing due to timeout, track issue at #5645")]
+        [Test]
         public void LiveOptionChainProviderReturnsNoDataForOldFuture()
         {
             var now = DateTime.Now;
             var december = now.AddMonths(-now.Month).AddYears(-1);
             var underlyingFuture = Symbol.CreateFuture("ES", Market.CME, december);
 
-            var provider = new LiveOptionChainProvider();
+            var provider = new LiveOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var result = provider.GetOptionContractList(underlyingFuture, december);
 
             Assert.AreEqual(0, result.Count());
@@ -179,7 +315,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
                 strike,
                 expiry);
 
-            var provider = new BacktestingOptionChainProvider(TestGlobals.DataProvider);
+            var provider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
             var contracts = provider.GetOptionContractList(underlying, new DateTime(2020, 1, 5))
                 .ToHashSet();
 

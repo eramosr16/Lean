@@ -15,13 +15,12 @@
 */
 
 using System;
-using System.ComponentModel.Composition;
-using System.IO;
 using System.Threading;
 using QuantConnect.Configuration;
 using QuantConnect.Lean.Engine;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
+using QuantConnect.Python;
 using QuantConnect.Util;
 
 namespace QuantConnect.Lean.Launcher
@@ -47,12 +46,6 @@ namespace QuantConnect.Lean.Launcher
 
         static void Main(string[] args)
         {
-            //Initialize:
-            var mode = "RELEASE";
-            #if DEBUG
-                mode = "DEBUG";
-            #endif
-
             if (OS.IsWindows)
             {
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -65,33 +58,17 @@ namespace QuantConnect.Lean.Launcher
             }
 
             var liveMode = Config.GetBool("live-mode");
-            Log.DebuggingEnabled = Config.GetBool("debug-mode");
-            Log.FilePath = Path.Combine(Config.Get("results-destination-folder"), "log.txt");
-            Log.LogHandler = Composer.Instance.GetExportedValueByTypeName<ILogHandler>(Config.Get("log-handler", "CompositeLogHandler"));
-
             //Name thread for the profiler:
             Thread.CurrentThread.Name = "Algorithm Analysis Thread";
-            Log.Trace($"Engine.Main(): LEAN ALGORITHMIC TRADING ENGINE v{Globals.Version} Mode: {mode} ({(Environment.Is64BitProcess ? "64" : "32")}bit) Host: {Environment.MachineName}");
-            Log.Trace("Engine.Main(): Started " + DateTime.Now.ToShortTimeString());
 
-            //Import external libraries specific to physical server location (cloud/local)
-
-            try
-            {
-                leanEngineSystemHandlers = LeanEngineSystemHandlers.FromConfiguration(Composer.Instance);
-            }
-            catch (CompositionException compositionException)
-            {
-                Log.Error("Engine.Main(): Failed to load library: " + compositionException);
-                throw;
-            }
-
-            //Setup packeting, queue and controls system: These don't do much locally.
-            leanEngineSystemHandlers.Initialize();
+            Initializer.Start();
+            leanEngineSystemHandlers = Initializer.GetSystemHandlers();
 
             //-> Pull job from QuantConnect job queue, or, pull local build:
             string assemblyPath;
             job = leanEngineSystemHandlers.JobQueue.NextJob(out assemblyPath);
+
+            leanEngineAlgorithmHandlers = Initializer.GetAlgorithmHandlers();
 
             if (job == null)
             {
@@ -100,15 +77,8 @@ namespace QuantConnect.Lean.Launcher
                 throw new ArgumentException(jobNullMessage);
             }
 
-            try
-            {
-                leanEngineAlgorithmHandlers = LeanEngineAlgorithmHandlers.FromConfiguration(Composer.Instance);
-            }
-            catch (CompositionException compositionException)
-            {
-                Log.Error("Engine.Main(): Failed to load library: " + compositionException);
-                throw;
-            }
+            // Activate our PythonVirtualEnvironment
+            PythonInitializer.ActivatePythonVirtualEnvironment(job.PythonVirtualEnvironment);
 
             // if the job version doesn't match this instance version then we can't process it
             // we also don't want to reprocess redelivered jobs
@@ -133,6 +103,8 @@ namespace QuantConnect.Lean.Launcher
                 algorithmManager = new AlgorithmManager(liveMode, job);
 
                 leanEngineSystemHandlers.LeanManager.Initialize(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, job, algorithmManager);
+
+                OS.Initialize();
 
                 var engine = new Engine.Engine(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, liveMode);
                 engine.Run(job, algorithmManager, assemblyPath, WorkerThread.Instance);
@@ -165,7 +137,9 @@ namespace QuantConnect.Lean.Launcher
             leanEngineSystemHandlers.DisposeSafely();
             leanEngineAlgorithmHandlers.DisposeSafely();
             Log.LogHandler.DisposeSafely();
-            OS.CpuPerformanceCounter.DisposeSafely();
+            OS.Dispose();
+
+            PythonInitializer.Shutdown();
 
             Log.Trace("Program.Main(): Exiting Lean...");
             Environment.Exit(exitCode);

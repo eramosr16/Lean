@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -233,7 +233,11 @@ namespace QuantConnect.Orders
             switch (field)
             {
                 case OrderField.LimitPrice:
-                    if (_submitRequest.OrderType == OrderType.Limit)
+                    if (_submitRequest.OrderType == OrderType.ComboLimit)
+                    {
+                        return AccessOrder<ComboLimitOrder>(this, field, o => o.GroupOrderManager.LimitPrice, r => r.LimitPrice);
+                    }
+                    if (_submitRequest.OrderType == OrderType.Limit || _submitRequest.OrderType == OrderType.ComboLegLimit)
                     {
                         return AccessOrder<LimitOrder>(this, field, o => o.LimitPrice, r => r.LimitPrice);
                     }
@@ -257,7 +261,7 @@ namespace QuantConnect.Orders
                         return AccessOrder<StopMarketOrder>(this, field, o => o.StopPrice, r => r.StopPrice);
                     }
                     break;
-                
+
                 case OrderField.TriggerPrice:
                     return AccessOrder<LimitIfTouchedOrder>(this, field, o => o.TriggerPrice, r => r.TriggerPrice);
 
@@ -265,7 +269,7 @@ namespace QuantConnect.Orders
                     throw new ArgumentOutOfRangeException(nameof(field), field, null);
             }
 
-            throw new ArgumentException(Invariant($"Unable to get field {field} on order of type {_submitRequest.OrderType}"));
+            throw new ArgumentException(Messages.OrderTicket.GetFieldError(this, field));
         }
 
         /// <summary>
@@ -276,15 +280,15 @@ namespace QuantConnect.Orders
         /// <returns>The <see cref="OrderResponse"/> from updating the order</returns>
         public OrderResponse Update(UpdateOrderFields fields)
         {
-            _transactionManager.UpdateOrder(new UpdateOrderRequest(_transactionManager.UtcTime, SubmitRequest.OrderId, fields));
-            return _updateRequests.Last().Response;
+            var ticket = _transactionManager.UpdateOrder(new UpdateOrderRequest(_transactionManager.UtcTime, SubmitRequest.OrderId, fields));
+            return ticket.UpdateRequests.Last().Response;
         }
 
         /// <summary>
         /// Submits an <see cref="UpdateOrderRequest"/> with the <see cref="SecurityTransactionManager"/> to update
         /// the ticket with tag specified in <paramref name="tag"/>
         /// </summary>
-        /// <param name="tag"></param>
+        /// <param name="tag">The new tag for this order ticket</param>
         /// <returns><see cref="OrderResponse"/> from updating the order</returns>
         public OrderResponse UpdateTag(string tag)
         {
@@ -299,8 +303,8 @@ namespace QuantConnect.Orders
         /// Submits an <see cref="UpdateOrderRequest"/> with the <see cref="SecurityTransactionManager"/> to update
         /// the ticket with quantity specified in <paramref name="quantity"/> and with tag specified in <paramref name="quantity"/>
         /// </summary>
-        /// <param name="quantity"></param>
-        /// <param name="tag"></param>
+        /// <param name="quantity">The new quantity for this order ticket</param>
+        /// <param name="tag">The new tag for this order ticket</param>
         /// <returns><see cref="OrderResponse"/> from updating the order</returns>
         public OrderResponse UpdateQuantity(decimal quantity, string tag = null)
         {
@@ -316,8 +320,8 @@ namespace QuantConnect.Orders
         /// Submits an <see cref="UpdateOrderRequest"/> with the <see cref="SecurityTransactionManager"/> to update
         /// the ticker with limit price specified in <paramref name="limitPrice"/> and with tag specified in <paramref name="tag"/>
         /// </summary>
-        /// <param name="limitPrice"></param>
-        /// <param name="tag"></param>
+        /// <param name="limitPrice">The new limit price for this order ticket</param>
+        /// <param name="tag">The new tag for this order ticket</param>
         /// <returns><see cref="OrderResponse"/> from updating the order</returns>
         public OrderResponse UpdateLimitPrice(decimal limitPrice, string tag = null)
         {
@@ -333,14 +337,31 @@ namespace QuantConnect.Orders
         /// Submits an <see cref="UpdateOrderRequest"/> with the <see cref="SecurityTransactionManager"/> to update
         /// the ticker with stop price specified in <paramref name="stopPrice"/> and with tag specified in <paramref name="tag"/>
         /// </summary>
-        /// <param name="stopPrice"></param>
-        /// <param name="tag"></param>
+        /// <param name="stopPrice">The new stop price  for this order ticket</param>
+        /// <param name="tag">The new tag for this order ticket</param>
         /// <returns><see cref="OrderResponse"/> from updating the order</returns>
         public OrderResponse UpdateStopPrice(decimal stopPrice, string tag = null)
         {
             var fields = new UpdateOrderFields()
             {
                 StopPrice = stopPrice,
+                Tag = tag
+            };
+            return Update(fields);
+        }
+
+        /// <summary>
+        /// Submits an <see cref="UpdateOrderRequest"/> with the <see cref="SecurityTransactionManager"/> to update
+        /// the ticker with trigger price specified in <paramref name="triggerPrice"/> and with tag specified in <paramref name="tag"/>
+        /// </summary>
+        /// <param name="triggerPrice">The new price which, when touched, will trigger the setting of a limit order.</param>
+        /// <param name="tag">The new tag for this order ticket</param>
+        /// <returns><see cref="OrderResponse"/> from updating the order</returns>
+        public OrderResponse UpdateTriggerPrice(decimal triggerPrice, string tag = null)
+        {
+            var fields = new UpdateOrderFields()
+            {
+                TriggerPrice = triggerPrice,
                 Tag = tag
             };
             return Update(fields);
@@ -354,26 +375,17 @@ namespace QuantConnect.Orders
             var request = new CancelOrderRequest(_transactionManager.UtcTime, OrderId, tag);
             lock (_cancelRequestLock)
             {
-                // don't submit duplicate cancel requests
-                if (_cancelRequest != null)
+                // don't submit duplicate cancel requests, if the cancel request wasn't flagged as error
+                // this could happen when trying to cancel an order which status is still new and hasn't even been submitted to the brokerage
+                if (_cancelRequest != null && _cancelRequest.Status != OrderRequestStatus.Error)
                 {
                     return OrderResponse.Error(request, OrderResponseErrorCode.RequestCanceled,
-                        Invariant($"Order {OrderId} has already received a cancellation request.")
-                    );
+                        Messages.OrderTicket.CancelRequestAlreadySubmitted(this));
                 }
             }
 
-            _transactionManager.ProcessRequest(request);
-
-            lock (_cancelRequestLock)
-            {
-                if (_cancelRequest != null)
-                {
-                    return _cancelRequest.Response;
-                }
-            }
-
-            throw new ArgumentException("CancelRequest is null.");
+            var ticket = _transactionManager.ProcessRequest(request);
+            return ticket.CancelRequest.Response;
         }
 
         /// <summary>
@@ -417,18 +429,34 @@ namespace QuantConnect.Orders
             {
                 _orderEvents.Add(orderEvent);
 
-                //Update the ticket and order, if it is a OptionExercise order we must only update it if the fill price is not zero
-                //this fixes issue #2846 where average price is skewed by the removal of the option.
-                if (orderEvent.FillQuantity != 0 && (_order.Type != OrderType.OptionExercise || orderEvent.FillPrice != 0))
+                // Update the ticket and order
+                if (orderEvent.FillQuantity != 0)
                 {
-                    // keep running totals of quantity filled and the average fill price so we
-                    // don't need to compute these on demand
-                    _quantityFilled += orderEvent.FillQuantity;
-                    var quantityWeightedFillPrice = _orderEvents.Where(x => x.Status.IsFill())
-                        .Aggregate(0m, (d, x) => d + x.AbsoluteFillQuantity*x.FillPrice);
-                    _averageFillPrice = quantityWeightedFillPrice/Math.Abs(_quantityFilled);
+                    if (_order.Type != OrderType.OptionExercise)
+                    {
+                        // keep running totals of quantity filled and the average fill price so we
+                        // don't need to compute these on demand
+                        _quantityFilled += orderEvent.FillQuantity;
+                        var quantityWeightedFillPrice = _orderEvents.Where(x => x.Status.IsFill())
+                            .Aggregate(0m, (d, x) => d + x.AbsoluteFillQuantity * x.FillPrice);
+                        _averageFillPrice = quantityWeightedFillPrice / Math.Abs(_quantityFilled);
 
-                    _order.Price = _averageFillPrice;
+                        _order.Price = _averageFillPrice;
+                    }
+                    // For ITM option exercise orders we set the order price to the strike price.
+                    // For OTM the fill price should be zero, which is the default for OptionExerciseOrders
+                    else if (orderEvent.IsInTheMoney)
+                    {
+                        _order.Price = Symbol.ID.StrikePrice;
+
+                        // We update the ticket only if the fill price is not zero (this fixes issue #2846 where average price
+                        // is skewed by the removal of the option).
+                        if (orderEvent.FillPrice != 0)
+                        {
+                            _quantityFilled += orderEvent.FillQuantity;
+                            _averageFillPrice = _order.Price;
+                        }
+                    }
                 }
             }
 
@@ -489,7 +517,9 @@ namespace QuantConnect.Orders
 
             lock (_cancelRequestLock)
             {
-                if (_cancelRequest != null)
+                // don't submit duplicate cancel requests, if the cancel request wasn't flagged as error
+                // this could happen when trying to cancel an order which status is still new and hasn't even been submitted to the brokerage
+                if (_cancelRequest != null && _cancelRequest.Status != OrderRequestStatus.Error)
                 {
                     return false;
                 }
@@ -539,17 +569,6 @@ namespace QuantConnect.Orders
         }
 
         /// <summary>
-        /// Creates a new <see cref="OrderTicket"/> that is invalidated because the algorithm was in the middle of warm up still
-        /// </summary>
-        public static OrderTicket InvalidWarmingUp(SecurityTransactionManager transactionManager, SubmitOrderRequest submit)
-        {
-            submit.SetResponse(OrderResponse.WarmingUp(submit));
-            var ticket = new OrderTicket(transactionManager, submit);
-            ticket._orderStatusOverride = OrderStatus.Invalid;
-            return ticket;
-        }
-
-        /// <summary>
         /// Returns a string that represents the current object.
         /// </summary>
         /// <returns>
@@ -558,13 +577,7 @@ namespace QuantConnect.Orders
         /// <filterpriority>2</filterpriority>
         public override string ToString()
         {
-            var counts = Invariant($"Request Count: {RequestCount()} Response Count: {ResponseCount()}");
-            if (_order != null)
-            {
-                return Invariant($"{OrderId}: {_order} {counts}");
-            }
-
-            return Invariant($"{OrderId}: {counts}");
+            return Messages.OrderTicket.ToString(this, _order, RequestCount(), ResponseCount());
         }
 
         private int ResponseCount()

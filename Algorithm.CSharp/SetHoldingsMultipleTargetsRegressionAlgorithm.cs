@@ -41,6 +41,10 @@ namespace QuantConnect.Algorithm.CSharp
             // use leverage 1 so we test the margin impact ordering
             _spy = AddEquity("SPY", Resolution.Minute, Market.USA, false, 1).Symbol;
             _ibm = AddEquity("IBM", Resolution.Minute, Market.USA, false, 1).Symbol;
+
+            // Order margin value has to have a minimum of 0.5% of Portfolio value, allows filtering out small trades and reduce fees.
+            // Commented so regression algorithm is more sensitive
+            //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
         }
 
         /// <summary>
@@ -62,60 +66,52 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate if the open source Lean repository has the required data to run this algorithm.
         /// </summary>
-        public bool CanRunLocally { get; } = true;
+        public virtual bool CanRunLocally { get; } = true;
 
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+
+        /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public virtual long DataPoints => 7842;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
-        public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
+        public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "8"},
-            {"Average Win", "0%"},
+            {"Total Trades", "11"},
+            {"Average Win", "0.00%"},
             {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "364.549%"},
+            {"Compounding Annual Return", "353.938%"},
             {"Drawdown", "2.300%"},
-            {"Expectancy", "-1"},
-            {"Net Profit", "1.983%"},
-            {"Sharpe Ratio", "12.312"},
-            {"Probabilistic Sharpe Ratio", "66.044%"},
-            {"Loss Rate", "100%"},
-            {"Win Rate", "0%"},
-            {"Profit-Loss Ratio", "0"},
-            {"Alpha", "1.051"},
-            {"Beta", "0.986"},
-            {"Annual Standard Deviation", "0.244"},
-            {"Annual Variance", "0.06"},
-            {"Information Ratio", "9.558"},
-            {"Tracking Error", "0.107"},
-            {"Treynor Ratio", "3.049"},
-            {"Total Fees", "$11.74"},
-            {"Estimated Strategy Capacity", "$4100000.00"},
+            {"Expectancy", "-0.749"},
+            {"Net Profit", "1.953%"},
+            {"Sharpe Ratio", "11.787"},
+            {"Probabilistic Sharpe Ratio", "65.582%"},
+            {"Loss Rate", "75%"},
+            {"Win Rate", "25%"},
+            {"Profit-Loss Ratio", "0.00"},
+            {"Alpha", "0.96"},
+            {"Beta", "0.993"},
+            {"Annual Standard Deviation", "0.248"},
+            {"Annual Variance", "0.062"},
+            {"Information Ratio", "8.324"},
+            {"Tracking Error", "0.114"},
+            {"Treynor Ratio", "2.95"},
+            {"Total Fees", "$15.02"},
+            {"Estimated Strategy Capacity", "$2600000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.549"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "18.766"},
-            {"Return Over Maximum Drawdown", "126.121"},
-            {"Portfolio Turnover", "0.551"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "f22df94cd954bb786419787dc8376d3d"}
+            {"Portfolio Turnover", "44.15%"},
+            {"OrderListHash", "3865de00b5145f8939b1cde9dc0c2d8f"}
         };
     }
 }

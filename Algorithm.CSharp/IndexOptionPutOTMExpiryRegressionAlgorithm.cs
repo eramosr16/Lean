@@ -167,6 +167,16 @@ namespace QuantConnect.Algorithm.CSharp
         public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
+        /// Data Points count of all timeslices of algorithm
+        /// </summary>
+        public long DataPoints => 19699;
+
+        /// <summary>
+        /// Data Points count of the algorithm history
+        /// </summary>
+        public int AlgorithmHistoryDataPoints => 0;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
@@ -174,45 +184,27 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.37%"},
-            {"Compounding Annual Return", "-5.132%"},
+            {"Compounding Annual Return", "-5.135%"},
             {"Drawdown", "0.400%"},
             {"Expectancy", "-1"},
             {"Net Profit", "-0.370%"},
-            {"Sharpe Ratio", "-3.622"},
-            {"Probabilistic Sharpe Ratio", "0.270%"},
+            {"Sharpe Ratio", "-3.299"},
+            {"Probabilistic Sharpe Ratio", "0.175%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.046"},
+            {"Alpha", "-0.037"},
             {"Beta", "0.007"},
-            {"Annual Standard Deviation", "0.013"},
+            {"Annual Standard Deviation", "0.011"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-0.662"},
-            {"Tracking Error", "0.154"},
-            {"Treynor Ratio", "-6.383"},
+            {"Information Ratio", "-0.595"},
+            {"Tracking Error", "0.137"},
+            {"Treynor Ratio", "-5.583"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "SPX 31KC0UJFONTBI|SPX 31"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.628"},
-            {"Return Over Maximum Drawdown", "-14.021"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "6faffe52c64c2148458af1d2deb68a6f"}
+            {"Portfolio Turnover", "0.01%"},
+            {"OrderListHash", "74e330b821d4c64e3a3f7fb6391080ca"}
         };
     }
 }

@@ -1,4 +1,4 @@
-﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,21 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Indicators")
-
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Indicators import *
-from QuantConnect.Data import *
-from QuantConnect.Data.Market import *
-from QuantConnect.Data.Custom import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Python import *
+from AlgorithmImports import *
+from QuantConnect.Algorithm.CSharp import *
 
 ### <summary>
 ### Basic template algorithm simply initializes the date range and cash. This is a skeleton
@@ -41,7 +28,7 @@ class IndicatorSuiteAlgorithm(QCAlgorithm):
         '''Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.'''
 
         self.symbol = "SPY"
-        self.customSymbol = "WIKI/FB"
+        self.customSymbol = "IBM"
         self.price = None
 
         self.SetStartDate(2013, 1, 1)  #Set Start Date
@@ -50,7 +37,7 @@ class IndicatorSuiteAlgorithm(QCAlgorithm):
         # Find more symbols here: http://quantconnect.com/data
 
         self.AddEquity(self.symbol, Resolution.Daily)
-        self.AddData(Quandl, self.customSymbol, Resolution.Daily)
+        self.AddData(CustomData, self.customSymbol, Resolution.Daily)
 
         # Set up default Indicators, these indicators are defined on the Value property of incoming data (except ATR and AROON which use the full TradeBar object)
         self.indicators = {
@@ -102,10 +89,10 @@ class IndicatorSuiteAlgorithm(QCAlgorithm):
         # these are indicators that require multiple inputs. the most common of which is a ratio.
         # suppose we seek the ratio of BTC to SPY, we could write the following:
         spyClose = Identity(self.symbol)
-        fbClose = Identity(self.customSymbol)
+        ibmClose = Identity(self.customSymbol)
 
-        # this will create a new indicator whose value is FB/SPY
-        self.ratio = IndicatorExtensions.Over(fbClose, spyClose)
+        # this will create a new indicator whose value is IBM/SPY
+        self.ratio = IndicatorExtensions.Over(ibmClose, spyClose)
 
         # we can also easily plot our indicators each time they update using th PlotIndicator function
         self.PlotIndicator("Ratio", self.ratio)

@@ -15,15 +15,14 @@
 */
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using NUnit.Framework;
 using QuantConnect.Data;
-using QuantConnect.Data.Auxiliary;
+using System.Collections;
 using QuantConnect.Data.Market;
-using QuantConnect.Lean.Engine.DataFeeds;
-using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
+using System.Collections.Generic;
 using Tick = QuantConnect.Data.Market.Tick;
+using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
+using System.Linq;
 
 namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 {
@@ -31,22 +30,12 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
     public class PriceScaleFactorEnumeratorTests
     {
         private SubscriptionDataConfig _config;
-        private FactorFile _factorFile;
         private RawDataEnumerator _rawDataEnumerator;
 
         [SetUp]
         public void Setup()
         {
-            _config = new SubscriptionDataConfig(typeof(TradeBar),
-                Symbols.SPY,
-                Resolution.Daily,
-                TimeZones.NewYork,
-                TimeZones.NewYork,
-                true,
-                true,
-                false);
-
-            _factorFile = TestGlobals.FactorFileProvider.Get(_config.Symbol);
+            _config = GetConfig(Symbols.SPY, Resolution.Daily);
             _rawDataEnumerator = new RawDataEnumerator();
         }
 
@@ -56,7 +45,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             var enumerator = new PriceScaleFactorEnumerator(
                 _rawDataEnumerator,
                 _config,
-                new Lazy<FactorFile>(() => _factorFile));
+                TestGlobals.FactorFileProvider);
             _rawDataEnumerator.CurrentValue = new TradeBar(
                 new DateTime(2018, 1, 1),
                 _config.Symbol,
@@ -86,7 +75,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             var enumerator = new PriceScaleFactorEnumerator(
                 _rawDataEnumerator,
                 _config,
-                new Lazy<FactorFile>(() => _factorFile));
+                TestGlobals.FactorFileProvider);
             _rawDataEnumerator.CurrentValue = new QuoteBar(
                 new DateTime(2018, 1, 1),
                 _config.Symbol,
@@ -126,7 +115,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             var enumerator = new PriceScaleFactorEnumerator(
                 _rawDataEnumerator,
                 _config,
-                new Lazy<FactorFile>(() => _factorFile));
+                TestGlobals.FactorFileProvider);
             _rawDataEnumerator.CurrentValue = new Tick(
                 new DateTime(2018, 1, 1),
                 _config.Symbol,
@@ -171,7 +160,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             var enumerator = new PriceScaleFactorEnumerator(
                 _rawDataEnumerator,
                 _config,
-                new Lazy<FactorFile>(() => _factorFile));
+                TestGlobals.FactorFileProvider);
             _rawDataEnumerator.CurrentValue = new Tick(
                 new DateTime(2018, 1, 1),
                 _config.Symbol,
@@ -191,7 +180,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             var enumerator = new PriceScaleFactorEnumerator(
                 _rawDataEnumerator,
                 _config,
-                new Lazy<FactorFile>(() => _factorFile));
+                TestGlobals.FactorFileProvider);
             _rawDataEnumerator.CurrentValue = null;
             Assert.IsTrue(enumerator.MoveNext());
             Assert.IsNull(enumerator.Current);
@@ -209,7 +198,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
             var enumerator = new PriceScaleFactorEnumerator(
                 _rawDataEnumerator,
                 _config,
-                new Lazy<FactorFile>(() => _factorFile));
+                TestGlobals.FactorFileProvider);
 
             // Before factor file update date (2018, 3, 15)
             _rawDataEnumerator.CurrentValue = new Tick(
@@ -220,7 +209,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
                 10);
 
             Assert.IsTrue(enumerator.MoveNext());
-            var expectedFactor = _factorFile.GetPriceScaleFactor(dateBeforeUpadate);
+            var factorFile = TestGlobals.FactorFileProvider.Get(_config.Symbol);
+            var expectedFactor = factorFile.GetPriceFactor(dateBeforeUpadate, DataNormalizationMode.Adjusted);
             var tick = enumerator.Current as Tick;
             Assert.AreEqual(expectedFactor, _config.PriceScaleFactor);
             Assert.AreEqual(10 * expectedFactor, tick.Price);
@@ -234,7 +224,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
                 10,
                 10);
             Assert.IsTrue(enumerator.MoveNext());
-            var expectedFactor2 = _factorFile.GetPriceScaleFactor(dateAtUpadate);
+            var expectedFactor2 = factorFile.GetPriceFactor(dateAtUpadate, DataNormalizationMode.Adjusted);
             var tick2 = enumerator.Current as Tick;
             Assert.AreEqual(expectedFactor2, _config.PriceScaleFactor);
             Assert.AreEqual(10 * expectedFactor2, tick2.Price);
@@ -248,13 +238,98 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
                 10,
                 10);
             Assert.IsTrue(enumerator.MoveNext());
-            var expectedFactor3 = _factorFile.GetPriceScaleFactor(dateAfterUpadate);
+            var expectedFactor3 = factorFile.GetPriceFactor(dateAfterUpadate, DataNormalizationMode.Adjusted);
             var tick3 = enumerator.Current as Tick;
             Assert.AreEqual(expectedFactor3, _config.PriceScaleFactor);
             Assert.AreEqual(10 * expectedFactor3, tick3.Price);
             Assert.AreEqual(10 * expectedFactor3, tick3.Value);
 
             enumerator.Dispose();
+        }
+
+        [Test]
+        public void PricesAreProperlyAdjustedForLookAheadScaledRawDataNormalizationMode()
+        {
+            var factorFileEntries = new[]
+            {
+                new DateTime(2005, 02, 25),
+                new DateTime(2012, 08, 08),
+                new DateTime(2013, 05, 08),
+                new DateTime(2014, 08, 06),
+                new DateTime(2015, 08, 05)
+            };
+            var endDate = factorFileEntries.Last().AddDays(1);
+
+            var config = GetConfig(Symbols.AAPL, Resolution.Daily);
+            config.DataNormalizationMode = DataNormalizationMode.ScaledRaw;
+
+            using var enumerator = new PriceScaleFactorEnumerator(
+                _rawDataEnumerator,
+                config,
+                TestGlobals.FactorFileProvider,
+                endDate: endDate);
+
+            var price = 100m;
+            var factorFile = TestGlobals.FactorFileProvider.Get(config.Symbol);
+            var endDateFactor = factorFile.GetPriceFactor(endDate, config.DataNormalizationMode);
+
+            var performAssertions = (DateTime date) =>
+            {
+                var expectedFactor = factorFile.GetPriceFactor(date, config.DataNormalizationMode);
+                Assert.AreEqual(expectedFactor / endDateFactor, config.PriceScaleFactor);
+
+                var tradeBar = enumerator.Current as TradeBar;
+                var expectedValue = price * config.PriceScaleFactor;
+                Assert.AreEqual(expectedValue, tradeBar.Price);
+                Assert.AreEqual(expectedValue, tradeBar.Open);
+                Assert.AreEqual(expectedValue, tradeBar.Close);
+                Assert.AreEqual(expectedValue, tradeBar.High);
+                Assert.AreEqual(expectedValue, tradeBar.Low);
+                Assert.AreEqual(expectedValue, tradeBar.Value);
+
+                return expectedFactor;
+            };
+
+            foreach (var factorFileDate in factorFileEntries)
+            {
+                // before split
+                var dateBeforeSplit = factorFileDate.AddDays(-1);
+                _rawDataEnumerator.CurrentValue = new TradeBar(dateBeforeSplit, config.Symbol, price, price, price, price, price);
+                Assert.IsTrue(enumerator.MoveNext());
+                var expectedFactorBeforeSplit = performAssertions(dateBeforeSplit);
+
+                // at split
+                _rawDataEnumerator.CurrentValue = new TradeBar(factorFileDate, config.Symbol, price, price, price, price, price);
+                Assert.IsTrue(enumerator.MoveNext());
+                var expectedFactorAtSplit = performAssertions(factorFileDate);
+                Assert.AreEqual(expectedFactorBeforeSplit, expectedFactorAtSplit);
+
+                // after split
+                var dateAfterSplit = factorFileDate.AddDays(1);
+                _rawDataEnumerator.CurrentValue = new TradeBar(dateAfterSplit, config.Symbol, price, price, price, price, price);
+                Assert.IsTrue(enumerator.MoveNext());
+                var expectedFactorAfterSplit = performAssertions(dateAfterSplit);
+                Assert.AreNotEqual(expectedFactorAtSplit, expectedFactorAfterSplit);
+
+                if (factorFileDate == factorFileEntries.Last())
+                {
+                    // prices should have been adjusted to the end date prices, instead of the latest factor file entry (today),
+                    // So the last factor should be 1.
+                    Assert.AreEqual(1m, config.PriceScaleFactor);
+                }
+            }
+        }
+
+        private static SubscriptionDataConfig GetConfig(Symbol symbol, Resolution resolution)
+        {
+            return new SubscriptionDataConfig(typeof(TradeBar),
+                symbol,
+                resolution,
+                TimeZones.NewYork,
+                TimeZones.NewYork,
+                true,
+                true,
+                false);
         }
 
         private class RawDataEnumerator : IEnumerator<BaseData>

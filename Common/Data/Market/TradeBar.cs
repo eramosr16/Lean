@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,12 +14,12 @@
 */
 
 using System;
-using System.Globalization;
+using ProtoBuf;
 using System.IO;
 using System.Threading;
-using ProtoBuf;
-using QuantConnect.Logging;
 using QuantConnect.Util;
+using System.Globalization;
+using QuantConnect.Logging;
 using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Data.Market
@@ -132,7 +132,7 @@ namespace QuantConnect.Data.Market
         {
             Symbol = Symbol.Empty;
             DataType = MarketDataType.TradeBar;
-            Period = TimeSpan.FromMinutes(1);
+            Period = QuantConnect.Time.OneMinute;
         }
 
         /// <summary>
@@ -176,7 +176,7 @@ namespace QuantConnect.Data.Market
             Low = low;
             Close = close;
             Volume = volume;
-            Period = period ?? TimeSpan.FromMinutes(1);
+            Period = period ?? QuantConnect.Time.OneMinute;
             DataType = MarketDataType.TradeBar;
             _initialized = 1;
         }
@@ -215,6 +215,7 @@ namespace QuantConnect.Data.Market
                         return ParseForex(config, line, date);
 
                     case SecurityType.Crypto:
+                    case SecurityType.CryptoFuture:
                         return ParseCrypto(config, line, date);
 
                     case SecurityType.Cfd:
@@ -277,6 +278,7 @@ namespace QuantConnect.Data.Market
                         return ParseForex(config, stream, date);
 
                     case SecurityType.Crypto:
+                    case SecurityType.CryptoFuture:
                         return ParseCrypto(config, stream, date);
 
                     case SecurityType.Index:
@@ -321,6 +323,7 @@ namespace QuantConnect.Data.Market
 
                 case SecurityType.Forex:
                 case SecurityType.Crypto:
+                case SecurityType.CryptoFuture:
                     return ParseForex(config, line, baseDate);
 
                 case SecurityType.Cfd:
@@ -445,48 +448,9 @@ namespace QuantConnect.Data.Market
                 Symbol = config.Symbol,
                 Period = config.Increment
             };
-            ParseForex(tradeBar, config, line, date);
+            LineParseNoScale(config, line, date, tradeBar, hasVolume: false);
 
             return tradeBar;
-        }
-
-        private static void ParseForex(TradeBar tradeBar, SubscriptionDataConfig config, StreamReader streamReader, DateTime date)
-        {
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = streamReader.GetDateTime().ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                //Fast decimal conversion
-                tradeBar.Time = date.Date.AddMilliseconds(streamReader.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = streamReader.GetDecimal();
-            tradeBar.High = streamReader.GetDecimal();
-            tradeBar.Low = streamReader.GetDecimal();
-            tradeBar.Close = streamReader.GetDecimal();
-        }
-
-        private static void ParseForex(TradeBar tradeBar, SubscriptionDataConfig config, string line, DateTime date)
-        {
-            var csv = line.ToCsv(5);
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = DateTime.ParseExact(csv[0], DateFormat.TwelveCharacter, CultureInfo.InvariantCulture).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                //Fast decimal conversion
-                tradeBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = csv[1].ToDecimal();
-            tradeBar.High = csv[2].ToDecimal();
-            tradeBar.Low = csv[3].ToDecimal();
-            tradeBar.Close = csv[4].ToDecimal();
         }
 
         /// <summary>
@@ -504,7 +468,7 @@ namespace QuantConnect.Data.Market
                 Symbol = config.Symbol,
                 Period = config.Increment
             };
-            ParseCrypto(tradeBar, config, line, date);
+            LineParseNoScale(config, line, date, tradeBar);
 
             return tradeBar;
         }
@@ -517,14 +481,7 @@ namespace QuantConnect.Data.Market
         /// <param name="date">The base data used to compute the time of the bar since the line specifies a milliseconds since midnight</param>
         public static TradeBar ParseCrypto(SubscriptionDataConfig config, string line, DateTime date)
         {
-            var tradeBar = new TradeBar
-            {
-                Symbol = config.Symbol,
-                Period = config.Increment
-            };
-            ParseCrypto(tradeBar, config, line, date);
-
-            return tradeBar;
+            return LineParseNoScale(config, line, date);
         }
 
         /// <summary>
@@ -535,55 +492,7 @@ namespace QuantConnect.Data.Market
         /// <param name="date">The base data used to compute the time of the bar since the line specifies a milliseconds since midnight</param>
         public static TradeBar ParseCrypto(SubscriptionDataConfig config, StreamReader streamReader, DateTime date)
         {
-            var tradeBar = new TradeBar
-            {
-                Symbol = config.Symbol,
-                Period = config.Increment
-            };
-            ParseCrypto(tradeBar, config, streamReader, date);
-
-            return tradeBar;
-        }
-
-        private static void ParseCrypto(TradeBar tradeBar, SubscriptionDataConfig config, string line, DateTime date)
-        {
-            var csv = line.ToCsv(6);
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = DateTime.ParseExact(csv[0], DateFormat.TwelveCharacter, CultureInfo.InvariantCulture).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                //Fast decimal conversion
-                tradeBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = csv[1].ToDecimal();
-            tradeBar.High = csv[2].ToDecimal();
-            tradeBar.Low = csv[3].ToDecimal();
-            tradeBar.Close = csv[4].ToDecimal();
-            tradeBar.Volume = csv[5].ToDecimal();
-        }
-
-        private static void ParseCrypto(TradeBar tradeBar, SubscriptionDataConfig config, StreamReader streamReader, DateTime date)
-        {
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = streamReader.GetDateTime().ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                //Fast decimal conversion
-                tradeBar.Time = date.Date.AddMilliseconds(streamReader.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = streamReader.GetDecimal();
-            tradeBar.High = streamReader.GetDecimal();
-            tradeBar.Low = streamReader.GetDecimal();
-            tradeBar.Close = streamReader.GetDecimal();
-            tradeBar.Volume = streamReader.GetDecimal();
+            return StreamParseNoScale(config, streamReader, date);
         }
 
         /// <summary>
@@ -595,13 +504,7 @@ namespace QuantConnect.Data.Market
         /// <returns></returns>
         public static TradeBar ParseForex(SubscriptionDataConfig config, string line, DateTime date)
         {
-            var tradeBar = new TradeBar
-            {
-                Symbol = config.Symbol,
-                Period = config.Increment
-            };
-            ParseForex(tradeBar, config, line, date);
-            return tradeBar;
+            return LineParseNoScale(config, line, date, hasVolume: false);
         }
 
         /// <summary>
@@ -613,13 +516,7 @@ namespace QuantConnect.Data.Market
         /// <returns></returns>
         public static TradeBar ParseForex(SubscriptionDataConfig config, StreamReader streamReader, DateTime date)
         {
-            var tradeBar = new TradeBar
-            {
-                Symbol = config.Symbol,
-                Period = config.Increment
-            };
-            ParseForex(tradeBar, config, streamReader, date);
-            return tradeBar;
+            return StreamParseNoScale(config, streamReader, date, hasVolume: false);
         }
 
         /// <summary>
@@ -756,23 +653,7 @@ namespace QuantConnect.Data.Market
                 Period = config.Increment,
                 Symbol = config.Symbol
             };
-
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = streamReader.GetDateTime().ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                // Using custom "ToDecimal" conversion for speed on high resolution data.
-                tradeBar.Time = date.Date.AddMilliseconds(streamReader.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = streamReader.GetDecimal();
-            tradeBar.High = streamReader.GetDecimal();
-            tradeBar.Low = streamReader.GetDecimal();
-            tradeBar.Close = streamReader.GetDecimal();
-            tradeBar.Volume = streamReader.GetDecimal();
+            StreamParseNoScale(config, streamReader, date, tradeBar);
 
             return tradeBar;
         }
@@ -793,8 +674,31 @@ namespace QuantConnect.Data.Market
                 Period = config.Increment,
                 Symbol = config.Symbol
             };
+            LineParseNoScale(config, line, date, tradeBar);
 
-            var csv = line.ToCsv(6);
+            return tradeBar;
+        }
+
+        /// <summary>
+        /// Parse an index bar from the LEAN disk format
+        /// </summary>
+        public static TradeBar ParseIndex(SubscriptionDataConfig config, string line, DateTime date)
+        {
+            return LineParseNoScale(config, line, date);
+        }
+
+        /// <summary>
+        /// Parse an index bar from the LEAN disk format
+        /// </summary>
+        private static TradeBar LineParseNoScale(SubscriptionDataConfig config, string line, DateTime date, TradeBar bar = null, bool hasVolume = true)
+        {
+            var tradeBar = bar ?? new TradeBar
+            {
+                Period = config.Increment,
+                Symbol = config.Symbol
+            };
+
+            var csv = line.ToCsv(hasVolume ? 6 : 5);
             if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
             {
                 // hourly and daily have different time format, and can use slow, robust c# parser.
@@ -805,12 +709,14 @@ namespace QuantConnect.Data.Market
                 // Using custom "ToDecimal" conversion for speed on high resolution data.
                 tradeBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
             }
-
             tradeBar.Open = csv[1].ToDecimal();
             tradeBar.High = csv[2].ToDecimal();
             tradeBar.Low = csv[3].ToDecimal();
             tradeBar.Close = csv[4].ToDecimal();
-            tradeBar.Volume = csv[5].ToDecimal();
+            if (hasVolume)
+            {
+                tradeBar.Volume = csv[5].ToDecimal();
+            }
 
             return tradeBar;
         }
@@ -818,21 +724,32 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// Parse an index bar from the LEAN disk format
         /// </summary>
-        public static TradeBar ParseIndex(SubscriptionDataConfig config, string line, DateTime date)
+        private static TradeBar StreamParseNoScale(SubscriptionDataConfig config, StreamReader streamReader, DateTime date, TradeBar bar = null, bool hasVolume = true)
         {
-            var tradeBar = new TradeBar
+            var tradeBar = bar ?? new TradeBar
             {
                 Period = config.Increment,
                 Symbol = config.Symbol
             };
 
-            var csv = line.ToCsv(6);
-            tradeBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            tradeBar.Open = csv[1].ToDecimal();
-            tradeBar.High = csv[2].ToDecimal();
-            tradeBar.Low = csv[3].ToDecimal();
-            tradeBar.Close = csv[4].ToDecimal();
-            tradeBar.Volume = csv[5].ToDecimal();
+            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
+            {
+                // hourly and daily have different time format, and can use slow, robust c# parser.
+                tradeBar.Time = streamReader.GetDateTime().ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
+            }
+            else
+            {
+                // Using custom "ToDecimal" conversion for speed on high resolution data.
+                tradeBar.Time = date.Date.AddMilliseconds(streamReader.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
+            }
+            tradeBar.Open = streamReader.GetDecimal();
+            tradeBar.High = streamReader.GetDecimal();
+            tradeBar.Low = streamReader.GetDecimal();
+            tradeBar.Close = streamReader.GetDecimal();
+            if (hasVolume)
+            {
+                tradeBar.Volume = streamReader.GetDecimal();
+            }
 
             return tradeBar;
         }
@@ -842,20 +759,7 @@ namespace QuantConnect.Data.Market
         /// </summary>
         public static TradeBar ParseIndex(SubscriptionDataConfig config, StreamReader streamReader, DateTime date)
         {
-            var tradeBar = new TradeBar
-            {
-                Period = config.Increment,
-                Symbol = config.Symbol
-            };
-
-            tradeBar.Time = date.Date.AddMilliseconds(streamReader.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            tradeBar.Open = streamReader.GetDecimal();
-            tradeBar.High = streamReader.GetDecimal();
-            tradeBar.Low = streamReader.GetDecimal();
-            tradeBar.Close = streamReader.GetDecimal();
-            tradeBar.Volume = streamReader.GetDecimal();
-
-            return tradeBar;
+            return StreamParseNoScale(config, streamReader, date);
         }
 
         /// <summary>

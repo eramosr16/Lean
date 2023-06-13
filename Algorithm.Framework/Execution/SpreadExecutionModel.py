@@ -11,22 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from clr import AddReference
-AddReference("System")
-AddReference("QuantConnect.Common")
-AddReference("QuantConnect.Algorithm")
-AddReference("QuantConnect.Algorithm.Framework")
-
-from System import *
-from QuantConnect import *
-from QuantConnect.Orders import *
-from QuantConnect.Algorithm import *
-from QuantConnect.Algorithm.Framework import *
-from QuantConnect.Algorithm.Framework.Execution import *
-from QuantConnect.Algorithm.Framework.Portfolio import *
+from AlgorithmImports import *
 
 class SpreadExecutionModel(ExecutionModel):
-    '''Execution model that submits orders while the current pread is tight.
+    '''Execution model that submits orders while the current spread is tight.
        Note this execution model will not work using Resolution.Daily since Exchange.ExchangeOpen will be false, suggested resolution is Minute
     '''
 
@@ -47,7 +35,7 @@ class SpreadExecutionModel(ExecutionModel):
         self.targetsCollection.AddRange(targets)
 
         # for performance we check count value, OrderByMarginImpact and ClearFulfilled are expensive to call
-        if self.targetsCollection.Count > 0:
+        if not self.targetsCollection.IsEmpty:
             for target in self.targetsCollection.OrderByMarginImpact(algorithm):
                 symbol = target.Symbol
                 
