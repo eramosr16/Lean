@@ -83,7 +83,7 @@ namespace QuantConnect.Securities.Future
                 new SecurityPortfolioModel(),
                 new FutureFillModel(),
                 new InteractiveBrokersFeeModel(),
-                new ConstantSlippageModel(0),
+                NullSlippageModel.Instance,
                 new FutureSettlementModel(),
                 Securities.VolatilityModel.Null,
                 null,
@@ -130,7 +130,7 @@ namespace QuantConnect.Securities.Future
                 new SecurityPortfolioModel(),
                 new FutureFillModel(),
                 new InteractiveBrokersFeeModel(),
-                new ConstantSlippageModel(0),
+                NullSlippageModel.Instance,
                 new FutureSettlementModel(),
                 Securities.VolatilityModel.Null,
                 null,
@@ -220,12 +220,12 @@ namespace QuantConnect.Securities.Future
         /// using the specified expiration range values
         /// </summary>
         /// <param name="minExpiry">The minimum time until expiry to include, for example, TimeSpan.FromDays(10)
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiry">The maximum time until expiry to include, for example, TimeSpan.FromDays(10)
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiry">The maximum time until expiry to include, for example, TimeSpan.FromDays(10)
+        /// would exclude contracts expiring in more than 10 days</param>
         public void SetFilter(TimeSpan minExpiry, TimeSpan maxExpiry)
         {
-            SetFilter(universe => universe.Expiration(minExpiry, maxExpiry));
+            SetFilterImp(universe => universe.Expiration(minExpiry, maxExpiry));
         }
 
         /// <summary>
@@ -233,12 +233,12 @@ namespace QuantConnect.Securities.Future
         /// using the specified expiration range values
         /// </summary>
         /// <param name="minExpiryDays">The minimum time, expressed in days, until expiry to include, for example, 10
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiryDays">The maximum time, expressed in days, until expiry to include, for example, 10
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiryDays">The maximum time, expressed in days, until expiry to include, for example, 10
+        /// would exclude contracts expiring in more than 10 days</param>
         public void SetFilter(int minExpiryDays, int maxExpiryDays)
         {
-            SetFilter(universe => universe.Expiration(minExpiryDays, maxExpiryDays));
+            SetFilterImp(universe => universe.Expiration(minExpiryDays, maxExpiryDays));
         }
 
         /// <summary>
@@ -247,14 +247,8 @@ namespace QuantConnect.Securities.Future
         /// <param name="universeFunc">new universe selection function</param>
         public void SetFilter(Func<FutureFilterUniverse, FutureFilterUniverse> universeFunc)
         {
-            Func<IDerivativeSecurityFilterUniverse, IDerivativeSecurityFilterUniverse> func = universe =>
-            {
-                var futureUniverse = universe as FutureFilterUniverse;
-                var result = universeFunc(futureUniverse);
-                return result.ApplyTypesFilter();
-            };
-
-            ContractFilter = new FuncSecurityDerivativeFilter(func);
+            SetFilterImp(universeFunc);
+            ContractFilter.Asynchronous = false;
         }
 
         /// <summary>
@@ -265,6 +259,17 @@ namespace QuantConnect.Securities.Future
         {
             var pyUniverseFunc = PythonUtil.ToFunc<FutureFilterUniverse, FutureFilterUniverse>(universeFunc);
             SetFilter(pyUniverseFunc);
+        }
+
+        private void SetFilterImp(Func<FutureFilterUniverse, FutureFilterUniverse> universeFunc)
+        {
+            Func<IDerivativeSecurityFilterUniverse, IDerivativeSecurityFilterUniverse> func = universe =>
+            {
+                var futureUniverse = universe as FutureFilterUniverse;
+                var result = universeFunc(futureUniverse);
+                return result.ApplyTypesFilter();
+            };
+            ContractFilter = new FuncSecurityDerivativeFilter(func);
         }
     }
 }

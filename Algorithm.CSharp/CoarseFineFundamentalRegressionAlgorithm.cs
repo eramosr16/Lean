@@ -106,7 +106,7 @@ namespace QuantConnect.Algorithm.CSharp
             // we want 50% allocation in each security in our universe
             foreach (var security in _changes.AddedSecurities)
             {
-                if (security.Fundamentals.EarningRatios.EquityPerShareGrowth.OneYear > 0.25m)
+                if (security.Fundamentals.EarningRatios.EquityPerShareGrowth.OneYear > 0.25)
                 {
                     SetHoldings(security.Symbol, 0.5m);
                     Debug("Purchased Stock: " + security.Symbol.Value);
@@ -159,7 +159,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 7239;
+        public long DataPoints => 7244;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -178,23 +178,24 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "1.400%"},
             {"Expectancy", "0"},
             {"Net Profit", "1.163%"},
-            {"Sharpe Ratio", "2.754"},
+            {"Sharpe Ratio", "2.666"},
+            {"Sortino Ratio", "19.179"},
             {"Probabilistic Sharpe Ratio", "64.748%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.277"},
+            {"Alpha", "0.272"},
             {"Beta", "0.436"},
             {"Annual Standard Deviation", "0.086"},
             {"Annual Variance", "0.007"},
             {"Information Ratio", "3.572"},
             {"Tracking Error", "0.092"},
-            {"Treynor Ratio", "0.54"},
+            {"Treynor Ratio", "0.523"},
             {"Total Fees", "$2.00"},
             {"Estimated Strategy Capacity", "$49000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
             {"Portfolio Turnover", "6.64%"},
-            {"OrderListHash", "159887a90516df8ba8e8d35b9c30b227"}
+            {"OrderListHash", "547783661a29f4cc71800be8f5ed4fc2"}
         };
     }
 }

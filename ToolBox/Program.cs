@@ -27,8 +27,6 @@ using QuantConnect.ToolBox.IVolatilityEquityConverter;
 using QuantConnect.ToolBox.KaikoDataConverter;
 using QuantConnect.ToolBox.KrakenDownloader;
 using QuantConnect.ToolBox.NseMarketDataConverter;
-using QuantConnect.ToolBox.Polygon;
-using QuantConnect.ToolBox.QuantQuoteConverter;
 using QuantConnect.ToolBox.RandomDataGenerator;
 using QuantConnect.ToolBox.YahooDownloader;
 using QuantConnect.Util;
@@ -63,7 +61,7 @@ namespace QuantConnect.ToolBox
                 = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(Config.Get("map-file-provider", "LocalDiskMapFileProvider"));
             var factorFileProvider
                 = Composer.Instance.GetExportedValueByTypeName<IFactorFileProvider>(Config.Get("factor-file-provider", "LocalDiskFactorFileProvider"));
-            
+
             mapFileProvider.Initialize(dataProvider);
             factorFileProvider.Initialize(mapFileProvider, dataProvider);
 
@@ -106,17 +104,6 @@ namespace QuantConnect.ToolBox
                     case "yahoodownloader":
                         YahooDownloaderProgram.YahooDownloader(tickers, resolution, fromDate, toDate);
                         break;
-                    case "pdl":
-                    case "polygondownloader":
-                        PolygonDownloaderProgram.PolygonDownloader(
-                            tickers,
-                            GetParameterOrExit(optionsObject, "security-type"),
-                            GetParameterOrExit(optionsObject, "market"),
-                            resolution,
-                            fromDate,
-                            toDate,
-                            apiKey);
-                        break;
 
                     case "avdl":
                     case "alphavantagedownloader":
@@ -134,7 +121,7 @@ namespace QuantConnect.ToolBox
                         break;
                 }
             }
-            else     
+            else
             {
                 switch (targetApp)
                 {
@@ -169,12 +156,6 @@ namespace QuantConnect.ToolBox
                         NseMarketDataConverterProgram.NseMarketDataConverter(GetParameterOrExit(optionsObject, "source-dir"),
                                                                              GetParameterOrExit(optionsObject, "destination-dir"));
                         break;
-                    case "qqc":
-                    case "quantquoteconverter":
-                        QuantQuoteConverterProgram.QuantQuoteConverter(GetParameterOrExit(optionsObject, "destination-dir"),
-                                                                       GetParameterOrExit(optionsObject, "source-dir"),
-                                                                       GetParameterOrExit(optionsObject, "resolution"));
-                        break;
                     case "cug":
                     case "coarseuniversegenerator":
                         CoarseUniverseGeneratorProgram.CoarseUniverseGenerator();
@@ -185,7 +166,7 @@ namespace QuantConnect.ToolBox
                         RandomDataGeneratorProgram.RandomDataGenerator(
                             GetParameterOrExit(optionsObject, "start"),
                             GetParameterOrExit(optionsObject, "end"),
-                            GetParameterOrExit(optionsObject, "symbol-count"),
+                            GetParameterOrDefault(optionsObject, "symbol-count", null),
                             GetParameterOrDefault(optionsObject, "market", null),
                             GetParameterOrDefault(optionsObject, "security-type", "Equity"),
                             GetParameterOrDefault(optionsObject, "resolution", "Minute"),

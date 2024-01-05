@@ -137,23 +137,24 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "0.200%"},
             {"Expectancy", "-1"},
             {"Net Profit", "-0.160%"},
-            {"Sharpe Ratio", "-3.15"},
+            {"Sharpe Ratio", "-3.642"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0.427%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.016"},
+            {"Alpha", "-0.018"},
             {"Beta", "-0.006"},
             {"Annual Standard Deviation", "0.005"},
             {"Annual Variance", "0"},
             {"Information Ratio", "-0.44"},
             {"Tracking Error", "0.139"},
-            {"Treynor Ratio", "2.697"},
+            {"Treynor Ratio", "3.118"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "SPX XL80P3HB5O6M|SPX 31"},
             {"Portfolio Turnover", "0.51%"},
-            {"OrderListHash", "ef50e9cfe22e6ad96ed1c68c81470b01"}
+            {"OrderListHash", "c7f4971e361ceac5a394dd86105fbc7c"}
         };
     }
 }

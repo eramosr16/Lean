@@ -23,6 +23,7 @@ using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine;
 using QuantConnect.Lean.Engine.DataFeeds;
@@ -53,7 +54,8 @@ namespace QuantConnect.Tests
             DateTime? endDate = null,
             string setupHandler = "RegressionSetupHandlerWrapper",
             decimal? initialCash = null,
-            string algorithmLocation = null)
+            string algorithmLocation = null,
+            bool returnLogs = false)
         {
             AlgorithmManager algorithmManager = null;
             var statistics = new Dictionary<string, string>();
@@ -74,6 +76,7 @@ namespace QuantConnect.Tests
             var logFile = $"./regression/{algorithm}.{language.ToLower()}.log";
             Directory.CreateDirectory(Path.GetDirectoryName(logFile));
             File.Delete(logFile);
+            var logs = new List<string>();
 
             var reducedDiskSize = TestContext.Parameters.Exists("reduced-disk-size") &&
                 bool.Parse(TestContext.Parameters["reduced-disk-size"]);
@@ -90,6 +93,7 @@ namespace QuantConnect.Tests
                 Config.Set("history-provider", "RegressionHistoryProviderWrapper");
                 Config.Set("api-handler", "QuantConnect.Api.Api");
                 Config.Set("result-handler", "QuantConnect.Lean.Engine.Results.RegressionResultHandler");
+                Config.Set("fundamental-data-provider", "QuantConnect.Tests.Common.Data.Fundamental.TestFundamentalDataProvider");
                 Config.Set("algorithm-language", language.ToString());
                 if (string.IsNullOrEmpty(algorithmLocation))
                 {
@@ -107,18 +111,19 @@ namespace QuantConnect.Tests
                 var initialLogHandler = Log.LogHandler;
                 var initialDebugEnabled = Log.DebuggingEnabled;
 
-                ILogHandler[] newLogHandlers;
+                var newLogHandlers = new List<ILogHandler>() { MaintainLogHandlerAttribute.LogHandler };
                 // Use our current test LogHandler and a FileLogHandler
-                if (reducedDiskSize)
+                if (!reducedDiskSize)
                 {
-                    newLogHandlers = new [] { MaintainLogHandlerAttribute.LogHandler };
+                    newLogHandlers.Add(new FileLogHandler(logFile, false));
                 }
-                else
+                if (returnLogs)
                 {
-                    newLogHandlers = new [] { MaintainLogHandlerAttribute.LogHandler, new FileLogHandler(logFile, false) };
+                    var storeLog = (string logMessage) => logs.Add(logMessage);
+                    newLogHandlers.Add(new FunctionalLogHandler(storeLog, storeLog, storeLog));
                 }
 
-                using (Log.LogHandler = new CompositeLogHandler(newLogHandlers))
+                using (Log.LogHandler = new CompositeLogHandler(newLogHandlers.ToArray()))
                 using (var algorithmHandlers = LeanEngineAlgorithmHandlers.FromConfiguration(Composer.Instance))
                 using (var systemHandlers = LeanEngineSystemHandlers.FromConfiguration(Composer.Instance))
                 using (var workerThread  = new TestWorkerThread())
@@ -225,7 +230,7 @@ namespace QuantConnect.Tests
                 if (File.Exists(ordersLogFile)) File.Copy(ordersLogFile, passedOrderLogFile);
 
             }
-            return new AlgorithmRunnerResults(algorithm, language, algorithmManager, results);
+            return new AlgorithmRunnerResults(algorithm, language, algorithmManager, results, logs);
         }
 
         /// <summary>

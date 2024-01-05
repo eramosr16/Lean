@@ -324,6 +324,14 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Determines whether the symbol has a canonical representation
+        /// </summary>
+        public bool HasCanonical()
+        {
+            return !IsCanonical() && (SecurityType.IsOption() || SecurityType == SecurityType.Future);
+        }
+
+        /// <summary>
         /// Determines if the specified <paramref name="symbol"/> is an underlying of this symbol instance
         /// </summary>
         /// <param name="symbol">The underlying to check for</param>
@@ -402,6 +410,10 @@ namespace QuantConnect
         /// </summary>
         public string ISIN { get { return _securityDefinitionSymbolResolver.Value.ISIN(this); } }
 
+        /// <summary>
+        /// The Central Index Key number (CIK) corresponding to this <see cref="Symbol"/>
+        /// </summary>
+        public int? CIK { get { return _securityDefinitionSymbolResolver.Value.CIK(this); } }
 
         #endregion
 

@@ -79,7 +79,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 2973376;
+        public override long DataPoints => 2940643;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -94,27 +94,28 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.07%"},
-            {"Compounding Annual Return", "10.520%"},
+            {"Compounding Annual Return", "10.388%"},
             {"Drawdown", "1.400%"},
             {"Expectancy", "-1"},
-            {"Net Profit", "0.210%"},
-            {"Sharpe Ratio", "6.232"},
+            {"Net Profit", "0.208%"},
+            {"Sharpe Ratio", "5.427"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "95.221%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.078"},
+            {"Alpha", "0.067"},
             {"Beta", "-0.023"},
-            {"Annual Standard Deviation", "0.013"},
+            {"Annual Standard Deviation", "0.012"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "1.1"},
+            {"Information Ratio", "1.089"},
             {"Tracking Error", "0.088"},
-            {"Treynor Ratio", "-3.423"},
-            {"Total Fees", "$3.50"},
+            {"Treynor Ratio", "-2.981"},
+            {"Total Fees", "$7.50"},
             {"Estimated Strategy Capacity", "$66000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZFMML01JA|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "1.01%"},
-            {"OrderListHash", "c92fcc558f089ca06719642a66abb525"}
+            {"OrderListHash", "aba013c99397fee83d331a7eee5cd843"}
         };
     }
 }

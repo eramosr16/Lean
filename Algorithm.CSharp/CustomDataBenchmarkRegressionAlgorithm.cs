@@ -87,23 +87,24 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "0.600%"},
             {"Expectancy", "0"},
             {"Net Profit", "0.282%"},
-            {"Sharpe Ratio", "9.471"},
+            {"Sharpe Ratio", "7.023"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.111"},
+            {"Alpha", "0.094"},
             {"Beta", "-0.016"},
             {"Annual Standard Deviation", "0.007"},
             {"Annual Variance", "0"},
             {"Information Ratio", "-6.047"},
             {"Tracking Error", "0.439"},
-            {"Treynor Ratio", "-4.22"},
+            {"Treynor Ratio", "-3.13"},
             {"Total Fees", "$2.21"},
             {"Estimated Strategy Capacity", "$180000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "24.86%"},
-            {"OrderListHash", "e5e9dbcce9cc65204d91b28c850c328b"}
+            {"OrderListHash", "543c39983f298dd868296de07e9b407d"}
         };
 
         public class ExampleCustomData : BaseData

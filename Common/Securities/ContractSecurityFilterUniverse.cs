@@ -15,11 +15,10 @@
 */
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
 using Python.Runtime;
-using QuantConnect.Data;
+using System.Collections;
+using System.Collections.Generic;
 
 namespace QuantConnect.Securities
 {
@@ -28,13 +27,8 @@ namespace QuantConnect.Securities
     /// Used by OptionFilterUniverse and FutureFilterUniverse
     /// </summary>
     public abstract class ContractSecurityFilterUniverse<T> : IDerivativeSecurityFilterUniverse
-    where T: ContractSecurityFilterUniverse<T>
+        where T: ContractSecurityFilterUniverse<T>
     {
-        /// <summary>
-        /// Mark this filter to be applied only on market open, even if it's dynamic
-        /// </summary>
-        private bool _onlyApplyOnMarketOpen;
-
         /// <summary>
         /// Defines listed contract types with Flags attribute
         /// </summary>
@@ -59,39 +53,15 @@ namespace QuantConnect.Securities
         protected ContractExpirationType Type = ContractExpirationType.Standard;
 
         /// <summary>
-        /// The underlying price data
+        /// The local exchange current time
         /// </summary>
-        protected BaseData UnderlyingInternal;
+        public DateTime LocalTime { get; private set; }
 
         /// <summary>
         /// All Symbols in this filter
         /// Marked internal for use by extensions
         /// </summary>
         internal IEnumerable<Symbol> AllSymbols;
-
-        /// <summary>
-        /// Mark this filter dynamic for regular reapplying
-        /// Marked internal for use by extensions
-        /// </summary>
-        internal bool IsDynamicInternal;
-
-        /// <summary>
-        /// True if the universe is dynamic and filter needs to be reapplied
-        /// </summary>
-        public bool IsDynamic => IsDynamicInternal && !_onlyApplyOnMarketOpen;
-
-        /// <summary>
-        /// The underlying price data
-        /// </summary>
-        public BaseData Underlying
-        {
-            get
-            {
-                // underlying value changes over time, so accessing it makes universe dynamic
-                IsDynamicInternal = true;
-                return UnderlyingInternal;
-            }
-        }
 
         /// <summary>
         /// Constructs ContractSecurityFilterUniverse
@@ -103,12 +73,11 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Constructs ContractSecurityFilterUniverse
         /// </summary>
-        protected ContractSecurityFilterUniverse(IEnumerable<Symbol> allSymbols, BaseData underlying)
+        protected ContractSecurityFilterUniverse(IEnumerable<Symbol> allSymbols, DateTime localTime)
         {
             AllSymbols = allSymbols;
-            UnderlyingInternal = underlying;
+            LocalTime = localTime;
             Type = ContractExpirationType.Standard;
-            IsDynamicInternal = false;
         }
 
         /// <summary>
@@ -161,14 +130,12 @@ namespace QuantConnect.Securities
         /// Refreshes this filter universe
         /// </summary>
         /// <param name="allSymbols">All the contract symbols for the Universe</param>
-        /// <param name="underlying">The current underlying last data point</param>
-        public virtual void Refresh(IEnumerable<Symbol> allSymbols, BaseData underlying)
+        /// <param name="localTime">The local exchange current time</param>
+        public virtual void Refresh(IEnumerable<Symbol> allSymbols, DateTime localTime)
         {
             AllSymbols = allSymbols;
-            UnderlyingInternal = underlying;
+            LocalTime = localTime;
             Type = ContractExpirationType.Standard;
-            IsDynamicInternal = false;
-            _onlyApplyOnMarketOpen = false;
         }
 
         /// <summary>
@@ -243,24 +210,24 @@ namespace QuantConnect.Securities
         /// Applies filter selecting options contracts based on a range of expiration dates relative to the current day
         /// </summary>
         /// <param name="minExpiry">The minimum time until expiry to include, for example, TimeSpan.FromDays(10)
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiry">The maximum time until expiry to include, for example, TimeSpan.FromDays(10)
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiry">The maximum time until expiry to include, for example, TimeSpan.FromDays(10)
+        /// would exclude contracts expiring in more than 10 days</param>
         /// <returns>Universe with filter applied</returns>
         public virtual T Expiration(TimeSpan minExpiry, TimeSpan maxExpiry)
         {
-            if (UnderlyingInternal == null)
+            if (LocalTime == default)
             {
                 return (T) this;
             }
 
             if (maxExpiry > Time.MaxTimeSpan) maxExpiry = Time.MaxTimeSpan;
 
-            var minExpiryToDate = UnderlyingInternal.Time.Date + minExpiry;
-            var maxExpiryToDate = UnderlyingInternal.Time.Date + maxExpiry;
+            var minExpiryToDate = LocalTime.Date + minExpiry;
+            var maxExpiryToDate = LocalTime.Date + maxExpiry;
 
             AllSymbols = AllSymbols
-                .Where(symbol => symbol.ID.Date >= minExpiryToDate && symbol.ID.Date <= maxExpiryToDate)
+                .Where(symbol => symbol.ID.Date.Date >= minExpiryToDate && symbol.ID.Date.Date <= maxExpiryToDate)
                 .ToList();
 
             return (T) this;
@@ -270,9 +237,9 @@ namespace QuantConnect.Securities
         /// Applies filter selecting contracts based on a range of expiration dates relative to the current day
         /// </summary>
         /// <param name="minExpiryDays">The minimum time, expressed in days, until expiry to include, for example, 10
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiryDays">The maximum time, expressed in days, until expiry to include, for example, 10
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiryDays">The maximum time, expressed in days, until expiry to include, for example, 10
+        /// would exclude contracts expiring in more than 10 days</param>
         /// <returns>Universe with filter applied</returns>
         public T Expiration(int minExpiryDays, int maxExpiryDays)
         {
@@ -320,9 +287,10 @@ namespace QuantConnect.Securities
         /// Instructs the engine to only filter contracts on the first time step of each market day.
         /// </summary>
         /// <returns>Universe with filter applied</returns>
+        /// <remarks>Deprecated since filters are always non-dynamic now</remarks>
+        [Obsolete("Deprecated as of 2023-12-13. Filters are always non-dynamic as of now, which means they will only bee applied daily.")]
         public T OnlyApplyFilterAtMarketOpen()
         {
-            _onlyApplyOnMarketOpen = true;
             return (T) this;
         }
 

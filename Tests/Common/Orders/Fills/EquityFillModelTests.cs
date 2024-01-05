@@ -28,6 +28,7 @@ using QuantConnect.Tests.Common.Data;
 using QuantConnect.Tests.Common.Securities;
 using QuantConnect.Securities.Equity;
 using System.Linq;
+using QuantConnect.Data.Auxiliary;
 
 namespace QuantConnect.Tests.Common.Orders.Fills
 {
@@ -35,7 +36,13 @@ namespace QuantConnect.Tests.Common.Orders.Fills
     public partial class EquityFillModelTests
     {
         private static readonly DateTime Noon = new DateTime(2014, 6, 24, 12, 0, 0);
-        private static readonly TimeKeeper TimeKeeper = new TimeKeeper(Noon.ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
+        private TimeKeeper TimeKeeper;
+
+        [SetUp]
+        public void Setup()
+        {
+            TimeKeeper = new TimeKeeper(Noon.ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
+        }
 
         [TestCase(11, 11,  11, "")]
         [TestCase(12, 11, 11,"")]
@@ -122,7 +129,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
             Assert.IsTrue(fill.Message.StartsWith(message, StringComparison.InvariantCultureIgnoreCase));
         }
-        
+
         [Test]
         public void PerformsStopLimitFillBuy()
         {
@@ -478,10 +485,33 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(order.Quantity, fill.FillQuantity);
             Assert.AreEqual(expected, fill.FillPrice);
         }
-
-        [TestCase(-100)]
-        [TestCase(100)]
-        public void PerformsMarketOnOpenUsingOpenPriceWithTickSubscription(int quantity)
+        // Official open
+        [TestCase(-100, TradeConditionFlags.OfficialOpen)]
+        [TestCase(100, TradeConditionFlags.OfficialOpen)]
+        // Opening prints
+        [TestCase(-100, TradeConditionFlags.OpeningPrints)]
+        [TestCase(100, TradeConditionFlags.OpeningPrints)]
+        // Official open and regular
+        [TestCase(-100, TradeConditionFlags.OfficialOpen | TradeConditionFlags.Regular)]
+        [TestCase(100, TradeConditionFlags.OfficialOpen | TradeConditionFlags.Regular)]
+        // Opening prints and regular
+        [TestCase(-100, TradeConditionFlags.OpeningPrints | TradeConditionFlags.Regular)]
+        [TestCase(100, TradeConditionFlags.OpeningPrints | TradeConditionFlags.Regular)]
+        // Any other random combination of flags that include OfficialOpen
+        [TestCase(-100,
+            TradeConditionFlags.OfficialOpen | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(100,
+            TradeConditionFlags.OfficialOpen | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        // Any other random combination of flags that include OpeningPrints
+        [TestCase(-100,
+            TradeConditionFlags.OpeningPrints | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(100,
+            TradeConditionFlags.OpeningPrints | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        public void PerformsMarketOnOpenUsingOpenPriceWithTickSubscription(int quantity, long numericSaleCondition)
         {
             var reference = new DateTime(2015, 06, 05, 9, 0, 0); // before market open
             var config = CreateTickConfig(Symbols.SPY);
@@ -491,7 +521,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             var time = reference;
             TimeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
 
-            var saleCondition = "04000001";
+            var saleCondition = Convert.ToString(numericSaleCondition, 16);
 
             equity.Update(new List<Tick>
             {
@@ -817,12 +847,53 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.IsTrue(fill.Message.StartsWith("Warning: No trade information available", StringComparison.InvariantCulture));
         }
 
-
-        [TestCase(-100, true)]
-        [TestCase(100, true)]
-        [TestCase(-100, false)]
-        [TestCase(100, false)]
-        public void PerformsMarketOnCloseUsingClosingPriceWithTickSubscription(int quantity, bool extendedHours)
+        // Official close
+        [TestCase(-100, true, TradeConditionFlags.OfficialClose)]
+        [TestCase(100, true, TradeConditionFlags.OfficialClose)]
+        [TestCase(-100, false, TradeConditionFlags.OfficialClose)]
+        [TestCase(100, false, TradeConditionFlags.OfficialClose)]
+        // Closing prints
+        [TestCase(-100, true, TradeConditionFlags.ClosingPrints)]
+        [TestCase(100, true, TradeConditionFlags.ClosingPrints)]
+        [TestCase(-100, false, TradeConditionFlags.ClosingPrints)]
+        [TestCase(100, false, TradeConditionFlags.ClosingPrints)]
+        // Official close and regular
+        [TestCase(-100, true, TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular)]
+        [TestCase(100, true, TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular)]
+        [TestCase(-100, false, TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular)]
+        [TestCase(100, false, TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular)]
+        // Closing prints and regular
+        [TestCase(-100, true, TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular)]
+        [TestCase(100, true, TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular)]
+        [TestCase(-100, false, TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular)]
+        [TestCase(100, false, TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular)]
+        // Any other random combination of flags that include OfficialClose
+        [TestCase(-100, true,
+            TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(100, true,
+            TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(-100, false,
+            TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(100, false,
+            TradeConditionFlags.OfficialClose | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        // Any other random combination of flags that include ClosingPrints
+        [TestCase(-100, true,
+            TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(100, true,
+            TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(-100, false,
+            TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        [TestCase(100, false,
+            TradeConditionFlags.ClosingPrints | TradeConditionFlags.Regular | TradeConditionFlags.Cash | TradeConditionFlags.Cross |
+            TradeConditionFlags.DerivativelyPriced)]
+        public void PerformsMarketOnCloseUsingClosingPriceWithTickSubscription(int quantity, bool extendedHours, long numericSaleCondition)
         {
             var reference = new DateTime(2015, 06, 05, 15, 0, 0); // before market close
             var config = CreateTickConfig(Symbols.SPY, extendedHours: extendedHours);
@@ -832,8 +903,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             var time = reference;
             TimeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
 
-            // Official Close
-            var saleCondition = "1000001";
+            var saleCondition = Convert.ToString(numericSaleCondition, 16);
 
             equity.Update(new List<Tick>
             {
@@ -868,11 +938,11 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             TimeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
             equity.Update(new List<Tick>
             {
-                new Tick(time, Symbols.SPY,  "80000001", "P", 100, 0.9m),   // Not Close
-                new Tick(time, Symbols.SPY, "80000001", "Q", 100, 0.95m),            // Close but not primary exchange
-                new Tick(time, Symbols.SPY, "80000001", "P", 100, 0.98m),         // Fill with this tick
+                new Tick(time, Symbols.SPY,  "80000001", "P", 100, 0.9m),
+                new Tick(time, Symbols.SPY, "80000001", "Q", 100, 0.95m),
+                new Tick(time, Symbols.SPY, "80000001", "P", 100, 0.98m),
                 new Tick(time, Symbols.SPY, 1m, 0.9m, 1.1m),
-                new Tick(time, Symbols.SPY,  "80000001", "P", 100, expected),   // Fill with this tick is no extended hours
+                new Tick(time, Symbols.SPY,  "80000001", "P", 100, expected),
             }, typeof(Tick));
 
             // If the subscriptions doesn't include extended hours, fills with the last tick
@@ -885,18 +955,13 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 return;
             }
 
-            Assert.AreEqual(0, fill.FillQuantity);
-
-            // market closes
-            time = reference.AddMinutes(60).AddMilliseconds(100);
-            TimeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
             equity.Update(new List<Tick>
             {
                 new Tick(time, Symbols.SPY,  "80000001", "P", 100, 0.9m),   // Not Close
                 new Tick(time, Symbols.SPY, saleCondition, "Q", 100, 0.95m),            // Close but not primary exchange
                 new Tick(time, Symbols.SPY, saleCondition, "P", 100, expected),         // Fill with this tick
                 new Tick(time, Symbols.SPY, 1m, 0.9m, 1.1m),
-                new Tick(time, Symbols.SPY,  "80000001", "P", 100, 0.95m),   // Open but not primary exchange
+                new Tick(time, Symbols.SPY,  "80000001", "P", 100, 0.95m),
             }, typeof(Tick));
 
             fill = model.MarketOnCloseFill(equity, order);
@@ -1216,6 +1281,53 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             var result = testFillModel.GetPricesPublic(security, orderDirection);
 
             Assert.AreEqual(expected, result.Close);
+        }
+
+        [TestCase(Resolution.Tick, false)]
+        [TestCase(Resolution.Second, false)]
+        [TestCase(Resolution.Minute, false)]
+        [TestCase(Resolution.Hour, false)]
+        [TestCase(Resolution.Daily, true)]
+        public void PerformFillOutsideRegularAndExtendedHours(Resolution resolution, bool shouldFill)
+        {
+            var config = CreateTradeBarConfig(Symbols.SPY, resolution: resolution);
+            var configProvider = new MockSubscriptionDataConfigProvider(config);
+            configProvider.SubscriptionDataConfigs.Add(config);
+            var equity = CreateEquity(config);
+
+            var baseTime = resolution == Resolution.Daily ? new DateTime(2014, 6, 25) : new DateTime(2014, 6, 24, 12, 0, 0);
+            var orderTime = baseTime.ConvertToUtc(equity.Exchange.TimeZone);
+            var resolutionTimeSpan = resolution.ToTimeSpan();
+            var tradeBarTime = baseTime.Subtract(resolutionTimeSpan);
+
+            var model = (EquityFillModel)equity.FillModel;
+            var order = new MarketOrder(Symbols.SPY, 100, orderTime);
+
+            var parameters = new FillModelParameters(equity, order, configProvider, Time.OneHour, null);
+
+            var timeKeeper = TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork);
+            // midnight, shouldn't be able to fill for resolutions < daily
+            timeKeeper.UpdateTime(new DateTime(2014, 6, 25).ConvertToUtc(TimeZones.NewYork));
+            equity.SetLocalTimeKeeper(timeKeeper);
+
+            const decimal close = 101.234m;
+            equity.SetMarketPrice(new TradeBar(tradeBarTime, Symbols.SPY, 101.123m, 101.123m, 101.123m, close, 100, resolutionTimeSpan));
+
+            var fill = model.Fill(parameters).Single();
+
+            if (shouldFill)
+            {
+                Assert.AreEqual(OrderStatus.Filled, fill.Status);
+                Assert.AreEqual(order.Quantity, fill.FillQuantity);
+                Assert.AreEqual(close, fill.FillPrice);
+            }
+            else
+            {
+                Assert.AreNotEqual(OrderStatus.Filled, fill.Status);
+                Assert.AreNotEqual(OrderStatus.PartiallyFilled, fill.Status);
+                Assert.AreEqual(0, fill.FillQuantity);
+                Assert.AreEqual(0, fill.FillPrice);
+            }
         }
 
         private Equity CreateEquity(SubscriptionDataConfig config)

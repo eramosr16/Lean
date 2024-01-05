@@ -15,10 +15,11 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Python.Runtime;
 using QuantConnect.Data;
+using System.Collections.Generic;
+using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Algorithm
@@ -135,6 +136,21 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
+        /// Creates a universe for the constituents of the provided <paramref name="etfTicker"/>
+        /// </summary>
+        /// <param name="etfTicker">Ticker of the ETF to get constituents for</param>
+        /// <param name="universeSettings">Universe settings</param>
+        /// <param name="universeFilterFunc">Function to filter universe results</param>
+        /// <returns>New ETF constituents Universe</returns>
+        public Universe ETF(
+            string etfTicker,
+            UniverseSettings universeSettings,
+            PyObject universeFilterFunc)
+        {
+            return ETF(etfTicker, null, universeSettings, universeFilterFunc);
+        }
+
+        /// <summary>
         /// Creates a universe for the constituents of the provided ETF <paramref name="symbol"/>
         /// </summary>
         /// <param name="symbol">ETF Symbol to get constituents for</param>
@@ -248,6 +264,21 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
+        /// Creates a universe for the constituents of the provided <paramref name="indexTicker"/>
+        /// </summary>
+        /// <param name="indexTicker">Ticker of the index to get constituents for</param>
+        /// <param name="universeSettings">Universe settings</param>
+        /// <param name="universeFilterFunc">Function to filter universe results</param>
+        /// <returns>New index constituents Universe</returns>
+        public Universe Index(
+            string indexTicker,
+            UniverseSettings universeSettings,
+            PyObject universeFilterFunc)
+        {
+            return Index(indexTicker, null, universeSettings, universeFilterFunc);
+        }
+
+        /// <summary>
         /// Creates a universe for the constituents of the provided <paramref name="indexSymbol"/>
         /// </summary>
         /// <param name="indexSymbol">Index Symbol to get constituents for</param>
@@ -314,9 +345,8 @@ namespace QuantConnect.Algorithm
             universeSettings ??= _algorithm.UniverseSettings;
 
             var symbol = Symbol.Create("us-equity-dollar-volume-top-" + count, SecurityType.Equity, Market.USA);
-            var config = new SubscriptionDataConfig(typeof(CoarseFundamental), symbol, Resolution.Daily, TimeZones.NewYork, TimeZones.NewYork, false, false, true);
-            return new FuncUniverse(config, universeSettings, selectionData => (
-                from c in selectionData.OfType<CoarseFundamental>()
+            return new FundamentalUniverse(universeSettings, selectionData => (
+                from c in selectionData
                 orderby c.DollarVolume descending
                 select c.Symbol).Take(count)
                 );

@@ -35,6 +35,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using QuantConnect.Storage;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 {
@@ -182,6 +183,16 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public IBrokerageModel BrokerageModel => _baseAlgorithm.BrokerageModel;
 
         /// <summary>
+        /// Gets the brokerage name.
+        /// </summary>
+        public BrokerageName BrokerageName => _baseAlgorithm.BrokerageName;
+
+        /// <summary>
+        /// Gets the risk free interest rate model used to get the interest rates
+        /// </summary>
+        public IRiskFreeInterestRateModel RiskFreeInterestRateModel => _baseAlgorithm.RiskFreeInterestRateModel;
+
+        /// <summary>
         /// Debug messages from the strategy:
         /// </summary>
         public ConcurrentQueue<string> DebugMessages => _baseAlgorithm.DebugMessages;
@@ -221,6 +232,16 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// Algorithm is running on a live server.
         /// </summary>
         public bool LiveMode => _baseAlgorithm.LiveMode;
+
+        /// <summary>
+        /// Algorithm running mode.
+        /// </summary>
+        public AlgorithmMode AlgorithmMode => _baseAlgorithm.AlgorithmMode;
+
+        /// <summary>
+        /// Deployment target, either local or cloud.
+        /// </summary>
+        public DeploymentTarget DeploymentTarget => _baseAlgorithm.DeploymentTarget;
 
         /// <summary>
         /// Log messages from the strategy:
@@ -452,6 +473,17 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public InsightManager Insights => _baseAlgorithm.Insights;
 
         /// <summary>
+        /// Sets the statistics service instance to be used by the algorithm
+        /// </summary>
+        /// <param name="statisticsService">The statistics service instance</param>
+        public void SetStatisticsService(IStatisticsService statisticsService) => _baseAlgorithm.SetStatisticsService(statisticsService);
+
+        /// <summary>
+        /// The current statistics for the running algorithm.
+        /// </summary>
+        public StatisticsResults Statistics => _baseAlgorithm.Statistics;
+
+        /// <summary>
         /// Set a required SecurityType-symbol and resolution for algorithm
         /// </summary>
         /// <param name="securityType">SecurityType Enum: Equity, Commodity, FOREX or Future</param>
@@ -542,7 +574,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// </summary>
         /// <param name="clearChartData"></param>
         /// <returns>List of Chart Updates</returns>
-        public List<Chart> GetChartUpdates(bool clearChartData = false) => _baseAlgorithm.GetChartUpdates(clearChartData);
+        public IEnumerable<Chart> GetChartUpdates(bool clearChartData = false) => _baseAlgorithm.GetChartUpdates(clearChartData);
 
         /// <summary>
         /// Gets whether or not this algorithm has been locked and fully initialized
@@ -982,6 +1014,18 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public void SetLiveMode(bool live) => _baseAlgorithm.SetLiveMode(live);
 
         /// <summary>
+        /// Sets the algorithm running mode
+        /// </summary>
+        /// <param name="algorithmMode">Algorithm mode</param>
+        public void SetAlgorithmMode(AlgorithmMode algorithmMode) => _baseAlgorithm.SetAlgorithmMode(algorithmMode);
+
+        /// <summary>
+        /// Sets the algorithm deployment target
+        /// </summary>
+        /// <param name="deploymentTarget">Deployment target</param>
+        public void SetDeploymentTarget(DeploymentTarget deploymentTarget) => _baseAlgorithm.SetDeploymentTarget(deploymentTarget);
+
+        /// <summary>
         /// Set the algorithm as initialized and locked. No more cash or security changes.
         /// </summary>
         public void SetLocked() => _baseAlgorithm.SetLocked();
@@ -1053,14 +1097,29 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public void SetObjectStore(IObjectStore objectStore) => _baseAlgorithm.SetObjectStore(objectStore);
 
         /// <summary>
-        /// Checks if the asset is shortable at the brokerage
+        /// Determines if the Symbol is shortable at the brokerage
         /// </summary>
-        /// <param name="symbol">Symbol to check if it is shortable</param>
-        /// <param name="quantity">Quantity to short</param>
-        /// <returns>True if shortable at the brokerage</returns>
-        public bool Shortable(Symbol symbol, decimal quantity)
+        /// <param name="symbol">Symbol to check if shortable</param>
+        /// <param name="shortQuantity">Order's quantity to check if it is currently shortable, taking into account current holdings and open orders</param>
+        /// <param name="updateOrderId">Optionally the id of the order being updated. When updating an order
+        /// we want to ignore it's submitted short quantity and use the new provided quantity to determine if we
+        /// can perform the update</param>
+        /// <returns>True if the symbol can be shorted by the requested quantity</returns>
+        public bool Shortable(Symbol symbol, decimal shortQuantity, int? updateOrderId = null)
         {
-            return _baseAlgorithm.Shortable(symbol, quantity);
+            return _baseAlgorithm.Shortable(symbol, shortQuantity, updateOrderId);
+        }
+
+        /// <summary>
+        /// Gets the quantity shortable for the given asset
+        /// </summary>
+        /// <returns>
+        /// Quantity shortable for the given asset. Zero if not
+        /// shortable, or a number greater than zero if shortable.
+        /// </returns>
+        public long ShortableQuantity(Symbol symbol)
+        {
+            return _baseAlgorithm.ShortableQuantity(symbol);
         }
 
         /// <summary>

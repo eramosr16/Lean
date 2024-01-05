@@ -511,7 +511,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.TotalFees);
+                return Securities.Total.Sum(security => security.Holdings.TotalFees);
             }
         }
 
@@ -522,7 +522,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.Profit);
+                return Securities.Total.Sum(security => security.Holdings.Profit);
             }
         }
 
@@ -533,7 +533,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.NetProfit);
+                return Securities.Total.Sum(security => security.Holdings.NetProfit);
             }
         }
 
@@ -544,7 +544,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.TotalSaleVolume);
+                return Securities.Total.Sum(security => security.Holdings.TotalSaleVolume);
             }
         }
 
@@ -846,9 +846,13 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="time">Time of order processed </param>
         /// <param name="transactionProfitLoss">Profit Loss.</param>
-        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss)
+        /// <param name="isWin">
+        /// Whether the transaction is a win.
+        /// For options exercise, this might not depend only on the profit/loss value
+        /// </param>
+        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss, bool isWin)
         {
-            Transactions.AddTransactionRecord(time, transactionProfitLoss);
+            Transactions.AddTransactionRecord(time, transactionProfitLoss, isWin);
         }
 
         /// <summary>

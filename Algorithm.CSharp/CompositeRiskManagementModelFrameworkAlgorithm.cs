@@ -82,7 +82,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "2.200%"},
             {"Expectancy", "0.361"},
             {"Net Profit", "1.528%"},
-            {"Sharpe Ratio", "7.606"},
+            {"Sharpe Ratio", "7.572"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "65.639%"},
             {"Loss Rate", "33%"},
             {"Win Rate", "67%"},
@@ -93,12 +94,12 @@ namespace QuantConnect.Algorithm.CSharp
             {"Annual Variance", "0.049"},
             {"Information Ratio", "-46.455"},
             {"Tracking Error", "0.006"},
-            {"Treynor Ratio", "1.693"},
+            {"Treynor Ratio", "1.686"},
             {"Total Fees", "$24.08"},
             {"Estimated Strategy Capacity", "$23000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "139.03%"},
-            {"OrderListHash", "611929a032360026f9afbbc41c0cd758"}
+            {"OrderListHash", "d8704e090c1196673b5fdb67493184cc"}
         };
     }
 }

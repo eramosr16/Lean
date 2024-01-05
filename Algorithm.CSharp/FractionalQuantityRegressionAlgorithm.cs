@@ -115,7 +115,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "5.500%"},
             {"Expectancy", "1.339"},
             {"Net Profit", "13.775%"},
-            {"Sharpe Ratio", "3.309"},
+            {"Sharpe Ratio", "3.289"},
+            {"Sortino Ratio", "7.697"},
             {"Probabilistic Sharpe Ratio", "61.758%"},
             {"Loss Rate", "33%"},
             {"Win Rate", "67%"},
@@ -131,7 +132,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$30000.00"},
             {"Lowest Capacity Asset", "BTCUSD XJ"},
             {"Portfolio Turnover", "46.79%"},
-            {"OrderListHash", "38a7cd7f03f62a8ac4ecd907dd2a1084"}
+            {"OrderListHash", "72088174955904dbaaae2d706d5a7ee0"}
         };
     }
 }

@@ -17,8 +17,11 @@ using System.Collections.Generic;
 
 using NUnit.Framework;
 
-using QuantConnect.Brokerages;
+using System;
+using Newtonsoft.Json;
+using QuantConnect.Packets;
 using QuantConnect.Algorithm;
+using QuantConnect.Brokerages;
 
 namespace QuantConnect.Tests.Common
 {
@@ -35,12 +38,32 @@ namespace QuantConnect.Tests.Common
             algorithm.SetParameters(parameters);
 
 
-            var algorithmConfiguration = AlgorithmConfiguration.Create(algorithm);
+            var algorithmConfiguration = AlgorithmConfiguration.Create(algorithm, null);
 
             Assert.AreEqual(currency, algorithmConfiguration.AccountCurrency);
             Assert.AreEqual(brokerageName, algorithmConfiguration.BrokerageName);
             Assert.AreEqual(accountType, algorithmConfiguration.AccountType);
             CollectionAssert.AreEquivalent(parameters, algorithmConfiguration.Parameters);
+        }
+
+        [Test]
+        public void JsonSerialization()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SetAccountCurrency(Currencies.GBP);
+            algorithm.SetBrokerageModel(BrokerageName.GDAX, AccountType.Cash);
+            algorithm.SetParameters(new Dictionary<string, string> { { "a", "A" }, { "b", "B" } });
+
+            var backtestNode = new BacktestNodePacket
+            {
+                OutOfSampleDays = 30,
+                OutOfSampleMaxEndDate = new DateTime(2023, 01, 01)
+            };
+            var algorithmConfiguration = AlgorithmConfiguration.Create(algorithm, backtestNode);
+
+            var serialized = JsonConvert.SerializeObject(algorithmConfiguration);
+
+            Assert.AreEqual($"{{\"AccountCurrency\":\"GBP\",\"Brokerage\":12,\"AccountType\":1,\"Parameters\":{{\"a\":\"A\",\"b\":\"B\"}},\"OutOfSampleMaxEndDate\":\"2023-01-01T00:00:00\",\"OutOfSampleDays\":30,\"StartDate\":\"1998-01-01 00:00:00\",\"EndDate\":\"{algorithm.EndDate.ToString(DateFormat.UI)}\"}}", serialized);
         }
 
         private static TestCaseData[] AlgorithmConfigurationTestCases => new[]
@@ -51,7 +74,7 @@ namespace QuantConnect.Tests.Common
                 new Dictionary<string, string> { { "a", "A" }, { "b", "B" } }),
             new TestCaseData("EUR", BrokerageName.Bitfinex, AccountType.Margin,
                 new Dictionary<string, string> { { "first", "1" }, { "second", "2" }, { "third", "3" } }),
-            new TestCaseData("AUD", BrokerageName.Atreyu, AccountType.Margin,
+            new TestCaseData("AUD", BrokerageName.Axos, AccountType.Margin,
                 new Dictionary<string, string> { { "ema-slow", "20" }, { "ema-fast", "10" } })
         };
     }

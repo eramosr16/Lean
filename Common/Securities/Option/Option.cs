@@ -70,7 +70,7 @@ namespace QuantConnect.Securities.Option
                 new OptionPortfolioModel(),
                 new ImmediateFillModel(),
                 new InteractiveBrokersFeeModel(),
-                new ConstantSlippageModel(0),
+                NullSlippageModel.Instance,
                 new ImmediateSettlementModel(),
                 Securities.VolatilityModel.Null,
                 new OptionMarginModel(),
@@ -112,7 +112,7 @@ namespace QuantConnect.Securities.Option
                new OptionPortfolioModel(),
                new ImmediateFillModel(),
                new InteractiveBrokersFeeModel(),
-               new ConstantSlippageModel(0),
+               NullSlippageModel.Instance,
                new ImmediateSettlementModel(),
                Securities.VolatilityModel.Null,
                new OptionMarginModel(),
@@ -173,7 +173,13 @@ namespace QuantConnect.Securities.Option
             OptionExerciseModel = new DefaultExerciseModel();
             PriceModel = symbol.ID.OptionStyle switch
             {
-                OptionStyle.American => OptionPriceModels.BjerksundStensland(),
+                // CRR model has the best accuracy and speed suggested by
+                // Branka, Zdravka & Tea (2014). Numerical Methods versus Bjerksund and Stensland Approximations for American Options Pricing.
+                // International Journal of Economics and Management Engineering. 8:4.
+                // Available via: https://downloads.dxfeed.com/specifications/dxLibOptions/Numerical-Methods-versus-Bjerksund-and-Stensland-Approximations-for-American-Options-Pricing-.pdf
+                // Also refer to OptionPriceModelTests.MatchesIBGreeksBulk() test,
+                // we select the most accurate and computational efficient model
+                OptionStyle.American => OptionPriceModels.BinomialCoxRossRubinstein(),
                 OptionStyle.European => OptionPriceModels.BlackScholes(),
                 _ => throw new ArgumentException("Invalid OptionStyle")
             };
@@ -517,7 +523,7 @@ namespace QuantConnect.Securities.Option
         /// over market price</param>
         public void SetFilter(int minStrike, int maxStrike)
         {
-            SetFilter(universe => universe.Strikes(minStrike, maxStrike));
+            SetFilterImp(universe => universe.Strikes(minStrike, maxStrike));
         }
 
         /// <summary>
@@ -525,12 +531,12 @@ namespace QuantConnect.Securities.Option
         /// using the specified min and max strike and expiration range values
         /// </summary>
         /// <param name="minExpiry">The minimum time until expiry to include, for example, TimeSpan.FromDays(10)
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiry">The maxmium time until expiry to include, for example, TimeSpan.FromDays(10)
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiry">The maximum time until expiry to include, for example, TimeSpan.FromDays(10)
+        /// would exclude contracts expiring in more than 10 days</param>
         public void SetFilter(TimeSpan minExpiry, TimeSpan maxExpiry)
         {
-            SetFilter(universe => universe.Expiration(minExpiry, maxExpiry));
+            SetFilterImp(universe => universe.Expiration(minExpiry, maxExpiry));
         }
 
         /// <summary>
@@ -544,12 +550,12 @@ namespace QuantConnect.Securities.Option
         /// an upper bound of on strike under market price, where a +1 would be an upper bound of one strike
         /// over market price</param>
         /// <param name="minExpiry">The minimum time until expiry to include, for example, TimeSpan.FromDays(10)
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiry">The maxmium time until expiry to include, for example, TimeSpan.FromDays(10)
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiry">The maximum time until expiry to include, for example, TimeSpan.FromDays(10)
+        /// would exclude contracts expiring in more than 10 days</param>
         public void SetFilter(int minStrike, int maxStrike, TimeSpan minExpiry, TimeSpan maxExpiry)
         {
-            SetFilter(universe => universe
+            SetFilterImp(universe => universe
                 .Strikes(minStrike, maxStrike)
                 .Expiration(minExpiry, maxExpiry));
         }
@@ -565,12 +571,12 @@ namespace QuantConnect.Securities.Option
         /// an upper bound of on strike under market price, where a +1 would be an upper bound of one strike
         /// over market price</param>
         /// <param name="minExpiryDays">The minimum time, expressed in days, until expiry to include, for example, 10
-        /// would exclude contracts expiring in more than 10 days</param>
-        /// <param name="maxExpiryDays">The maximum time, expressed in days, until expiry to include, for example, 10
         /// would exclude contracts expiring in less than 10 days</param>
+        /// <param name="maxExpiryDays">The maximum time, expressed in days, until expiry to include, for example, 10
+        /// would exclude contracts expiring in more than 10 days</param>
         public void SetFilter(int minStrike, int maxStrike, int minExpiryDays, int maxExpiryDays)
         {
-            SetFilter(universe => universe
+            SetFilterImp(universe => universe
                 .Strikes(minStrike, maxStrike)
                 .Expiration(minExpiryDays, maxExpiryDays));
         }
@@ -587,6 +593,7 @@ namespace QuantConnect.Securities.Option
                 var result = universeFunc(optionUniverse);
                 return result.ApplyTypesFilter();
             });
+            ContractFilter.Asynchronous = false;
         }
 
         /// <summary>
@@ -625,6 +632,7 @@ namespace QuantConnect.Securities.Option
                 }
                 return optionUniverse.ApplyTypesFilter();
             });
+            ContractFilter.Asynchronous = false;
         }
 
         /// <summary>
@@ -638,6 +646,16 @@ namespace QuantConnect.Securities.Option
             }
 
             base.SetDataNormalizationMode(mode);
+        }
+
+        private void SetFilterImp(Func<OptionFilterUniverse, OptionFilterUniverse> universeFunc)
+        {
+            ContractFilter = new FuncSecurityDerivativeFilter(universe =>
+            {
+                var optionUniverse = universe as OptionFilterUniverse;
+                var result = universeFunc(optionUniverse);
+                return result.ApplyTypesFilter();
+            });
         }
     }
 }

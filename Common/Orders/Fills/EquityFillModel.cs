@@ -16,7 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using QLNet;
+
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.Data.Market;
@@ -288,7 +288,11 @@ namespace QuantConnect.Orders.Fills
                     //-> 1.2 Buy Stop: If Price Above Setpoint, Buy:
                     if (prices.High > order.StopPrice || order.StopTriggered)
                     {
-                        order.StopTriggered = true;
+                        if (!order.StopTriggered)
+                        {
+                            order.StopTriggered = true;
+                            Parameters.OnOrderUpdated(order);
+                        }
 
                         // Fill the limit order, using closing price of bar:
                         // Note > Can't use minimum price, because no way to be sure minimum wasn't before the stop triggered.
@@ -306,7 +310,11 @@ namespace QuantConnect.Orders.Fills
                     //-> 1.1 Sell Stop: If Price below setpoint, Sell:
                     if (prices.Low < order.StopPrice || order.StopTriggered)
                     {
-                        order.StopTriggered = true;
+                        if (!order.StopTriggered)
+                        {
+                            order.StopTriggered = true;
+                            Parameters.OnOrderUpdated(order);
+                        }
 
                         // Fill the limit order, using minimum price of the bar
                         // Note > Can't use minimum price, because no way to be sure minimum wasn't before the stop triggered.
@@ -450,8 +458,7 @@ namespace QuantConnect.Orders.Fills
             if (subscribedTypes.Contains(typeof(Tick)))
             {
                 var primaryExchangeCode = ((Equity)asset).PrimaryExchange.Code;
-                var officialOpen = (uint) (TradeConditionFlags.Regular | TradeConditionFlags.OfficialOpen);
-                var openingPrints = (uint) (TradeConditionFlags.Regular | TradeConditionFlags.OpeningPrints);
+                var openTradeTickFlags = (uint)(TradeConditionFlags.OfficialOpen | TradeConditionFlags.OpeningPrints);
 
                 var trades = asset.Cache.GetAll<Tick>()
                     .Where(x => x.TickType == TickType.Trade && asset.Exchange.DateTimeIsOpen(x.Time))
@@ -459,10 +466,10 @@ namespace QuantConnect.Orders.Fills
 
                 // Get the first valid (non-zero) tick of trade type from an open market
                 var tick = trades
-                    .Where(x => !string.IsNullOrWhiteSpace(x.SaleCondition))
                     .FirstOrDefault(x =>
-                        x.TickType == TickType.Trade && x.ExchangeCode == primaryExchangeCode &&
-                        (x.ParsedSaleCondition == officialOpen || x.ParsedSaleCondition == openingPrints) &&
+                        !string.IsNullOrWhiteSpace(x.SaleCondition) &&
+                        x.ExchangeCode == primaryExchangeCode &&
+                        (x.ParsedSaleCondition & openTradeTickFlags) != 0 &&
                         asset.Exchange.DateTimeIsOpen(x.Time));
 
                 // If there is no OfficialOpen or OpeningPrints in the current list of trades,
@@ -592,8 +599,7 @@ namespace QuantConnect.Orders.Fills
             if (subscribedTypes.Contains(typeof(Tick)))
             {
                 var primaryExchangeCode = ((Equity)asset).PrimaryExchange.Code;
-                var officialClose = (uint)(TradeConditionFlags.Regular | TradeConditionFlags.OfficialClose);
-                var closingPrints = (uint)(TradeConditionFlags.Regular | TradeConditionFlags.ClosingPrints);
+                var closeTradeTickFlags = (uint)(TradeConditionFlags.OfficialClose | TradeConditionFlags.ClosingPrints);
 
                 var trades = asset.Cache.GetAll<Tick>()
                     .Where(x => x.TickType == TickType.Trade)
@@ -601,9 +607,10 @@ namespace QuantConnect.Orders.Fills
 
                 // Get the last valid (non-zero) tick of trade type from an close market
                 var tick = trades
-                    .Where(x => !string.IsNullOrWhiteSpace(x.SaleCondition))
-                    .LastOrDefault(x => x.ExchangeCode == primaryExchangeCode &&
-                        (x.ParsedSaleCondition == officialClose || x.ParsedSaleCondition == closingPrints));
+                    .LastOrDefault(x =>
+                        !string.IsNullOrWhiteSpace(x.SaleCondition) &&
+                        x.ExchangeCode == primaryExchangeCode
+                        && (x.ParsedSaleCondition & closeTradeTickFlags) != 0);
 
                 // If there is no OfficialClose or ClosingPrints in the current list of trades,
                 // we will wait for the next up to 1 minute before accepting the last tick without flags
@@ -915,7 +922,7 @@ namespace QuantConnect.Orders.Fills
         private TradeBar GetBestEffortTradeBar(Security asset, DateTime orderTime)
         {
             TradeBar bestEffortTradeBar = null;
-            
+
             var subscribedTypes = GetSubscribedTypes(asset);
 
             if (subscribedTypes.Contains(typeof(Tick)))
@@ -1039,25 +1046,6 @@ namespace QuantConnect.Orders.Fills
             }
 
             return new Prices(endTime, current, open, high, low, close);
-        }
-
-        /// <summary>
-        /// Determines if the exchange is open using the current time of the asset
-        /// </summary>
-        protected static bool IsExchangeOpen(Security asset, bool isExtendedMarketHours)
-        {
-            if (!asset.Exchange.DateTimeIsOpen(asset.LocalTime))
-            {
-                // if we're not open at the current time exactly, check the bar size, this handle large sized bars (hours/days)
-                var currentBar = asset.GetLastData();
-                if (currentBar == null
-                    || asset.LocalTime.Date != currentBar.EndTime.Date
-                    || !asset.Exchange.IsOpenDuringBar(currentBar.Time, currentBar.EndTime, isExtendedMarketHours))
-                {
-                    return false;
-                }
-            }
-            return true;
         }
     }
 }

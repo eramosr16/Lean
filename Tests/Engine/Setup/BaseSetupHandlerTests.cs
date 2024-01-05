@@ -36,20 +36,20 @@ namespace QuantConnect.Tests.Engine.Setup
 
             // Setup history provider and algorithm
             var historyProvider = new SubscriptionDataReaderHistoryProvider();
-            var zipCache = new ZipDataCacheProvider(new DefaultDataProvider());
+
+            var algorithm = new BrokerageSetupHandlerTests.TestAlgorithm { UniverseSettings = { Resolution = Resolution.Minute } };
 
             historyProvider.Initialize(new HistoryProviderInitializeParameters(
                 null,
                 null,
                 TestGlobals.DataProvider,
-                zipCache,
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 null,
                 false,
-                new DataPermissionManager()));
-
-            var algorithm = new BrokerageSetupHandlerTests.TestAlgorithm { UniverseSettings = { Resolution = Resolution.Minute } };
+                new DataPermissionManager(),
+                algorithm.ObjectStore));
             algorithm.SetHistoryProvider(historyProvider);
 
             // Pick a date range where we do NOT have BTCUSD minute data
@@ -63,8 +63,6 @@ namespace QuantConnect.Tests.Engine.Setup
             // Assert that our portfolio has some value and that value is bitcoin
             Assert.IsTrue(algorithm.Portfolio.Cash > 0);
             Assert.IsTrue(algorithm.Portfolio.CashBook["BTC"].ValueInAccountCurrency > 0);
-
-            zipCache.DisposeSafely();
         }
     }
 }

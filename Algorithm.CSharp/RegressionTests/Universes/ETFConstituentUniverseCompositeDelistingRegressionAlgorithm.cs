@@ -103,8 +103,10 @@ namespace QuantConnect.Algorithm.CSharp
             }
 
             _universeAdded |= changes.AddedSecurities.Count >= _universeSymbolCount;
-            // Subtract 1 from universe Symbol count for AAPL, since it was manually added to the algorithm
-            _universeRemoved |= changes.RemovedSecurities.Count == _universeSymbolCount - 1 && UtcTime.Date >= _delistingDate && UtcTime.Date < EndDate;
+            // TODO: shouldn't be sending AAPL as a removed security since it was added by another unvierse
+            // if we added the etf subscription it will get delisted and send us a removal event
+            var adjusment = AddETFSubscription ? 0 : -1;
+            _universeRemoved |= changes.RemovedSecurities.Count == _universeSymbolCount + adjusment && UtcTime.Date >= _delistingDate && UtcTime.Date < EndDate;
         }
 
         public override void OnEndOfAlgorithm()
@@ -155,23 +157,24 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "5.400%"},
             {"Expectancy", "0"},
             {"Net Profit", "3.893%"},
-            {"Sharpe Ratio", "1.309"},
+            {"Sharpe Ratio", "1.291"},
+            {"Sortino Ratio", "1.876"},
             {"Probabilistic Sharpe Ratio", "53.929%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.131"},
+            {"Alpha", "0.13"},
             {"Beta", "0.697"},
             {"Annual Standard Deviation", "0.139"},
             {"Annual Variance", "0.019"},
             {"Information Ratio", "0.889"},
             {"Tracking Error", "0.122"},
-            {"Treynor Ratio", "0.261"},
+            {"Treynor Ratio", "0.257"},
             {"Total Fees", "$2.04"},
             {"Estimated Strategy Capacity", "$260000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.83%"},
-            {"OrderListHash", "49d511dbd5e31d6c25afda0f55aa28c2"}
+            {"OrderListHash", "d125adb907e6ca8b4c6ec06fbdcf986a"}
         };
     }
 }

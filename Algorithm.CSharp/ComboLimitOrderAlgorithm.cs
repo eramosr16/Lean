@@ -28,6 +28,9 @@ namespace QuantConnect.Algorithm.CSharp
         private decimal _limitPrice;
         private int _comboQuantity;
 
+        private decimal _temporaryLimitPrice;
+        private int _temporaryComboQuantity;
+
         private int _fillCount;
 
         private decimal _liquidatedQuantity;
@@ -47,10 +50,23 @@ namespace QuantConnect.Algorithm.CSharp
         {
             _limitPrice = limitPrice.Value;
             _comboQuantity = quantity;
+            _temporaryLimitPrice = limitPrice.Value - Math.Sign(quantity) * limitPrice.Value * 0.5m; // Won't fill
+            _temporaryComboQuantity = quantity * 10;
 
             legs.ForEach(x => { x.OrderPrice = null; });
 
-            return ComboLimitOrder(legs, quantity, _limitPrice);
+            // First, let's place a limit order that won't fill so we can update it later
+            return ComboLimitOrder(legs, _temporaryComboQuantity, _temporaryLimitPrice);
+        }
+
+        protected override void UpdateComboOrder(List<OrderTicket> tickets)
+        {
+            // Let's update the quantity and limit price to the real values
+            tickets[0].Update(new UpdateOrderFields
+            {
+                Quantity = _comboQuantity,
+                LimitPrice = _limitPrice
+            });
         }
 
         public override void OnOrderEvent(OrderEvent orderEvent)
@@ -120,7 +136,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 475788;
+        public override long DataPoints => 471135;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -140,6 +156,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Expectancy", "0"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -151,11 +168,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$85.00"},
+            {"Total Fees", "$52.00"},
             {"Estimated Strategy Capacity", "$5000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZERHAOVVQ|GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "60.92%"},
-            {"OrderListHash", "186986b27fac082600a064a8a59df604"}
+            {"Portfolio Turnover", "60.91%"},
+            {"OrderListHash", "0a8f9edaff4857d0e7731c7b936e4288"}
         };
     }
 }

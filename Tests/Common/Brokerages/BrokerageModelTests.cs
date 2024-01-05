@@ -245,13 +245,14 @@ class CustomBrokerageModel({brokerage.GetType().Name}):
                 new TestCaseData(new GDAXBrokerageModel(), BrokerageName.GDAX),
                 new TestCaseData(new AlphaStreamsBrokerageModel(), BrokerageName.AlphaStreams),
                 new TestCaseData(new ZerodhaBrokerageModel(), BrokerageName.Zerodha),
-                new TestCaseData(new AtreyuBrokerageModel(), BrokerageName.Atreyu),
+                new TestCaseData(new AxosClearingBrokerageModel(), BrokerageName.Axos),
                 new TestCaseData(new TradingTechnologiesBrokerageModel(), BrokerageName.TradingTechnologies),
                 new TestCaseData(new SamcoBrokerageModel(), BrokerageName.Samco),
                 new TestCaseData(new KrakenBrokerageModel(), BrokerageName.Kraken),
                 new TestCaseData(new ExanteBrokerageModel(), BrokerageName.Exante),
                 new TestCaseData(new FTXUSBrokerageModel(), BrokerageName.FTXUS),
                 new TestCaseData(new FTXBrokerageModel(), BrokerageName.FTX),
+                new TestCaseData(new BybitBrokerageModel(), BrokerageName.Bybit),
                 new TestCaseData(new DefaultBrokerageModel(), BrokerageName.Default)
             };
         }
@@ -266,13 +267,14 @@ class CustomBrokerageModel({brokerage.GetType().Name}):
         private class CustomGDAXBrokerageModel : GDAXBrokerageModel {}
         private class CustomAlphaStreamsBrokerageModel : AlphaStreamsBrokerageModel {}
         private class CustomZerodhaBrokerageModel : ZerodhaBrokerageModel {}
-        private class CustomAtreyuBrokerageModel : AtreyuBrokerageModel {}
+        private class CustomAxosBrokerageModel : AxosClearingBrokerageModel {}
         private class CustomTradingTechnologiesBrokerageModel : TradingTechnologiesBrokerageModel {}
         private class CustomSamcoBrokerageModel : SamcoBrokerageModel {}
         private class CustomKrakenBrokerageModel : KrakenBrokerageModel {}
         private class CustomExanteBrokerageModel : ExanteBrokerageModel {}
         private class CustomFTXUSBrokerageModel : FTXUSBrokerageModel {}
         private class CustomFTXBrokerageModel : FTXBrokerageModel {}
+        private  class CustomBybitBrokerageModel : BybitBrokerageModel { }
         private class CustomDefaultBrokerageModel : DefaultBrokerageModel {}
 
         private static TestCaseData[] GetCustomBrokerageNameTestCases()
@@ -289,13 +291,14 @@ class CustomBrokerageModel({brokerage.GetType().Name}):
                 new TestCaseData(new CustomGDAXBrokerageModel(), BrokerageName.GDAX),
                 new TestCaseData(new CustomAlphaStreamsBrokerageModel(), BrokerageName.AlphaStreams),
                 new TestCaseData(new CustomZerodhaBrokerageModel(), BrokerageName.Zerodha),
-                new TestCaseData(new CustomAtreyuBrokerageModel(), BrokerageName.Atreyu),
+                new TestCaseData(new CustomAxosBrokerageModel(), BrokerageName.Axos),
                 new TestCaseData(new CustomTradingTechnologiesBrokerageModel(), BrokerageName.TradingTechnologies),
                 new TestCaseData(new CustomSamcoBrokerageModel(), BrokerageName.Samco),
                 new TestCaseData(new CustomKrakenBrokerageModel(), BrokerageName.Kraken),
                 new TestCaseData(new CustomExanteBrokerageModel(), BrokerageName.Exante),
                 new TestCaseData(new CustomFTXUSBrokerageModel(), BrokerageName.FTXUS),
                 new TestCaseData(new CustomFTXBrokerageModel(), BrokerageName.FTX),
+                new TestCaseData(new CustomBybitBrokerageModel(), BrokerageName.Bybit),
                 new TestCaseData(new CustomDefaultBrokerageModel(), BrokerageName.Default)
             };
         }

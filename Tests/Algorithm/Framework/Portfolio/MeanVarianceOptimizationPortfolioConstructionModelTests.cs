@@ -50,15 +50,16 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
             _algorithm.SetHistoryProvider(historyProvider);
 
             historyProvider.Initialize(new HistoryProviderInitializeParameters(
-                new BacktestNodePacket(),
-                new Api.Api(),
+                null,
+                null,
                 TestGlobals.DataProvider,
-                new SingleEntryDataCacheProvider(new DefaultDataProvider()),
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 i => { },
                 true,
-                new DataPermissionManager()));
+                new DataPermissionManager(),
+                _algorithm.ObjectStore));
         }
 
         private void Clear() => _algorithm.Insights.Clear(_algorithm.Securities.Keys.ToArray());
@@ -74,7 +75,7 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
         public void PortfolioBiasIsRespected(Language language, PortfolioBias bias, double magnitude1, double magnitude2)
         {
             var targets = GeneratePortfolioTargets(language, InsightDirection.Up, InsightDirection.Down, magnitude1, magnitude2, bias);
-            
+
             foreach (var target in targets)
             {
                 QuantConnect.Logging.Log.Trace($"{target.Symbol}: {target.Quantity}");
@@ -293,7 +294,7 @@ class CustomPortfolioOptimizer:
             }
         }
 
-        private IEnumerable<IPortfolioTarget> GeneratePortfolioTargets(Language language, InsightDirection direction1, InsightDirection direction2, 
+        private IEnumerable<IPortfolioTarget> GeneratePortfolioTargets(Language language, InsightDirection direction1, InsightDirection direction2,
                                                                        double? magnitude1, double? magnitude2, PortfolioBias bias = PortfolioBias.LongShort)
         {
             SetPortfolioConstruction(language, bias);

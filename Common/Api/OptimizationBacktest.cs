@@ -13,8 +13,9 @@
  * limitations under the License.
 */
 
-using System.Collections.Generic;
+using System;
 using Newtonsoft.Json;
+using System.Collections.Generic;
 using QuantConnect.Optimizer.Parameters;
 
 namespace QuantConnect.Api
@@ -58,12 +59,32 @@ namespace QuantConnect.Api
         /// <summary>
         /// The backtest equity chart series
         /// </summary>
-        public Series Equity { get; set; }
+        public CandlestickSeries Equity { get; set; }
 
         /// <summary>
         /// The exit code of this backtest
         /// </summary>
         public int ExitCode { get; set; }
+
+        /// <summary>
+        /// Backtest maximum end date
+        /// </summary>
+        public DateTime? OutOfSampleMaxEndDate { get; set; }
+
+        /// <summary>
+        /// The backtest out of sample day count
+        /// </summary>
+        public int OutOfSampleDays { get; set; }
+
+        /// <summary>
+        /// The backtest start date
+        /// </summary>
+        public DateTime StartDate { get; set; }
+
+        /// <summary>
+        /// The backtest end date
+        /// </summary>
+        public DateTime EndDate { get; set; }
 
         /// <summary>
         /// Creates a new instance

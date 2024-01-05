@@ -83,11 +83,6 @@ namespace QuantConnect.Orders.Fees
             }
 
             var quantity = order.AbsoluteQuantity;
-            if (order.GroupOrderManager != null)
-            {
-                quantity *= order.GroupOrderManager.AbsoluteQuantity;
-            }
-
             decimal feeResult;
             string feeCurrency;
             var market = security.Symbol.ID.Market;
@@ -110,7 +105,7 @@ namespace QuantConnect.Orders.Fees
                         throw new KeyNotFoundException(Messages.InteractiveBrokersFeeModel.UnexpectedOptionMarket(market));
                     }
                     // applying commission function to the order
-                    var optionFee = optionsCommissionFunc(quantity, order.Price);
+                    var optionFee = optionsCommissionFunc(quantity, GetPotentialOrderPrice(order, security));
                     feeResult = optionFee.Amount;
                     feeCurrency = optionFee.Currency;
                     break;
@@ -183,6 +178,54 @@ namespace QuantConnect.Orders.Fees
         }
 
         /// <summary>
+        /// Approximates the order's price based on the order type
+        /// </summary>
+        protected static decimal GetPotentialOrderPrice(Order order, Security security)
+        {
+            decimal price = 0;
+            switch (order.Type)
+            {
+                case OrderType.TrailingStop:
+                    price = (order as TrailingStopOrder).StopPrice;
+                    break;
+                case OrderType.StopMarket:
+                    price = (order as StopMarketOrder).StopPrice;
+                    break;
+                case OrderType.ComboMarket:
+                case OrderType.MarketOnOpen:
+                case OrderType.MarketOnClose:
+                case OrderType.Market:
+                    decimal securityPrice;
+                    if (order.Direction == OrderDirection.Buy)
+                    {
+                        price = security.BidPrice;
+                    }
+                    else
+                    {
+                        price = security.AskPrice;
+                    }
+                    break;
+                case OrderType.ComboLimit:
+                    price = (order as ComboLimitOrder).GroupOrderManager.LimitPrice;
+                    break;
+                case OrderType.ComboLegLimit:
+                    price = (order as ComboLegLimitOrder).LimitPrice;
+                    break;
+                case OrderType.StopLimit:
+                    price = (order as StopLimitOrder).LimitPrice;
+                    break;
+                case OrderType.LimitIfTouched:
+                    price = (order as LimitIfTouchedOrder).LimitPrice;
+                    break;
+                case OrderType.Limit:
+                    price = (order as LimitOrder).LimitPrice;
+                    break;
+            }
+
+            return price;
+        }
+
+        /// <summary>
         /// Determines which tier an account falls into based on the monthly trading volume
         /// </summary>
         private static void ProcessForexRateSchedule(decimal monthlyForexTradeAmountInUSDollars, out decimal commissionRate, out decimal minimumOrderFee)
@@ -220,7 +263,7 @@ namespace QuantConnect.Orders.Fees
                 optionsCommissionFunc = (orderSize, premium) =>
                 {
                     var commissionRate = premium >= 0.1m ?
-                                            0.7m :
+                                            0.65m :
                                             (0.05m <= premium && premium < 0.1m ? 0.5m : 0.25m);
                     return new CashAmount(Math.Max(orderSize * commissionRate, 1.0m), Currencies.USD);
                 };

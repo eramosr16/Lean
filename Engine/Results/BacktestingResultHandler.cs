@@ -44,6 +44,8 @@ namespace QuantConnect.Lean.Engine.Results
         private string _errorMessage;
         private int _daysProcessedFrontier;
         private readonly HashSet<string> _chartSeriesExceededDataPoints;
+        private readonly HashSet<string> _chartSeriesCount;
+        private bool _chartSeriesCountExceededError;
 
         private BacktestProgressMonitor _progressMonitor;
 
@@ -70,14 +72,15 @@ namespace QuantConnect.Lean.Engine.Results
             ResamplePeriod = TimeSpan.FromMinutes(4);
             NotificationPeriod = TimeSpan.FromSeconds(2);
 
-            _chartSeriesExceededDataPoints = new HashSet<string>();
+            _chartSeriesExceededDataPoints = new();
+            _chartSeriesCount = new();
 
             // Delay uploading first packet
-            _nextS3Update = StartTime.AddSeconds(30);
+            _nextS3Update = StartTime.AddSeconds(5);
 
             //Default charts:
             Charts.AddOrUpdate(StrategyEquityKey, new Chart(StrategyEquityKey));
-            Charts[StrategyEquityKey].Series.Add(EquityKey, new Series(EquityKey, SeriesType.Candle, 0, "$"));
+            Charts[StrategyEquityKey].Series.Add(EquityKey, new CandlestickSeries(EquityKey, 0, "$"));
             Charts[StrategyEquityKey].Series.Add(DailyPerformanceKey, new Series(DailyPerformanceKey, SeriesType.Bar, 1, "%"));
         }
 
@@ -353,7 +356,7 @@ namespace QuantConnect.Lean.Engine.Results
                     result = new BacktestResultPacket(_job,
                         new BacktestResult(new BacktestResultParameters(charts, orders, profitLoss, statisticsResults.Summary, runtime,
                             statisticsResults.RollingPerformances, orderEvents, statisticsResults.TotalPerformance,
-                            AlgorithmConfiguration.Create(Algorithm), GetAlgorithmState(endTime))),
+                            AlgorithmConfiguration.Create(Algorithm, _job), GetAlgorithmState(endTime))),
                         Algorithm.EndDate, Algorithm.StartDate);
                 }
                 else
@@ -392,6 +395,7 @@ namespace QuantConnect.Lean.Engine.Results
         public virtual void SetAlgorithm(IAlgorithm algorithm, decimal startingPortfolioValue)
         {
             Algorithm = algorithm;
+            Algorithm.SetStatisticsService(this);
             StartingPortfolioValue = startingPortfolioValue;
             DailyPortfolioValue = StartingPortfolioValue;
             CumulativeMaxPortfolioValue = StartingPortfolioValue;
@@ -515,10 +519,10 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="seriesIndex">Type of chart we should create if it doesn't already exist.</param>
         /// <param name="seriesName">Series name for the chart.</param>
         /// <param name="seriesType">Series type for the chart.</param>
-        /// <param name="time">Time for the sample</param>
-        /// <param name="unit">Unit of the sample</param>
         /// <param name="value">Value for the chart sample.</param>
-        protected override void Sample(string chartName, string seriesName, int seriesIndex, SeriesType seriesType, DateTime time, decimal value, string unit = "$")
+        /// <param name="unit">Unit of the sample</param>
+        protected override void Sample(string chartName, string seriesName, int seriesIndex, SeriesType seriesType, ISeriesPoint value,
+            string unit = "$")
         {
             // Sampling during warming up period skews statistics
             if (Algorithm.IsWarmingUp)
@@ -537,19 +541,19 @@ namespace QuantConnect.Lean.Engine.Results
                 }
 
                 //Add the sample to our chart:
-                Series series;
+                BaseSeries series;
                 if (!chart.Series.TryGetValue(seriesName, out series))
                 {
-                    series = new Series(seriesName, seriesType, seriesIndex, unit);
+                    series = BaseSeries.Create(seriesType, seriesName, seriesIndex, unit);
                     chart.Series.Add(seriesName, series);
                 }
 
                 //Add our value:
-                if (series.Values.Count == 0 || time > Time.UnixTimeStampToDateTime(series.Values[series.Values.Count - 1].x)
+                if (series.Values.Count == 0 || value.Time > series.Values[series.Values.Count - 1].Time
                     // always sample portfolio turnover and use latest value
                     || chartName == PortfolioTurnoverKey)
                 {
-                    series.AddPoint(time, value);
+                    series.AddPoint(value);
                 }
             }
         }
@@ -562,15 +566,14 @@ namespace QuantConnect.Lean.Engine.Results
         {
             // Sample strategy capacity, round to 1k
             var roundedCapacity = _capacityEstimate.Capacity;
-            Sample("Capacity", "Strategy Capacity", 0, SeriesType.Line, time,
-                roundedCapacity, AlgorithmCurrencySymbol);
+            Sample("Capacity", "Strategy Capacity", 0, SeriesType.Line, new ChartPoint(time, roundedCapacity), AlgorithmCurrencySymbol);
         }
 
         /// <summary>
         /// Add a range of samples from the users algorithms to the end of our current list.
         /// </summary>
         /// <param name="updates">Chart updates since the last request.</param>
-        protected void SampleRange(List<Chart> updates)
+        protected void SampleRange(IEnumerable<Chart> updates)
         {
             lock (ChartLock)
             {
@@ -587,10 +590,25 @@ namespace QuantConnect.Lean.Engine.Results
                     //Add these samples to this chart.
                     foreach (var series in update.Series.Values)
                     {
+                        // let's assert we are within series count limit
+                        if (_chartSeriesCount.Count < _job.Controls.MaximumChartSeries)
+                        {
+                            _chartSeriesCount.Add(series.Name);
+                        }
+                        else if (!_chartSeriesCount.Contains(series.Name))
+                        {
+                            // above the limit and this is a new series
+                            if(!_chartSeriesCountExceededError)
+                            {
+                                _chartSeriesCountExceededError = true;
+                                DebugMessage($"Exceeded maximum chart series count, new series will be ignored. Limit is currently set at {_job.Controls.MaximumChartSeries}");
+                            }
+                            continue;
+                        }
+
                         if (series.Values.Count > 0)
                         {
-                            var thisSeries = chart.TryAddAndGetSeries(series.Name, series.SeriesType, series.Index,
-                                series.Unit, series.Color, series.ScatterMarkerSymbol, false);
+                            var thisSeries = chart.TryAddAndGetSeries(series.Name, series, forceAddNew: false);
                             if (series.SeriesType == SeriesType.Pie)
                             {
                                 var dataPoint = series.ConsolidateChartPoints();
@@ -699,6 +717,9 @@ namespace QuantConnect.Lean.Engine.Results
             // Invalidate the processed days count so it gets recalculated
             _progressMonitor.InvalidateProcessedDays();
 
+            // Update the equity bar
+            UpdateAlgorithmEquity();
+
             var time = Algorithm.UtcTime;
             if (time > _nextSample || forceProcess)
             {
@@ -706,7 +727,7 @@ namespace QuantConnect.Lean.Engine.Results
                 _nextSample = time.Add(ResamplePeriod);
 
                 //Sample the portfolio value over time for chart.
-                SampleEquity(time, Math.Round(Algorithm.Portfolio.TotalPortfolioValue, 4));
+                SampleEquity(time);
 
                 //Also add the user samples / plots to the result handler tracking:
                 SampleRange(Algorithm.GetChartUpdates());
@@ -743,6 +764,25 @@ namespace QuantConnect.Lean.Engine.Results
                 Console.SetOut(new FuncTextWriter(msg => Log.Trace(msg)));
                 Console.SetError(new FuncTextWriter(msg => Log.Error(msg)));
             }
+        }
+
+        /// <summary>
+        /// Calculates and gets the current statistics for the algorithm
+        /// </summary>
+        /// <returns>The current statistics</returns>
+        public StatisticsResults StatisticsResults()
+        {
+            return GenerateStatisticsResults(_capacityEstimate);
+        }
+
+        /// <summary>
+        /// Sets or updates a custom summary statistic
+        /// </summary>
+        /// <param name="name">The statistic name</param>
+        /// <param name="value">The statistic value</param>
+        public void SetSummaryStatistic(string name, string value)
+        {
+            SummaryStatistic(name, value);
         }
     }
 }

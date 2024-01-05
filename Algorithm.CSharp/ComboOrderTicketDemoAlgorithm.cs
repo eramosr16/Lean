@@ -209,7 +209,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                 foreach (var ticket in combo1)
                 {
-                    var newLimit = ticket.Get(OrderField.LimitPrice) + (ticket.Quantity > 0 ? 1m : -1m) * 0.01m;
+                    var newLimit = Math.Round(ticket.Get(OrderField.LimitPrice) + (ticket.Quantity > 0 ? 1m : -1m) * 0.01m, 2);
                     Debug($"Updating limits - Combo #1: {newLimit.ToStringInvariant("0.00")}");
 
                     ticket.Update(new UpdateOrderFields
@@ -221,7 +221,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                 foreach (var ticket in combo2)
                 {
-                    var newLimit = ticket.Get(OrderField.LimitPrice) + (ticket.Quantity > 0 ? 1m : -1m) * 0.01m;
+                    var newLimit = Math.Round(ticket.Get(OrderField.LimitPrice) + (ticket.Quantity > 0 ? 1m : -1m) * 0.01m, 2);
                     Debug($"Updating limits - Combo #2: {newLimit.ToStringInvariant("0.00")}");
 
                     ticket.Update(new UpdateOrderFields
@@ -331,7 +331,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 475788;
+        public long DataPoints => 471135;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -351,6 +351,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Expectancy", "0"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -362,11 +363,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$15.00"},
+            {"Total Fees", "$26.00"},
             {"Estimated Strategy Capacity", "$2000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZERHAOVVQ|GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "58.97%"},
-            {"OrderListHash", "19f6e25bdd15d3b0d0126e0019613eae"}
+            {"Portfolio Turnover", "58.98%"},
+            {"OrderListHash", "c455fd803ce5f4b7902a97d84c14629a"}
         };
     }
 }

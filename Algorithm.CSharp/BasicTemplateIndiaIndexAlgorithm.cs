@@ -128,7 +128,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "0.000%"},
             {"Expectancy", "-1"},
             {"Net Profit", "-0.004%"},
-            {"Sharpe Ratio", "-23.595"},
+            {"Sharpe Ratio", "-328.371"},
+            {"Sortino Ratio", "-328.371"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
@@ -144,7 +145,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "₹84000.00"},
             {"Lowest Capacity Asset", "JUNIORBEES UL"},
             {"Portfolio Turnover", "0.04%"},
-            {"OrderListHash", "57558324bc9b67b36ae33c3e1c191740"}
+            {"OrderListHash", "5823d79e97915654a8f68ae5fa600b5a"}
         };
     }
 }

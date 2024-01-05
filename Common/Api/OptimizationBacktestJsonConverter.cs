@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -72,15 +73,38 @@ namespace QuantConnect.Api
                 writer.WriteValue(optimizationBacktest.ExitCode);
             }
 
+            if (optimizationBacktest.StartDate != default)
+            {
+                writer.WritePropertyName("startDate");
+                writer.WriteValue(optimizationBacktest.StartDate.ToStringInvariant(DateFormat.UI));
+            }
+
+            if (optimizationBacktest.EndDate != default)
+            {
+                writer.WritePropertyName("endDate");
+                writer.WriteValue(optimizationBacktest.EndDate.ToStringInvariant(DateFormat.UI));
+            }
+
+            if (optimizationBacktest.OutOfSampleMaxEndDate != null)
+            {
+                writer.WritePropertyName("outOfSampleMaxEndDate");
+                writer.WriteValue(optimizationBacktest.OutOfSampleMaxEndDate.ToStringInvariant(DateFormat.UI));
+
+                writer.WritePropertyName("outOfSampleDays");
+                writer.WriteValue(optimizationBacktest.OutOfSampleDays);
+            }
+
             if (!optimizationBacktest.Statistics.IsNullOrEmpty())
             {
                 writer.WritePropertyName("statistics");
                 writer.WriteStartArray();
                 foreach (var keyValuePair in optimizationBacktest.Statistics.OrderBy(pair => pair.Key))
                 {
-                    if(keyValuePair.Key == PerformanceMetrics.PortfolioTurnover)
+                    switch (keyValuePair.Key)
                     {
-                        continue;
+                        case PerformanceMetrics.PortfolioTurnover:
+                        case PerformanceMetrics.SortinoRatio:
+                            continue;
                     }
                     var statistic = keyValuePair.Value.Replace("%", string.Empty);
                     if (Currencies.TryParse(statistic, out var result))
@@ -100,15 +124,9 @@ namespace QuantConnect.Api
             if (optimizationBacktest.Equity != null)
             {
                 writer.WritePropertyName("equity");
-                writer.WriteStartArray();
-                foreach (var chartPoint in optimizationBacktest.Equity.Values)
-                {
-                    writer.WriteStartArray();
-                    writer.WriteValue(chartPoint.x);
-                    writer.WriteValue(chartPoint.y);
-                    writer.WriteEndArray();
-                }
-                writer.WriteEndArray();
+
+                var equity = JsonConvert.SerializeObject(optimizationBacktest.Equity.Values);
+                writer.WriteRawValue(equity);
             }
 
             writer.WriteEndObject();
@@ -134,6 +152,11 @@ namespace QuantConnect.Api
             var progress = jObject["progress"].Value<decimal>();
             var exitCode = jObject["exitCode"].Value<int>();
 
+            var outOfSampleDays = jObject["outOfSampleDays"]?.Value<int>() ?? default;
+            var startDate = jObject["startDate"]?.Value<DateTime>() ?? default;
+            var endDate = jObject["endDate"]?.Value<DateTime>() ?? default;
+            var outOfSampleMaxEndDate = jObject["outOfSampleMaxEndDate"]?.Value<DateTime>();
+
             var jStatistics = jObject["statistics"];
             var statistics = new Dictionary<string, string>
             {
@@ -153,6 +176,7 @@ namespace QuantConnect.Api
                 { PerformanceMetrics.ProbabilisticSharpeRatio, jStatistics[13].Value<string>() },
                 { PerformanceMetrics.ProfitLossRatio, jStatistics[14].Value<string>() },
                 { PerformanceMetrics.SharpeRatio, jStatistics[15].Value<string>() },
+                // TODO: Add SortinoRatio
                 { PerformanceMetrics.TotalFees, jStatistics[16].Value<string>() },
                 { PerformanceMetrics.TotalTrades, jStatistics[17].Value<string>() },
                 { PerformanceMetrics.TrackingError, jStatistics[18].Value<string>() },
@@ -162,7 +186,11 @@ namespace QuantConnect.Api
 
             var parameterSet = serializer.Deserialize<ParameterSet>(jObject["parameterSet"].CreateReader());
 
-            var equity = new Series { Values = GetSeriesValues(jObject["equity"]) };
+            var equity = new CandlestickSeries();
+            foreach (var point in JsonConvert.DeserializeObject<List<Candlestick>>(jObject["equity"].ToString()))
+            {
+                equity.AddPoint(point);
+            }
 
             var optimizationBacktest = new OptimizationBacktest(parameterSet, backtestId, name)
             {
@@ -170,30 +198,14 @@ namespace QuantConnect.Api
                 Progress = progress,
                 ExitCode = exitCode,
                 Statistics = statistics,
-                Equity = equity
+                Equity = equity,
+                EndDate = endDate,
+                StartDate = startDate,
+                OutOfSampleDays = outOfSampleDays,
+                OutOfSampleMaxEndDate = outOfSampleMaxEndDate,
             };
 
             return optimizationBacktest;
-        }
-
-        /// <summary>
-        /// Get x and y value pairs that represent series data
-        /// </summary>
-        /// <param name="values">json array of x, y value pairs</param>
-        /// <returns>List of ChartPoints</returns>
-        private static List<ChartPoint> GetSeriesValues(JToken values)
-        {
-            var chartPoints = new List<ChartPoint>();
-
-            foreach (var point in values.Children())
-            {
-                var x = point[0];
-                var y = point[1];
-
-                chartPoints.Add(new ChartPoint((long)x, (decimal)y));
-            }
-
-            return chartPoints;
         }
     }
 }

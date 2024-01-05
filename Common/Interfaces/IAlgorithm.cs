@@ -30,6 +30,7 @@ using QuantConnect.Securities.Option;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Algorithm.Framework.Alphas;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Interfaces
 {
@@ -119,6 +120,22 @@ namespace QuantConnect.Interfaces
         /// Gets the brokerage model used to emulate a real brokerage
         /// </summary>
         IBrokerageModel BrokerageModel
+        {
+            get;
+        }
+
+        /// <summary>
+        /// Gets the brokerage name.
+        /// </summary>
+        BrokerageName BrokerageName
+        {
+            get;
+        }
+
+        /// <summary>
+        /// Gets the risk free interest rate model used to get the interest rates
+        /// </summary>
+        IRiskFreeInterestRateModel RiskFreeInterestRateModel
         {
             get;
         }
@@ -242,6 +259,22 @@ namespace QuantConnect.Interfaces
         }
 
         /// <summary>
+        /// Algorithm running mode.
+        /// </summary>
+        AlgorithmMode AlgorithmMode
+        {
+            get;
+        }
+
+        /// <summary>
+        /// Deployment target, either local or cloud.
+        /// </summary>
+        DeploymentTarget DeploymentTarget
+        {
+            get;
+        }
+
+        /// <summary>
         /// Gets the subscription settings to be used when adding securities via universe selection
         /// </summary>
         UniverseSettings UniverseSettings
@@ -286,6 +319,14 @@ namespace QuantConnect.Interfaces
         /// Customizable dynamic statistics displayed during live trading:
         /// </summary>
         ConcurrentDictionary<string, string> RuntimeStatistics
+        {
+            get;
+        }
+
+        /// <summary>
+        /// The current algorithm statistics for the running algorithm.
+        /// </summary>
+        StatisticsResults Statistics
         {
             get;
         }
@@ -413,12 +454,24 @@ namespace QuantConnect.Interfaces
         void SetParameters(Dictionary<string, string> parameters);
 
         /// <summary>
-        /// Checks if the provided asset is shortable at the brokerage
+        /// Determines if the Symbol is shortable at the brokerage
         /// </summary>
-        /// <param name="symbol">Symbol to check if it is shortable</param>
-        /// <param name="quantity">Order quantity to check if shortable</param>
-        /// <returns></returns>
-        bool Shortable(Symbol symbol, decimal quantity);
+        /// <param name="symbol">Symbol to check if shortable</param>
+        /// <param name="shortQuantity">Order's quantity to check if it is currently shortable, taking into account current holdings and open orders</param>
+        /// <param name="updateOrderId">Optionally the id of the order being updated. When updating an order
+        /// we want to ignore it's submitted short quantity and use the new provided quantity to determine if we
+        /// can perform the update</param>
+        /// <returns>True if the symbol can be shorted by the requested quantity</returns>
+        bool Shortable(Symbol symbol, decimal shortQuantity, int? updateOrderId = null);
+
+        /// <summary>
+        /// Gets the quantity shortable for the given asset
+        /// </summary>
+        /// <returns>
+        /// Quantity shortable for the given asset. Zero if not
+        /// shortable, or a number greater than zero if shortable.
+        /// </returns>
+        long ShortableQuantity(Symbol symbol);
 
         /// <summary>
         /// Sets the brokerage model used to resolve transaction models, settlement models,
@@ -589,7 +642,7 @@ namespace QuantConnect.Interfaces
         /// </summary>
         /// <param name="clearChartData"></param>
         /// <returns>List of Chart Updates</returns>
-        List<Chart> GetChartUpdates(bool clearChartData = false);
+        IEnumerable<Chart> GetChartUpdates(bool clearChartData = false);
 
         /// <summary>
         /// Set a required SecurityType-symbol and resolution for algorithm
@@ -690,6 +743,18 @@ namespace QuantConnect.Interfaces
         void SetLiveMode(bool live);
 
         /// <summary>
+        /// Sets the algorithm running mode
+        /// </summary>
+        /// <param name="algorithmMode">Algorithm mode</param>
+        void SetAlgorithmMode(AlgorithmMode algorithmMode);
+
+        /// <summary>
+        /// Sets the algorithm deployment target
+        /// </summary>
+        /// <param name="deploymentTarget">Deployment target</param>
+        void SetDeploymentTarget(DeploymentTarget deploymentTarget);
+
+        /// <summary>
         /// Sets <see cref="IsWarmingUp"/> to false to indicate this algorithm has finished its warm up
         /// </summary>
         void SetFinishedWarmingUp();
@@ -786,5 +851,11 @@ namespace QuantConnect.Interfaces
         /// <param name="symbol">The symbol to get the ticker for</param>
         /// <returns>The mapped ticker for a symbol</returns>
         string Ticker(Symbol symbol);
+
+        /// <summary>
+        /// Sets the statistics service instance to be used by the algorithm
+        /// </summary>
+        /// <param name="statisticsService">The statistics service instance</param>
+        void SetStatisticsService(IStatisticsService statisticsService);
     }
 }

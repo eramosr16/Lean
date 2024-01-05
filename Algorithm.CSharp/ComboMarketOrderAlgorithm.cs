@@ -14,6 +14,7 @@
 */
 
 using QuantConnect.Orders;
+using System;
 using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp
@@ -29,6 +30,15 @@ namespace QuantConnect.Algorithm.CSharp
             return ComboMarketOrder(legs, quantity);
         }
 
+        public override void OnOrderEvent(OrderEvent orderEvent)
+        {
+            base.OnOrderEvent(orderEvent);
+            if (orderEvent.Status == OrderStatus.Filled && orderEvent.OrderFee.Value.Amount != (orderEvent.AbsoluteFillQuantity * 0.65m))
+            {
+                throw new Exception($"The fee for each order should be {orderEvent.AbsoluteFillQuantity * 0.65m} USD, but for order {orderEvent.OrderId} was {orderEvent.OrderFee}");
+            }
+        }
+
         /// <summary>
         /// This is used by the regression test system to indicate if the open source Lean repository has the required data to run this algorithm.
         /// </summary>
@@ -42,7 +52,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 475788;
+        public override long DataPoints => 471135;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -62,6 +72,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Expectancy", "0"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -73,11 +84,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$75.00"},
+            {"Total Fees", "$26.00"},
             {"Estimated Strategy Capacity", "$70000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZERHAOVVQ|GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "30.36%"},
-            {"OrderListHash", "cf49ecb1e9787688df1d9920a75b83b7"}
+            {"Portfolio Turnover", "30.35%"},
+            {"OrderListHash", "71cb9fdd55ff925f70677ae01a18b90d"}
         };
     }
 }

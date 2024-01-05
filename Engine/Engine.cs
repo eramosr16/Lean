@@ -129,6 +129,8 @@ namespace QuantConnect.Lean.Engine
                     // notify the user of any errors w/ object store persistence
                     AlgorithmHandlers.ObjectStore.ErrorRaised += (sender, args) => algorithm.Debug($"ObjectStore Persistence Error: {args.Error.Message}");
 
+                    // set the order processor on the transaction manager,needs to be done before initializing the brokerage which might start using it
+                    algorithm.Transactions.SetOrderProcessor(AlgorithmHandlers.Transactions);
 
                     // Initialize the brokerage
                     IBrokerageFactory factory;
@@ -146,7 +148,8 @@ namespace QuantConnect.Lean.Engine
                         algorithm,
                         registeredTypesProvider,
                         new SecurityCacheProvider(algorithm.Portfolio),
-                        mapFilePrimaryExchangeProvider);
+                        mapFilePrimaryExchangeProvider,
+                        algorithm);
 
                     algorithm.Securities.SetSecurityService(securityService);
 
@@ -167,6 +170,9 @@ namespace QuantConnect.Lean.Engine
 
                     synchronizer.Initialize(algorithm, dataManager);
 
+                    // Set the algorithm's object store before initializing the data feed, which might use it
+                    algorithm.SetObjectStore(AlgorithmHandlers.ObjectStore);
+
                     // Initialize the data feed before we initialize so he can intercept added securities/universes via events
                     AlgorithmHandlers.DataFeed.Initialize(
                         algorithm,
@@ -178,9 +184,6 @@ namespace QuantConnect.Lean.Engine
                         dataManager,
                         (IDataFeedTimeProvider) synchronizer,
                         AlgorithmHandlers.DataPermissionsManager.DataChannelProvider);
-
-                    // set the order processor on the transaction manager (needs to be done before initializing BrokerageHistoryProvider)
-                    algorithm.Transactions.SetOrderProcessor(AlgorithmHandlers.Transactions);
 
                     // set the history provider before setting up the algorithm
                     var historyProvider = GetHistoryProvider();
@@ -204,7 +207,8 @@ namespace QuantConnect.Lean.Engine
                             },
                             // disable parallel history requests for live trading
                             parallelHistoryRequestsEnabled: !_liveMode,
-                            dataPermissionManager: AlgorithmHandlers.DataPermissionsManager
+                            dataPermissionManager: AlgorithmHandlers.DataPermissionsManager,
+                            objectStore: algorithm.ObjectStore
                         )
                     );
 
@@ -218,8 +222,9 @@ namespace QuantConnect.Lean.Engine
                     algorithm.BrokerageMessageHandler = factory.CreateBrokerageMessageHandler(algorithm, job, SystemHandlers.Api);
 
                     //Initialize the internal state of algorithm and job: executes the algorithm.Initialize() method.
-                    initializeComplete = AlgorithmHandlers.Setup.Setup(new SetupHandlerParameters(dataManager.UniverseSelection, algorithm, brokerage, job, AlgorithmHandlers.Results,
-                        AlgorithmHandlers.Transactions, AlgorithmHandlers.RealTime, AlgorithmHandlers.ObjectStore, AlgorithmHandlers.DataCacheProvider, AlgorithmHandlers.MapFileProvider));
+                    initializeComplete = AlgorithmHandlers.Setup.Setup(new SetupHandlerParameters(dataManager.UniverseSelection, algorithm,
+                        brokerage, job, AlgorithmHandlers.Results, AlgorithmHandlers.Transactions, AlgorithmHandlers.RealTime,
+                        AlgorithmHandlers.DataCacheProvider, AlgorithmHandlers.MapFileProvider));
 
                     // set this again now that we've actually added securities
                     AlgorithmHandlers.Results.SetAlgorithm(algorithm, AlgorithmHandlers.Setup.StartingPortfolioValue);

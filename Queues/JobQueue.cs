@@ -49,7 +49,42 @@ namespace QuantConnect.Queues
         private static readonly int UserId = Config.GetInt("job-user-id", 0);
         private static readonly int ProjectId = Config.GetInt("job-project-id", 0);
         private readonly string AlgorithmTypeName = Config.Get("algorithm-type-name");
-        private readonly Language Language = (Language)Enum.Parse(typeof(Language), Config.Get("algorithm-language"), ignoreCase: true);
+        private Language? _language;
+
+        /// <summary>
+        /// This property is protected for testing purposes
+        /// </summary>
+        protected Language Language
+        {
+            get
+            {
+                if (_language == null)
+                {
+                    string algorithmLanguage = Config.Get("algorithm-language");
+                    if (string.IsNullOrEmpty(algorithmLanguage))
+                    {
+                        var extension = Path.GetExtension(AlgorithmLocation).ToLower();
+                        switch (extension)
+                        {
+                            case ".dll":
+                                _language = Language.CSharp;
+                                break;
+                            case ".py":
+                                _language = Language.Python;
+                                break;
+                            default:
+                                throw new ArgumentException($"Unknown extension, algorithm extension was {extension}");
+                        }
+                    }
+                    else
+                    {
+                        _language = (Language)Enum.Parse(typeof(Language), algorithmLanguage, ignoreCase: true);
+                    }
+                }
+
+                return (Language)_language;
+            }
+        }
 
         /// <summary>
         /// Physical location of Algorithm DLL.
@@ -118,7 +153,8 @@ namespace QuantConnect.Queues
                 SecondLimit = Config.GetInt("symbol-second-limit", 10000),
                 TickLimit = Config.GetInt("symbol-tick-limit", 10000),
                 RamAllocation = int.MaxValue,
-                MaximumDataPointsPerChartSeries = Config.GetInt("maximum-data-points-per-chart-series", 4000),
+                MaximumDataPointsPerChartSeries = Config.GetInt("maximum-data-points-per-chart-series", 1000000),
+                MaximumChartSeries = Config.GetInt("maximum-chart-series", 30),
                 StorageLimit = Config.GetValue("storage-limit", 10737418240L),
                 StorageFileCount = Config.GetInt("storage-file-count", 10000),
                 StoragePermissions = (FileAccess)Config.GetInt("storage-permissions", (int)FileAccess.ReadWrite)
@@ -148,7 +184,8 @@ namespace QuantConnect.Queues
                     Parameters = parameters,
                     Language = Language,
                     Controls = controls,
-                    PythonVirtualEnvironment = Config.Get("python-venv")
+                    PythonVirtualEnvironment = Config.Get("python-venv"),
+                    DeploymentTarget = DeploymentTarget.LocalPlatform,
                 };
 
                 Type brokerageName = null;
@@ -184,14 +221,8 @@ namespace QuantConnect.Queues
                             //live holdings & cash balance not required for data handler
                             continue;
                         }
-                        else if (!liveJob.BrokerageData.ContainsKey(data.Key))
-                        {
-                            liveJob.BrokerageData.Add(data.Key, data.Value);
-                        }
-                        else
-                        {
-                            throw new ArgumentException($"JobQueue.NextJob(): Key already exists in BrokerageData -- {data.Key}");
-                        }
+
+                        liveJob.BrokerageData.TryAdd(data.Key, data.Value);
                     }
                 }
                 return liveJob;
@@ -214,8 +245,17 @@ namespace QuantConnect.Queues
                 Language = Language,
                 Parameters = parameters,
                 Controls = controls,
-                PythonVirtualEnvironment = Config.Get("python-venv")
+                PythonVirtualEnvironment = Config.Get("python-venv"),
+                DeploymentTarget = DeploymentTarget.LocalPlatform,
             };
+
+            var outOfSampleMaxEndDate = Config.Get("out-of-sample-max-end-date");
+            if (!string.IsNullOrEmpty(outOfSampleMaxEndDate))
+            {
+                backtestJob.OutOfSampleMaxEndDate = Time.ParseDate(outOfSampleMaxEndDate);
+            }
+            backtestJob.OutOfSampleDays = Config.GetInt("out-of-sample-days");
+
             // Only set optimization id when backtest is for optimization
             if (!optimizationId.IsNullOrEmpty())
             {

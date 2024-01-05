@@ -24,6 +24,7 @@ using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using QuantConnect.Python;
 using Python.Runtime;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Algorithm
 {
@@ -331,7 +332,7 @@ namespace QuantConnect.Algorithm
             DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null)
             where T : IBaseData
         {
-            CheckPeriodBasedHistoryRequestResolution(symbols, resolution);
+            CheckPeriodBasedHistoryRequestResolution(symbols, resolution, typeof(T));
             var requests = CreateBarCountHistoryRequests(symbols, typeof(T), periods, resolution, fillForward, extendedMarketHours, dataMappingMode,
                 dataNormalizationMode, contractDepthOffset);
             return GetDataTypedHistory<T>(requests);
@@ -408,8 +409,8 @@ namespace QuantConnect.Algorithm
         {
             if (symbol == null) throw new ArgumentException(_symbolEmptyErrorMessage);
 
-            resolution = GetResolution(symbol, resolution);
-            CheckPeriodBasedHistoryRequestResolution(new[] { symbol }, resolution);
+            resolution = GetResolution(symbol, resolution, typeof(TradeBar));
+            CheckPeriodBasedHistoryRequestResolution(new[] { symbol }, resolution, typeof(TradeBar));
             var marketHours = GetMarketHours(symbol);
             var start = _historyRequestFactory.GetStartTimeAlgoTz(symbol, periods, resolution.Value, marketHours.ExchangeHours,
                 marketHours.DataTimeZone, extendedMarketHours);
@@ -439,8 +440,8 @@ namespace QuantConnect.Algorithm
             int? contractDepthOffset = null)
             where T : IBaseData
         {
-            resolution = GetResolution(symbol, resolution);
-            CheckPeriodBasedHistoryRequestResolution(new[] { symbol }, resolution);
+            resolution = GetResolution(symbol, resolution, typeof(T));
+            CheckPeriodBasedHistoryRequestResolution(new[] { symbol }, resolution, typeof(T));
             var requests = CreateBarCountHistoryRequests(new [] { symbol }, typeof(T), periods, resolution, fillForward, extendedMarketHours,
                 dataMappingMode, dataNormalizationMode, contractDepthOffset);
             return GetDataTypedHistory<T>(requests, symbol);
@@ -518,7 +519,7 @@ namespace QuantConnect.Algorithm
                 Error("Calling History<TradeBar> method on a Forex or CFD security will return an empty result. Please use the generic version with QuoteBar type parameter.");
             }
 
-            var resolutionToUse = resolution ?? GetResolution(symbol, resolution);
+            var resolutionToUse = resolution ?? GetResolution(symbol, resolution, typeof(TradeBar));
             if (resolutionToUse == Resolution.Tick)
             {
                 throw new InvalidOperationException("Calling History<TradeBar> method with Resolution.Tick will return an empty result." +
@@ -573,7 +574,7 @@ namespace QuantConnect.Algorithm
             bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null,
             int? contractDepthOffset = null)
         {
-            CheckPeriodBasedHistoryRequestResolution(symbols, resolution);
+            CheckPeriodBasedHistoryRequestResolution(symbols, resolution, null);
             return History(CreateBarCountHistoryRequests(symbols, periods, resolution, fillForward, extendedMarketHours, dataMappingMode,
                 dataNormalizationMode, contractDepthOffset)).Memoize();
         }
@@ -803,16 +804,30 @@ namespace QuantConnect.Algorithm
             return result.Memoize();
         }
 
-        [DocumentationAttribute(HistoricalData)]
         private IEnumerable<Slice> History(IEnumerable<HistoryRequest> requests, DateTimeZone timeZone)
         {
-            var sentMessage = false;
-            var hasPythonDataRequest = false;
             // filter out any universe securities that may have made it this far
-            var filteredRequests = requests.Where(hr => HistoryRequestValid(hr.Symbol)).ToList();
-            for (var i = 0; i < filteredRequests.Count; i++)
+            var filteredRequests = GetFilterestRequests(requests);
+
+            // filter out future data to prevent look ahead bias
+            var history = HistoryProvider.GetHistory(filteredRequests, timeZone);
+
+            if (PythonEngine.IsInitialized)
             {
-                var request  = filteredRequests[i];
+                // add protection against potential python deadlocks
+                // with parallel history requests we reuse the data stack threads to serve the history calls because of this we need to make sure to release
+                // the GIL before waiting on the history request because there could be a work/job in the data stack queues which needs the GIL
+                return WrapPythonDataHistory(history);
+            }
+
+            return history;
+        }
+
+        private IEnumerable<HistoryRequest> GetFilterestRequests(IEnumerable<HistoryRequest> requests)
+        {
+            var sentMessage = false;
+            foreach (var request in requests.Where(hr => HistoryRequestValid(hr.Symbol)))
+            {
                 // prevent future requests
                 if (request.EndTimeUtc > UtcTime)
                 {
@@ -823,7 +838,7 @@ namespace QuantConnect.Algorithm
                         startTimeUtc = request.EndTimeUtc;
                     }
 
-                    filteredRequests[i] = new HistoryRequest(startTimeUtc, endTimeUtc,
+                    yield return new HistoryRequest(startTimeUtc, endTimeUtc,
                         request.DataType, request.Symbol, request.Resolution, request.ExchangeHours,
                         request.DataTimeZone, request.FillForwardResolution, request.IncludeExtendedMarketHours,
                         request.IsCustomData, request.DataNormalizationMode, request.TickType, request.DataMappingMode,
@@ -835,29 +850,17 @@ namespace QuantConnect.Algorithm
                         Debug("Request for future history modified to end now.");
                     }
                 }
-
-                if (!hasPythonDataRequest)
+                else
                 {
-                    hasPythonDataRequest = request.IsCustomData && typeof(PythonData).IsAssignableFrom(request.DataType);
+                    yield return request;
                 }
             }
-
-            // filter out future data to prevent look ahead bias
-            var history = HistoryProvider.GetHistory(filteredRequests, timeZone);
-
-            if (hasPythonDataRequest && PythonEngine.IsInitialized)
-            {
-                // add protection against potential python deadlocks
-                return WrapPythonDataHistory(history);
-            }
-
-            return history;
         }
 
         /// <summary>
         /// Helper method to create history requests from a date range
         /// </summary>
-        private IEnumerable<HistoryRequest> CreateDateRangeHistoryRequests(IEnumerable<Symbol> symbols, DateTime startAlgoTz, DateTime endAlgoTz,
+        protected IEnumerable<HistoryRequest> CreateDateRangeHistoryRequests(IEnumerable<Symbol> symbols, DateTime startAlgoTz, DateTime endAlgoTz,
             Resolution? resolution = null, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null,
             DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null)
         {
@@ -868,17 +871,17 @@ namespace QuantConnect.Algorithm
         /// <summary>
         /// Helper method to create history requests from a date range with custom data type
         /// </summary>
-        private IEnumerable<HistoryRequest> CreateDateRangeHistoryRequests(IEnumerable<Symbol> symbols, Type requestedType, DateTime startAlgoTz, DateTime endAlgoTz,
+        protected IEnumerable<HistoryRequest> CreateDateRangeHistoryRequests(IEnumerable<Symbol> symbols, Type requestedType, DateTime startAlgoTz, DateTime endAlgoTz,
             Resolution? resolution = null, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null,
             DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null)
         {
-            return symbols.Where(HistoryRequestValid).SelectMany(x =>
+            return GetSymbolsForType(symbols, requestedType).Where(HistoryRequestValid).SelectMany(x =>
             {
                 var requests = new List<HistoryRequest>();
 
                 foreach (var config in GetMatchingSubscriptions(x, requestedType, resolution))
                 {
-                    var request = _historyRequestFactory.CreateHistoryRequest(config, startAlgoTz, endAlgoTz, GetExchangeHours(x), resolution,
+                    var request = _historyRequestFactory.CreateHistoryRequest(config, startAlgoTz, endAlgoTz, GetExchangeHours(x, requestedType), resolution,
                         fillForward, extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset);
                     requests.Add(request);
                 }
@@ -905,10 +908,10 @@ namespace QuantConnect.Algorithm
             Resolution? resolution = null, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null,
             DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null)
         {
-            return symbols.Where(HistoryRequestValid).SelectMany(symbol =>
+            return GetSymbolsForType(symbols, requestedType).Where(HistoryRequestValid).SelectMany(symbol =>
             {
-                var res = GetResolution(symbol, resolution);
-                var exchange = GetExchangeHours(symbol);
+                var res = GetResolution(symbol, resolution, requestedType);
+                var exchange = GetExchangeHours(symbol, requestedType);
                 var configs = GetMatchingSubscriptions(symbol, requestedType, resolution).ToList();
                 if (configs.Count == 0)
                 {
@@ -923,6 +926,16 @@ namespace QuantConnect.Algorithm
             });
         }
 
+        private IEnumerable<Symbol> GetSymbolsForType(IEnumerable<Symbol> symbols, Type requestedType)
+        {
+            if (requestedType.IsAssignableTo(typeof(BaseDataCollection)))
+            {
+                var instance = requestedType.GetBaseDataInstance();
+                return new [] { ((BaseDataCollection)instance).UniverseSymbol() };
+            }
+            return symbols;
+        }
+
         private int GetTickTypeOrder(SecurityType securityType, TickType tickType)
         {
             return SubscriptionManager.AvailableDataTypes[securityType].IndexOf(tickType);
@@ -930,14 +943,15 @@ namespace QuantConnect.Algorithm
 
         private IEnumerable<SubscriptionDataConfig> GetMatchingSubscriptions(Symbol symbol, Type type, Resolution? resolution = null)
         {
-            var matchingSubscriptions = SubscriptionManager.SubscriptionDataConfigService
-                 // we add internal subscription so that history requests are covered, this allows us to warm them up too
-                .GetSubscriptionDataConfigs(symbol, includeInternalConfigs:true)
+            var subscriptions = SubscriptionManager.SubscriptionDataConfigService
+                // we add internal subscription so that history requests are covered, this allows us to warm them up too
+                .GetSubscriptionDataConfigs(symbol, includeInternalConfigs: true)
                 // find all subscriptions matching the requested type with a higher resolution than requested
                 .OrderByDescending(s => s.Resolution)
                 // lets make sure to respect the order of the data types
-                .ThenByDescending(config => GetTickTypeOrder(config.SecurityType, config.TickType))
-                .Where(s => SubscriptionDataConfigTypeFilter(type, s.Type));
+                .ThenByDescending(config => GetTickTypeOrder(config.SecurityType, config.TickType));
+
+            var matchingSubscriptions = subscriptions.Where(s => SubscriptionDataConfigTypeFilter(type, s.Type));
 
             var internalConfig = new List<SubscriptionDataConfig>();
             var userConfig = new List<SubscriptionDataConfig>();
@@ -983,7 +997,25 @@ namespace QuantConnect.Algorithm
             else
             {
                 var entry = MarketHoursDatabase.GetEntry(symbol, new []{ type });
-                resolution = GetResolution(symbol, resolution);
+                resolution = GetResolution(symbol, resolution, type);
+
+                if (!LeanData.IsCommonLeanDataType(type) && !type.IsAbstract)
+                {
+                    // we were giving a specific type let's fetch it
+                    return new[] { new SubscriptionDataConfig(
+                        type,
+                        symbol,
+                        resolution.Value,
+                        entry.DataTimeZone,
+                        entry.ExchangeHours.TimeZone,
+                        UniverseSettings.FillForward,
+                        UniverseSettings.ExtendedMarketHours,
+                        true,
+                        false,
+                        LeanData.GetCommonTickTypeForCommonDataTypes(type, symbol.SecurityType),
+                        true,
+                        UniverseSettings.GetUniverseNormalizationModeOrDefault(symbol.SecurityType))};
+                }
 
                 return SubscriptionManager
                     .LookupSubscriptionConfigDataTypes(symbol.SecurityType, resolution.Value, symbol.IsCanonical())
@@ -1016,14 +1048,17 @@ namespace QuantConnect.Algorithm
             return targetType.IsAssignableFrom(configType) && (!targetIsGenericType || configType != typeof(OpenInterest));
         }
 
-        private SecurityExchangeHours GetExchangeHours(Symbol symbol)
+        private SecurityExchangeHours GetExchangeHours(Symbol symbol, Type type = null)
         {
-            return GetMarketHours(symbol).ExchangeHours;
+            return GetMarketHours(symbol, type).ExchangeHours;
         }
 
-        private MarketHoursDatabase.Entry GetMarketHours(Symbol symbol)
+        private MarketHoursDatabase.Entry GetMarketHours(Symbol symbol, Type type = null)
         {
-            var hoursEntry = MarketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.ID.SecurityType);
+            var hoursEntry = type != null
+                ? MarketHoursDatabase.GetEntry(symbol, new[] { type })
+                : MarketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.ID.SecurityType);
+
 
             // user can override the exchange hours in algorithm, i.e. HistoryAlgorithm
             Security security;
@@ -1035,39 +1070,58 @@ namespace QuantConnect.Algorithm
             return hoursEntry;
         }
 
-        private Resolution GetResolution(Symbol symbol, Resolution? resolution)
+        private Resolution GetResolution(Symbol symbol, Resolution? resolution, Type type)
         {
-            Security security;
-            if (Securities.TryGetValue(symbol, out security))
+            if (resolution != null)
             {
-                if (resolution != null)
+                return resolution.Value;
+            }
+
+            Resolution? result = null;
+            var hasNonInternal = false;
+            foreach (var config in SubscriptionManager.SubscriptionDataConfigService
+                .GetSubscriptionDataConfigs(symbol, includeInternalConfigs: true)
+                // we process non internal configs first
+                .OrderBy(config => config.IsInternalFeed ? 1 : 0))
+            {
+                if (!config.IsInternalFeed || !hasNonInternal)
+                {
+                    // once we find a non internal config we ignore internals
+                    hasNonInternal |= !config.IsInternalFeed;
+                    if (!result.HasValue || config.Resolution < result)
+                    {
+                        result = config.Resolution;
+                    }
+                }
+            }
+
+            if (result != null)
+            {
+                return (Resolution)result;
+            }
+            else
+            {
+                if(resolution != null)
                 {
                     return resolution.Value;
                 }
 
-                Resolution? result = null;
-                var hasNonInternal = false;
-                foreach (var config in SubscriptionManager.SubscriptionDataConfigService
-                    .GetSubscriptionDataConfigs(symbol, includeInternalConfigs: true)
-                    // we process non internal configs first
-                    .OrderBy(config => config.IsInternalFeed ? 1 : 0))
+                if (type == null || LeanData.IsCommonLeanDataType(type) || type.IsAbstract)
                 {
-                    if (!config.IsInternalFeed || !hasNonInternal)
-                    {
-                        // once we find a non internal config we ignore internals
-                        hasNonInternal |= !config.IsInternalFeed;
-                        if (!result.HasValue || config.Resolution < result)
-                        {
-                            result = config.Resolution;
-                        }
-                    }
+                    return UniverseSettings.Resolution;
                 }
 
-                return result ?? UniverseSettings.Resolution;
-            }
-            else
-            {
-                return resolution ?? UniverseSettings.Resolution;
+                try
+                {
+                    // for custom data types let's try to fetch the default resolution from the type definition
+                    var instance = type.GetBaseDataInstance();
+                    return instance.DefaultResolution();
+                }
+                catch
+                {
+                    // just in case
+                    return UniverseSettings.Resolution;
+                }
             }
         }
 
@@ -1098,9 +1152,9 @@ namespace QuantConnect.Algorithm
         /// <summary>
         /// Throws if a period bases history request is made for tick resolution, which is not allowed.
         /// </summary>
-        private void CheckPeriodBasedHistoryRequestResolution(IEnumerable<Symbol> symbols, Resolution? resolution)
+        private void CheckPeriodBasedHistoryRequestResolution(IEnumerable<Symbol> symbols, Resolution? resolution, Type requestedType)
         {
-            if (symbols.Any(symbol => GetResolution(symbol, resolution) == Resolution.Tick))
+            if (symbols.Any(symbol => GetResolution(symbol, resolution, requestedType) == Resolution.Tick))
             {
                 throw new InvalidOperationException("History functions that accept a 'periods' parameter can not be used with Resolution.Tick");
             }
@@ -1148,14 +1202,20 @@ namespace QuantConnect.Algorithm
             var hasData = true;
             while (hasData)
             {
-                // TODO: we don't really need the GIL. We should find a way to check whether we have the lock and only call this wrapper method if we do.
+                // When yielding in tasks there's no guarantee it will continue in the same thread, but we need that guarantee
                 using (Py.GIL())
                 {
                     var state = PythonEngine.BeginAllowThreads();
-                    hasData = enumerator.MoveNext();
-                    PythonEngine.EndAllowThreads(state);
+                    try
+                    {
+                        hasData = enumerator.MoveNext();
+                    }
+                    finally
+                    {
+                        // we always need to reset the state so that we can dispose of the GIL
+                        PythonEngine.EndAllowThreads(state);
+                    }
                 }
-
                 if (hasData)
                 {
                     yield return enumerator.Current;

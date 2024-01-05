@@ -152,7 +152,7 @@ namespace QuantConnect.Algorithm.Framework.Portfolio.SignalExports
                     return false;
                 }
 
-                positions += $"{_algorithm.Ticker(holding.Symbol)},{_algorithm.Securities[holding.Symbol].LocalTime.ToString("yyyy-MM-dd")},{holding.Quantity}\n";
+                positions += $"{_algorithm.Ticker(holding.Symbol)},{_algorithm.Securities[holding.Symbol].LocalTime.ToString("yyyy-MM-dd")},{holding.Quantity.ToStringInvariant()}\n";
             }
             
             return true;
@@ -246,6 +246,14 @@ namespace QuantConnect.Algorithm.Framework.Portfolio.SignalExports
         private bool GetLastSubmissionId(int currentRoundId, out int lastSubmissionId)
         {
             using HttpResponseMessage submissionIdResponse = HttpClient.GetAsync($"https://tournament.crunchdao.com/api/v3/alpha-submissions?includeAll=false&roundId={currentRoundId}&apiKey={_apiKey}").Result;
+
+            if (!submissionIdResponse.IsSuccessStatusCode)
+            {
+                _algorithm.Error($"CrunchDAO API returned the following Error Code: {submissionIdResponse.StatusCode}");
+                lastSubmissionId = -1;
+                return false;
+            }
+
             var submissionIdResponseContent = submissionIdResponse.Content.ReadAsStringAsync().Result;
             var parsedSubmissionIdResponseContent = JArray.Parse(submissionIdResponseContent);
             if (!parsedSubmissionIdResponseContent.HasValues)

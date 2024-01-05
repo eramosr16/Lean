@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -31,8 +31,8 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Constructs FutureFilterUniverse
         /// </summary>
-        public FutureFilterUniverse(IEnumerable<Symbol> allSymbols, BaseData underlying)
-            : base(allSymbols, underlying)
+        public FutureFilterUniverse(IEnumerable<Symbol> allSymbols, DateTime localTime)
+            : base(allSymbols, localTime)
         {
         }
 
@@ -71,7 +71,6 @@ namespace QuantConnect.Securities
         public static FutureFilterUniverse Where(this FutureFilterUniverse universe, Func<Symbol, bool> predicate)
         {
             universe.AllSymbols = universe.AllSymbols.Where(predicate).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
 
@@ -84,7 +83,6 @@ namespace QuantConnect.Securities
         public static FutureFilterUniverse Select(this FutureFilterUniverse universe, Func<Symbol, Symbol> mapFunc)
         {
             universe.AllSymbols = universe.AllSymbols.Select(mapFunc).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
 
@@ -97,7 +95,6 @@ namespace QuantConnect.Securities
         public static FutureFilterUniverse SelectMany(this FutureFilterUniverse universe, Func<Symbol, IEnumerable<Symbol>> mapFunc)
         {
             universe.AllSymbols = universe.AllSymbols.SelectMany(mapFunc).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
     }

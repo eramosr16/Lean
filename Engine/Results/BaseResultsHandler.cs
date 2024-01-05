@@ -22,6 +22,7 @@ using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
+using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
@@ -43,11 +44,14 @@ namespace QuantConnect.Lean.Engine.Results
         private DateTime _previousPortfolioTurnoverSample;
         private bool _packetDroppedWarning;
         private int _logCount;
+        private ConcurrentDictionary<string, string> _customSummaryStatistics;
         // used for resetting out/error upon completion
         private static readonly TextWriter StandardOut = Console.Out;
         private static readonly TextWriter StandardError = Console.Error;
 
         private string _hostName;
+
+        private Bar _currentAlgorithmEquity;
 
         protected const string StrategyEquityKey = "Strategy Equity";
         protected const string EquityKey = "Equity";
@@ -75,6 +79,27 @@ namespace QuantConnect.Lean.Engine.Results
         /// The last position consumed from the <see cref="ITransactionHandler.OrderEvents"/> while determining delta order events
         /// </summary>
         protected int LastDeltaOrderEventsPosition;
+
+        /// <summary>
+        /// The current aggregated equity bar for sampling.
+        /// It will be aggregated with values from the <see cref="GetPortfolioValue"/>
+        /// </summary>
+        protected Bar CurrentAlgorithmEquity
+        {
+            get
+            {
+                if (_currentAlgorithmEquity == null)
+                {
+                    _currentAlgorithmEquity = new Bar();
+                    UpdateAlgorithmEquity(_currentAlgorithmEquity);
+                }
+                return _currentAlgorithmEquity;
+            }
+            set
+            {
+                _currentAlgorithmEquity = value;
+            }
+        }
 
         /// <summary>
         /// The task in charge of running the <see cref="Run"/> update method
@@ -243,6 +268,7 @@ namespace QuantConnect.Lean.Engine.Results
             };
             _previousSalesVolume = new (2);
             _previousSalesVolume.Add(0);
+            _customSummaryStatistics = new();
         }
 
         /// <summary>
@@ -504,7 +530,8 @@ namespace QuantConnect.Lean.Engine.Results
             CumulativeMaxPortfolioValue = Math.Max(currentPortfolioValue, CumulativeMaxPortfolioValue);
 
             // Sample all our default charts
-            SampleEquity(time, currentPortfolioValue);
+            UpdateAlgorithmEquity();
+            SampleEquity(time);
             SampleBenchmark(time, GetBenchmarkValue(time));
             SamplePerformance(time, portfolioPerformance);
             SampleDrawdown(time, currentPortfolioValue);
@@ -518,13 +545,16 @@ namespace QuantConnect.Lean.Engine.Results
         }
 
         /// <summary>
-        /// Sample the current equity of the strategy directly with time-value pair.
+        /// Sample the current equity of the strategy directly with time and using
+        /// the current algorithm equity value in <see cref="CurrentAlgorithmEquity"/>
         /// </summary>
-        /// <param name="time">Time of the sample.</param>
-        /// <param name="value">Current equity value.</param>
-        protected virtual void SampleEquity(DateTime time, decimal value)
+        /// <param name="time">Equity candlestick end time</param>
+        protected virtual void SampleEquity(DateTime time)
         {
-            Sample(StrategyEquityKey, EquityKey, 0, SeriesType.Candle, time, value, AlgorithmCurrencySymbol);
+            Sample(StrategyEquityKey, EquityKey, 0, SeriesType.Candle, new Candlestick(time, CurrentAlgorithmEquity), AlgorithmCurrencySymbol);
+
+            // Reset the current algorithm equity object so another bar is create on the next sample
+            CurrentAlgorithmEquity = null;
         }
 
         /// <summary>
@@ -538,7 +568,7 @@ namespace QuantConnect.Lean.Engine.Results
             {
                 Log.Debug("BaseResultsHandler.SamplePerformance(): " + time.ToShortTimeString() + " >" + value);
             }
-            Sample(StrategyEquityKey, DailyPerformanceKey, 1, SeriesType.Bar, time, value, "%");
+            Sample(StrategyEquityKey, DailyPerformanceKey, 1, SeriesType.Bar, new ChartPoint(time, value), "%");
         }
 
         /// <summary>
@@ -549,7 +579,7 @@ namespace QuantConnect.Lean.Engine.Results
         /// <seealso cref="IResultHandler.Sample"/>
         protected virtual void SampleBenchmark(DateTime time, decimal value)
         {
-            Sample(BenchmarkKey, BenchmarkKey, 0, SeriesType.Line, time, value);
+            Sample(BenchmarkKey, BenchmarkKey, 0, SeriesType.Line, new ChartPoint(time, value));
         }
 
         /// <summary>
@@ -564,7 +594,7 @@ namespace QuantConnect.Lean.Engine.Results
             {
                 // Calculate our drawdown and sample it
                 var drawdown = Statistics.Statistics.DrawdownPercent(currentPortfolioValue, CumulativeMaxPortfolioValue);
-                Sample(DrawdownKey, "Equity Drawdown", 0, SeriesType.Line, time, drawdown, "%");
+                Sample(DrawdownKey, "Equity Drawdown", 0, SeriesType.Line, new ChartPoint(time, drawdown), "%");
             }
         }
 
@@ -600,7 +630,7 @@ namespace QuantConnect.Lean.Engine.Results
                 _previousSalesVolume.Add(currentTotalSaleVolume);
                 _previousPortfolioTurnoverSample = time;
 
-                Sample(PortfolioTurnoverKey, PortfolioTurnoverKey, 0, SeriesType.Line, time, todayPortfolioTurnOver, "%");
+                Sample(PortfolioTurnoverKey, PortfolioTurnoverKey, 0, SeriesType.Line, new ChartPoint(time, todayPortfolioTurnOver), "%");
             }
         }
 
@@ -614,8 +644,8 @@ namespace QuantConnect.Lean.Engine.Results
             foreach (var holding in Algorithm.Portfolio.Values.Where(y => y.TotalSaleVolume != 0)
                 .OrderByDescending(x => x.TotalSaleVolume).Take(30))
             {
-                Sample("Assets Sales Volume", $"{holding.Symbol.Value}", 0, SeriesType.Treemap, time,
-                    holding.TotalSaleVolume, AlgorithmCurrencySymbol);
+                Sample("Assets Sales Volume", $"{holding.Symbol.Value}", 0, SeriesType.Treemap, new ChartPoint(time, holding.TotalSaleVolume),
+                    AlgorithmCurrencySymbol);
             }
         }
 
@@ -681,8 +711,8 @@ namespace QuantConnect.Lean.Engine.Results
             foreach (var kvp in holdings)
             {
                 var ratio = Math.Round(kvp.Value / currentPortfolioValue, 4);
-                Sample("Exposure", $"{kvp.Key} - {type} Ratio", 0, SeriesType.Line, time,
-                    ratio, "");
+                Sample("Exposure", $"{kvp.Key} - {type} Ratio", 0, SeriesType.Line, new ChartPoint(time, ratio),
+                    "");
             }
         }
 
@@ -702,7 +732,6 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="seriesName">Series name for the chart.</param>
         /// <param name="seriesIndex">Series chart index - which chart should this series belong</param>
         /// <param name="seriesType">Series type for the chart.</param>
-        /// <param name="time">Time for the sample</param>
         /// <param name="value">Value for the chart sample.</param>
         /// <param name="unit">Unit for the chart axis</param>
         /// <remarks>Sample can be used to create new charts or sample equity - daily performance.</remarks>
@@ -710,8 +739,7 @@ namespace QuantConnect.Lean.Engine.Results
             string seriesName,
             int seriesIndex,
             SeriesType seriesType,
-            DateTime time,
-            decimal value,
+            ISeriesPoint value,
             string unit = "$");
 
         /// <summary>
@@ -744,10 +772,6 @@ namespace QuantConnect.Lean.Engine.Results
             runtimeStatistics["Equity"] = AlgorithmCurrencySymbol + Algorithm.Portfolio.TotalPortfolioValue.ToStringInvariant("N2");
             runtimeStatistics["Holdings"] = AlgorithmCurrencySymbol + Algorithm.Portfolio.TotalHoldingsValue.ToStringInvariant("N2");
             runtimeStatistics["Volume"] = AlgorithmCurrencySymbol + Algorithm.Portfolio.TotalSaleVolume.ToStringInvariant("N2");
-            if (capacityEstimate != null)
-            {
-                runtimeStatistics["Capacity"] = AlgorithmCurrencySymbol + capacityEstimate.Capacity.RoundToSignificantDigits(2).ToFinancialFigures();
-            }
 
             return runtimeStatistics;
         }
@@ -812,19 +836,22 @@ namespace QuantConnect.Lean.Engine.Results
                     var totalTransactions = Algorithm.Transactions.GetOrders(x => x.Status.IsFill()).Count();
                     var trades = Algorithm.TradeBuilder.ClosedTrades;
 
-                    Series portfolioTurnover;
+                    BaseSeries portfolioTurnover;
                     if (charts.TryGetValue(PortfolioTurnoverKey, out var portfolioTurnoverChart))
                     {
                         portfolioTurnoverChart.Series.TryGetValue(PortfolioTurnoverKey, out portfolioTurnover);
                     }
                     else
                     {
-                        portfolioTurnover = new();
+                        portfolioTurnover = new Series();
                     }
 
-                    statisticsResults = StatisticsBuilder.Generate(trades, profitLoss, equity.Values, performance.Values, benchmark.Values, portfolioTurnover.Values,
-                        StartingPortfolioValue, Algorithm.Portfolio.TotalFees, totalTransactions, estimatedStrategyCapacity, AlgorithmCurrencySymbol);
+                    statisticsResults = StatisticsBuilder.Generate(trades, profitLoss, equity.Values, performance.Values, benchmark.Values,
+                        portfolioTurnover.Values, StartingPortfolioValue, Algorithm.Portfolio.TotalFees, totalTransactions,
+                        estimatedStrategyCapacity, AlgorithmCurrencySymbol, Algorithm.Transactions, Algorithm.RiskFreeInterestRateModel);
                 }
+
+                statisticsResults.AddCustomSummaryStatistics(_customSummaryStatistics);
             }
             catch (Exception err)
             {
@@ -832,6 +859,30 @@ namespace QuantConnect.Lean.Engine.Results
             }
 
             return statisticsResults;
+        }
+
+        /// <summary>
+        /// Calculates and gets the current statistics for the algorithm.
+        /// It will use the current <see cref="Charts"/> and profit loss information calculated from the current transaction record
+        /// to generate the results.
+        /// </summary>
+        /// <returns>The current statistics</returns>
+        protected StatisticsResults GenerateStatisticsResults(CapacityEstimate estimatedStrategyCapacity = null)
+        {
+            // could happen if algorithm failed to init
+            if (Algorithm == null)
+            {
+                return new StatisticsResults();
+            }
+
+            Dictionary<string, Chart> charts;
+            lock (ChartLock)
+            {
+                charts = new(Charts);
+            }
+            var profitLoss = new SortedDictionary<DateTime, decimal>(Algorithm.Transactions.TransactionRecord);
+
+            return GenerateStatisticsResults(charts, profitLoss, estimatedStrategyCapacity);
         }
 
         /// <summary>
@@ -906,6 +957,36 @@ namespace QuantConnect.Lean.Engine.Results
                 // increase count after we add
                 currentMessageCount++;
             }
+        }
+
+        /// <summary>
+        /// Sets or updates a custom summary statistic
+        /// </summary>
+        /// <param name="name">The statistic name</param>
+        /// <param name="value">The statistic value</param>
+        protected void SummaryStatistic(string name, string value)
+        {
+            _customSummaryStatistics.AddOrUpdate(name, value);
+        }
+
+        /// <summary>
+        /// Updates the current equity bar with the current equity value from <see cref="GetPortfolioValue"/>
+        /// </summary>
+        /// <remarks>
+        /// This is required in order to update the <see cref="CurrentAlgorithmEquity"/> bar without using the getter,
+        /// which would cause the bar to be created if it doesn't exist.
+        /// </remarks>
+        private void UpdateAlgorithmEquity(Bar equity)
+        {
+            equity.Update(Math.Round(GetPortfolioValue(), 4));
+        }
+
+        /// <summary>
+        /// Updates the current equity bar with the current equity value from <see cref="GetPortfolioValue"/>
+        /// </summary>
+        protected void UpdateAlgorithmEquity()
+        {
+            UpdateAlgorithmEquity(CurrentAlgorithmEquity);
         }
     }
 }

@@ -57,7 +57,7 @@ namespace QuantConnect.Configuration
                 // algorithm class selector
                 new CommandLineOption("algorithm-type-name", CommandOptionType.SingleValue),
 
-                // Algorithm language selector - options CSharp, FSharp, VisualBasic, Python, Java
+                // Algorithm language selector - options CSharp, Python
                 new CommandLineOption("algorithm-language", CommandOptionType.SingleValue),
 
                 //Physical DLL location
@@ -78,6 +78,7 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("factor-file-provider", CommandOptionType.SingleValue),
                 new CommandLineOption("data-provider", CommandOptionType.SingleValue),
                 new CommandLineOption("alpha-handler", CommandOptionType.SingleValue),
+                new CommandLineOption("history-provider", CommandOptionType.SingleValue),
 
                 // limits on number of symbols to allow
                 new CommandLineOption("symbol-minute-limit", CommandOptionType.SingleValue),
@@ -94,6 +95,7 @@ namespace QuantConnect.Configuration
                 // To get your api access token go to quantconnect.com/account
                 new CommandLineOption("job-user-id", CommandOptionType.SingleValue),
                 new CommandLineOption("api-access-token", CommandOptionType.SingleValue),
+                new CommandLineOption("job-organization-id", CommandOptionType.SingleValue),
 
                 // live data configuration
                 new CommandLineOption("live-data-url", CommandOptionType.SingleValue),

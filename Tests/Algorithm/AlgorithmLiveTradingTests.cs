@@ -42,6 +42,7 @@ namespace QuantConnect.Tests.Algorithm
             algorithm.SetLiveMode(false);
             var security = algorithm.AddEquity("SPY");
             security.Exchange = new SecurityExchange(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork));
+            security.Exchange.SetLocalDateTimeFrontierProvider(algorithm.TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new Tick { Value = 270m });
             algorithm.SetFinishedWarmingUp();
 
@@ -84,6 +85,7 @@ namespace QuantConnect.Tests.Algorithm
         public event EventHandler<DelistingNotificationEventArgs> DelistingNotification;
         public event EventHandler<BrokerageOrderIdChangedEvent> OrderIdChanged;
         public event EventHandler<NewBrokerageOrderNotificationEventArgs> NewBrokerageOrderNotification;
+        public event EventHandler<OrderUpdateEvent> OrderUpdated;
 #pragma warning restore 0067
 
         public string Name => "NullBrokerage";

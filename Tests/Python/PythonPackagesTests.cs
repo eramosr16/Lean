@@ -17,13 +17,189 @@
 using System;
 using Python.Runtime;
 using NUnit.Framework;
-using QuantConnect.Python;
 
 namespace QuantConnect.Tests.Python
 {
     [TestFixture, Category("TravisExclude")]
     public class PythonPackagesTests
     {
+        [Test, Explicit("Needs to be run by itself to avoid hanging")]
+        public void XTransformers()
+        {
+            AssertCode(
+                @"
+import torch
+from x_transformers import XTransformer
+
+def RunTest():
+    model = XTransformer(
+        dim = 512,
+        enc_num_tokens = 256,
+        enc_depth = 6,
+        enc_heads = 8,
+        enc_max_seq_len = 1024,
+        dec_num_tokens = 256,
+        dec_depth = 6,
+        dec_heads = 8,
+        dec_max_seq_len = 1024,
+        tie_token_emb = True      # tie embeddings of encoder and decoder
+    )
+
+    src = torch.randint(0, 256, (1, 1024))
+    src_mask = torch.ones_like(src).bool()
+    tgt = torch.randint(0, 256, (1, 1024))
+
+    loss = model(src, tgt, mask = src_mask) # (1, 1024, 512)
+    loss.backward()");
+        }
+
+        [Test]
+        public void Functime()
+        {
+            AssertCode(
+                @"
+import polars as pl
+from functime.cross_validation import train_test_split
+from functime.feature_extraction import add_fourier_terms
+from functime.forecasting import linear_model
+from functime.preprocessing import scale
+from functime.metrics import mase
+
+def RunTest():
+    # Load commodities price data
+    y = pl.read_parquet(""https://github.com/descendant-ai/functime/raw/main/data/commodities.parquet"")
+    entity_col, time_col = y.columns[:2]
+
+    # Time series split
+    y_train, y_test = y.pipe(train_test_split(test_size=3))
+
+    # Fit-predict
+    forecaster = linear_model(freq=""1mo"", lags=24)
+    forecaster.fit(y=y_train)
+    y_pred = forecaster.predict(fh=3)
+
+    # functime ❤️ functional design
+    # fit-predict in a single line
+    y_pred = linear_model(freq=""1mo"", lags=24)(y=y_train, fh=3)
+
+    # Score forecasts in parallel
+    scores = mase(y_true=y_test, y_pred=y_pred, y_train=y_train)
+
+    # Forecast with target transforms and feature transforms
+    forecaster = linear_model(
+        freq=""1mo"",
+        lags=24,
+        target_transform=scale(),
+        feature_transform=add_fourier_terms(sp=12, K=6)
+    )
+
+    # Forecast with exogenous regressors!
+    # Just pass them into X
+    X = (
+        y.select([entity_col, time_col])
+        .pipe(add_fourier_terms(sp=12, K=6)).collect()
+    )
+    X_train, X_future = y.pipe(train_test_split(test_size=3))
+    forecaster = linear_model(freq=""1mo"", lags=24)
+    forecaster.fit(y=y_train, X=X_train)
+    y_pred = forecaster.predict(fh=3, X=X_future)");
+        }
+
+        [Test]
+        public void Mlforecast()
+        {
+            AssertCode(
+                @"
+import pandas as pd
+import lightgbm as lgb
+
+from mlforecast import MLForecast
+from sklearn.linear_model import LinearRegression
+
+def RunTest():
+    df = pd.read_csv('https://datasets-nixtla.s3.amazonaws.com/air-passengers.csv', parse_dates=['ds'])
+    mlf = MLForecast(
+        models = [LinearRegression(), lgb.LGBMRegressor()],
+        lags=[1, 12],
+        freq = 'M'
+    )
+    mlf.fit(df)
+    mlf.predict(12)");
+        }
+
+        [Test]
+        public void Mapie()
+        {
+            AssertCode(
+                @"
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.datasets import make_regression
+from sklearn.model_selection import train_test_split
+
+from mapie.regression import MapieRegressor
+
+def RunTest():
+    X, y = make_regression(n_samples=500, n_features=1)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+
+    regressor = LinearRegression()
+
+    mapie_regressor = MapieRegressor(estimator=regressor, method='plus', cv=5)
+
+    mapie_regressor = mapie_regressor.fit(X_train, y_train)
+    y_pred, y_pis = mapie_regressor.predict(X_test, alpha=[0.05, 0.32])");
+        }
+
+        [Test]
+        public void H20()
+        {
+            AssertCode(
+                @"
+import h2o
+
+def RunTest():
+    h2o.init(ip = ""localhost"", port = 54321)");
+        }
+
+        [Test]
+        public void Langchain()
+        {
+            AssertCode(
+                @"
+from langchain.prompts import PromptTemplate
+
+def RunTest():
+    prompt = PromptTemplate.from_template(""What is a good name for a company that makes {product}?"")
+    prompt.format(product=""colorful socks"")");
+        }
+
+        [Test]
+        public void Rbeast()
+        {
+            AssertCode(
+                @"
+import Rbeast as rb
+
+def RunTest():
+    (Nile, Year) = rb.load_example('nile')
+    o = rb.beast(Nile, season = 'none')
+    rb.plot(o)");
+        }
+
+        [Test, Explicit("Needs to be run by itself to avoid hanging")]
+        public void Transformers()
+        {
+            AssertCode(
+                @"
+from transformers import pipeline
+
+def RunTest():
+    classifier = pipeline('sentiment-analysis')
+
+    classifier('We are very happy to introduce pipeline to the transformers repository.')");
+        }
+
         [Test]
         public void Tick()
         {
@@ -504,7 +680,7 @@ def RunTest():
 import ignite
 
 def RunTest():
-    assert(ignite.__version__ == '0.4.11')"
+    assert(ignite.__version__ == '0.4.12')"
             );
         }
 
@@ -959,23 +1135,6 @@ def RunTest():
             );
         }
 
-        [Test, Explicit("Installed in specific environment. Requires older numpy")]
-        public void PomegranateTest()
-        {
-            PythonInitializer.ActivatePythonVirtualEnvironment("/Foundation-Pomegranate");
-            AssertCode(
-                @"
-from pomegranate import *
-def RunTest():
-    d1 = NormalDistribution(5, 2)
-    d2 = LogNormalDistribution(1, 0.3)
-    d3 = ExponentialDistribution(4)
-    d = IndependentComponentsDistribution([d1, d2, d3])
-    X = [6.2, 0.4, 0.9]
-    return d.log_probability(X)"
-            );
-        }
-
         [Test]
         public void LightgbmTest()
         {
@@ -1123,7 +1282,6 @@ def RunTest():
             AssertCode(
                 @"
 from ortools.linear_solver import pywraplp
-from ortools.init import pywrapinit
 
 def RunTest():
 	# Create the linear solver with the GLOP backend.
@@ -1134,17 +1292,6 @@ def RunTest():
 	y = solver.NumVar(0, 2, 'y')
 
 	print('Number of variables =', solver.NumVariables())");
-        }
-
-        [Test]
-        public void Neuralprophet()
-        {
-            AssertCode(
-                @"
-from neuralprophet import NeuralProphet
-
-def RunTest():
-    m = NeuralProphet()");
         }
 
         [Test]
@@ -1954,14 +2101,13 @@ def RunTest():
             );
         }
 
-        [Test, Explicit("Installed in specific environment. Requires older dependencies")]
+        [Test]
         public void Tigramite()
         {
-            PythonInitializer.ActivatePythonVirtualEnvironment("/Foundation-Pomegranate");
             AssertCode(@"
 import numpy as np
 from tigramite.pcmci import PCMCI
-from tigramite.independence_tests import ParCorr
+from tigramite.independence_tests.parcorr import ParCorr
 import tigramite.data_processing as pp
 from tigramite.toymodels import structural_causal_processes as toys
 
@@ -1985,69 +2131,6 @@ def RunTest():
     pcmci = PCMCI(dataframe=dataframe, cond_ind_test=cond_ind_test)
     results = pcmci.run_pcmciplus(tau_min=0, tau_max=2, pc_alpha=0.01)
     pcmci.print_results(results, alpha_level=0.01)
-");
-        }
-
-        [Test, Explicit("Sometimes crashes when run along side the other tests")]
-        public void NBeatsTest()
-        {
-            AssertCode(@"
-import warnings
-import numpy as np
-
-from nbeats_keras.model import NBeatsNet as NBeatsKeras
-from nbeats_pytorch.model import NBeatsNet as NBeatsPytorch
-
-warnings.filterwarnings(action='ignore', message='Setting attributes')
-
-def RunTest():
-    # https://keras.io/layers/recurrent/
-    # At the moment only Keras supports input_dim > 1. In the original paper, input_dim=1.
-    num_samples, time_steps, input_dim, output_dim = 50_000, 10, 1, 1
-
-    # This example is for both Keras and Pytorch. In practice, choose the one you prefer.
-    for BackendType in [NBeatsKeras, NBeatsPytorch]:
-        # NOTE: If you choose the Keras backend with input_dim>1, you have
-        # to set the value here too (in the constructor).
-        backend = BackendType(
-            backcast_length=time_steps, forecast_length=output_dim,
-            stack_types=(NBeatsKeras.GENERIC_BLOCK, NBeatsKeras.GENERIC_BLOCK),
-            nb_blocks_per_stack=2, thetas_dim=(4, 4), share_weights_in_stack=True,
-            hidden_layer_units=64
-        )
-
-        # Definition of the objective function and the optimizer.
-        backend.compile(loss='mae', optimizer='adam')
-
-        # Definition of the data. The problem to solve is to find f such as | f(x) - y | -> 0.
-        # where f = np.mean.
-        x = np.random.uniform(size=(num_samples, time_steps, input_dim))
-        y = np.mean(x, axis=1, keepdims=True)
-
-        # Split data into training and testing datasets.
-        c = num_samples // 10
-        x_train, y_train, x_test, y_test = x[c:], y[c:], x[:c], y[:c]
-        test_size = len(x_test)
-
-        # Train the model.
-        print('Training...')
-        backend.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=5, batch_size=128)
-
-        # Save the model for later.
-        backend.save('n_beats_model.h5')
-
-        # Predict on the testing set (forecast).
-        predictions_forecast = backend.predict(x_test)
-        np.testing.assert_equal(predictions_forecast.shape, (test_size, backend.forecast_length, output_dim))
-
-        # Predict on the testing set (backcast).
-        predictions_backcast = backend.predict(x_test, return_backcast=True)
-        np.testing.assert_equal(predictions_backcast.shape, (test_size, backend.backcast_length, output_dim))
-
-        # Load the model.
-        model_2 = BackendType.load('n_beats_model.h5')
-
-        np.testing.assert_almost_equal(predictions_forecast, model_2.predict(x_test))
 ");
         }
 
@@ -2120,36 +2203,36 @@ def RunTest():
         /// <param name="module">The module we are testing</param>
         /// <param name="version">The module version</param>
         [TestCase("pulp", "2.7.0", "VERSION")]
-        [TestCase("pymc", "5.0.2", "__version__")]
+        [TestCase("pymc", "5.6.1", "__version__")]
         [TestCase("pypfopt", "pypfopt", "__name__")]
         [TestCase("wrapt", "1.14.1", "__version__")]
-        [TestCase("tslearn", "0.5.3.2", "__version__")]
-        [TestCase("tweepy", "4.10.0", "__version__")]
+        [TestCase("tslearn", "0.6.2", "__version__")]
+        [TestCase("tweepy", "4.14.0", "__version__")]
         [TestCase("pywt", "1.4.1", "__version__")]
         [TestCase("umap", "0.5.3", "__version__")]
         [TestCase("dtw", "1.3.0", "__version__")]
-        [TestCase("mplfinance", "0.12.9b7", "__version__")]
+        [TestCase("mplfinance", "0.12.10b0", "__version__")]
         [TestCase("cufflinks", "0.17.3", "__version__")]
-        [TestCase("ipywidgets", "8.0.4", "__version__")]
-        [TestCase("astropy", "5.2.1", "__version__")]
-        [TestCase("gluonts", "0.12.3", "__version__")]
+        [TestCase("ipywidgets", "8.1.1", "__version__")]
+        [TestCase("astropy", "5.2.2", "__version__")]
+        [TestCase("gluonts", "0.13.7", "__version__")]
         [TestCase("gplearn", "0.4.2", "__version__")]
-        [TestCase("h2o", "3.40.0.1", "__version__")]
-        [TestCase("featuretools", "0.23.1", "__version__")]
-        [TestCase("pennylane", "0.29.0", "version()")]
-        [TestCase("pyfolio", "0.9.2", "__version__")]
-        [TestCase("altair", "4.2.2", "__version__")]
-        [TestCase("modin", "0.18.1", "__version__")]
+        [TestCase("featuretools", "1.27.0", "__version__")]
+        [TestCase("pennylane", "0.32.0", "version()")]
+        [TestCase("pyfolio", "0.9.5", "__version__")]
+        [TestCase("altair", "5.1.2", "__version__")]
+        [TestCase("modin", "0.22.3", "__version__")]
         [TestCase("persim", "0.3.1", "__version__")]
-        [TestCase("pydmd", "0.4.0.post2301", "__version__")]
+        [TestCase("pydmd", "0.4.1.post2308", "__version__")]
         [TestCase("pandas_ta", "0.3.14b0", "__version__")]
-        [TestCase("finrl", "finrl", "__package__")]
         [TestCase("tensortrade", "1.0.3", "__version__")]
-        [TestCase("quantstats", "0.0.59", "__version__")]
+        [TestCase("quantstats", "0.0.62", "__version__")]
         [TestCase("autokeras", "1.1.0", "__version__")]
-        [TestCase("panel", "0.14.3", "__version__")]
+        [TestCase("panel", "1.2.3", "__version__")]
         [TestCase("pyheat", "pyheat", "__name__")]
-        [TestCase("tensorflow_decision_forests", "1.2.0", "__version__")]
+        [TestCase("tensorflow_decision_forests", "1.5.0", "__version__")]
+        [TestCase("tensorflow_ranking", "0.5.3.dev", "__version__")]
+        [TestCase("pomegranate", "1.0.3", "__version__")]
         public void ModuleVersionTest(string module, string value, string attribute)
         {
             AssertCode(

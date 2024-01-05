@@ -17,7 +17,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
-using QuantConnect.AlgorithmFactory;
 using QuantConnect.Brokerages;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
@@ -357,6 +356,314 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(order.Quantity, fill.FillQuantity);
             Assert.AreEqual(Math.Min(security.Price, order.StopPrice), fill.FillPrice);
             Assert.AreEqual(OrderStatus.Filled, fill.Status);
+        }
+
+        [Test]
+        public void PerformsTrailingStopImmediateFillBuy([Values] bool isInternal, [Values] bool trailingAsPercentage)
+        {
+            var model = new ImmediateFillModel();
+            // Assume market price is $100:
+            var order = trailingAsPercentage
+                // a trailing amount of 5%, stop price $105
+                ? new TrailingStopOrder(Symbols.SPY, 100, 105m, 0.05m, true, Noon)
+                // a trailing amount of $10 set the stop price to $110
+                : new TrailingStopOrder(Symbols.SPY, 100, 110m, 10m, false, Noon);
+
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
+            security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+
+            // Security price rises above stop price immediately
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, trailingAsPercentage ? 100m * (1 + 0.05m) : 100m + 10m));
+
+            var fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertFilled(fill, order.Quantity, Math.Max(security.Price, order.StopPrice));
+        }
+
+        [Test]
+        public void PerformsTrailingStopFillBuy([Values] bool isInternal, [Values] bool trailingAsPercentage)
+        {
+            var model = new ImmediateFillModel();
+            // Assume market price is $100:
+            var order = trailingAsPercentage
+                // a trailing amount of 5%, stop price $105
+                ? new TrailingStopOrder(Symbols.SPY, 100, 105m, 0.05m, true, Noon)
+                // a trailing amount of $10 set the stop price to $110
+                : new TrailingStopOrder(Symbols.SPY, 100, 110m, 10m, false, Noon);
+
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
+            security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+
+            var initialTrailingStopPrice = order.StopPrice;
+            var prevMarketPrice = 100m;
+            // Market price hasn't moved
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, prevMarketPrice));
+
+            var fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have not been updated
+            Assert.AreEqual(initialTrailingStopPrice, order.StopPrice);
+
+            // Simulate a rising security price, but not enough to trigger the stop
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon,
+                trailingAsPercentage ? prevMarketPrice * (1 + 0.025m) : prevMarketPrice + 5m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have not been updated
+            Assert.AreEqual(initialTrailingStopPrice, order.StopPrice);
+
+            prevMarketPrice = security.Price;
+            // Simulate a falling security price, but still above the lowest market price
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon,
+                trailingAsPercentage ? prevMarketPrice * (1 + 0.0125m) : prevMarketPrice - 2.5m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have not been updated
+            Assert.AreEqual(initialTrailingStopPrice, order.StopPrice);
+
+            // Simulate a falling security price, which triggers a stop price update
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon,
+                trailingAsPercentage ? prevMarketPrice * (1 - 0.05m) : prevMarketPrice - 10m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have been updated to:
+            //  --> (market price + trailing amount) if trailing amount is not a percentage
+            //  --> (market price * (1 + trailing amount)) if trailing amount is a percentage
+            Assert.AreNotEqual(initialTrailingStopPrice, order.StopPrice);
+            var expectedUpdatedStopPrice = trailingAsPercentage ? security.Price * (1 + 0.05m) : security.Price + 10m;
+            Assert.AreEqual(expectedUpdatedStopPrice, order.StopPrice);
+
+            // Simulate a rising security price, enough to trigger the stop
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon,
+                trailingAsPercentage ? order.StopPrice * (1 + 0.05m) : order.StopPrice + 10m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            // Stop price should have not been updated
+            Assert.AreEqual(expectedUpdatedStopPrice, order.StopPrice);
+
+            AssertFilled(fill, order.Quantity, Math.Max(security.Price, order.StopPrice));
+        }
+
+        [Test]
+        public void PerformsTrailingStopImmediateFillSell([Values] bool isInternal, [Values] bool trailingAsPercentage)
+        {
+            var model = new ImmediateFillModel();
+            // Assume market price is $100, with a trailing amount of $10 set the stop price to $90
+            var order = trailingAsPercentage
+                ? new TrailingStopOrder(Symbols.SPY, 100, 95m, 0.05m, true, Noon)
+                : new TrailingStopOrder(Symbols.SPY, 100, 90m, 10m, false, Noon);
+
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
+            security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+
+            // Security price falls below stop price immediately
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, trailingAsPercentage ? 100m * (1 - 0.05m) : 100m - 10m));
+
+            var fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertFilled(fill, order.Quantity, Math.Min(security.Price, order.StopPrice));
+        }
+
+        [Test]
+        public void PerformsTrailingStopFillSell([Values] bool isInternal, [Values] bool trailingAsPercentage)
+        {
+            var model = new ImmediateFillModel();
+            var prevMarketPrice = 100m;
+            // Initial market price $100, trailing amount of $10 set the stop price to $90
+            var order = trailingAsPercentage
+                ? new TrailingStopOrder(Symbols.SPY, -100, 90m, 0.1m, true, Noon)
+                : new TrailingStopOrder(Symbols.SPY, -100, 90m, 10m, false, Noon);
+
+            var initialTrailingStopPrice = order.StopPrice;
+
+            var config = CreateTradeBarConfig(Symbols.SPY, isInternal);
+            var security = GetSecurity(config);
+            security.SetLocalTimeKeeper(TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+
+            // Market price hasn't moved
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, prevMarketPrice));
+
+            var fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have not been updated
+            Assert.AreEqual(initialTrailingStopPrice, order.StopPrice);
+
+            // Simulate a falling security price, but not enough to trigger the stop
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 95m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have not been updated
+            Assert.AreEqual(initialTrailingStopPrice, order.StopPrice);
+
+            prevMarketPrice = security.Price;
+            // Simulate a rising security price, but still above the lowest market price
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 97.5m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have not been updated
+            Assert.AreEqual(initialTrailingStopPrice, order.StopPrice);
+
+            prevMarketPrice = security.Price;
+            // Simulate a rising security price, which triggers a stop price update
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, 105m));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            // Stop price should have been updated to:
+            //  --> (market price - trailing amount) if trailing amount is not a percentage
+            //  --> (market price * (1 - trailing amount)) if trailing amount is a percentage
+            Assert.AreNotEqual(initialTrailingStopPrice, order.StopPrice);
+            var expectedUpdatedStopPrice = trailingAsPercentage ? 105m * (1 - 0.1m) : 105m - 10m;
+            Assert.AreEqual(expectedUpdatedStopPrice, order.StopPrice);
+
+            prevMarketPrice = security.Price;
+            var sopTriggerMarketPrice = trailingAsPercentage ? prevMarketPrice * (1 - 0.1m) : prevMarketPrice - 10m;
+            // Simulate a falling security price, enough to trigger the stop
+            security.SetMarketPrice(new IndicatorDataPoint(Symbols.SPY, Noon, sopTriggerMarketPrice));
+
+            fill = model.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            // Stop price should have not been updated
+            Assert.AreEqual(expectedUpdatedStopPrice, order.StopPrice);
+
+            AssertFilled(fill, order.Quantity, Math.Min(security.Price, order.StopPrice));
+        }
+
+        [TestCase(100, 291.50, false)]
+        [TestCase(-100, 290.50, false)]
+        [TestCase(100, 291.50, true)]
+        [TestCase(-100, 290.50, true)]
+        public void TrailingStopOrderDoesNotFillUsingDataBeforeSubmitTime(decimal orderQuantity, decimal stopPrice, bool isInternal)
+        {
+            var time = new DateTime(2018, 9, 24, 9, 30, 0);
+
+            var symbol = Symbols.SPY;
+            var config = CreateTradeBarConfig(symbol, isInternal);
+            var security = GetSecurity(config);
+            var timeKeeper = new TimeKeeper(time.ConvertToUtc(TimeZones.NewYork), TimeZones.NewYork);
+            security.SetLocalTimeKeeper(timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
+
+            // The new prices are enough to trigger the stop for the orders
+            var tradeBar = new TradeBar(time, symbol, 290m, 292m, 289m, 291m, 12345);
+            security.SetMarketPrice(tradeBar);
+
+            time += TimeSpan.FromMinutes(1);
+            timeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
+
+            var fillForwardBar = (TradeBar)tradeBar.Clone(true);
+            security.SetMarketPrice(fillForwardBar);
+
+            var fillModel = new ImmediateFillModel();
+            var order = new TrailingStopOrder(symbol, orderQuantity, stopPrice, 0.1m, true, time.ConvertToUtc(TimeZones.NewYork));
+
+            var fill = fillModel.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertUnfilled(fill);
+
+            time += TimeSpan.FromMinutes(1);
+            timeKeeper.SetUtcDateTime(time.ConvertToUtc(TimeZones.NewYork));
+
+            tradeBar = new TradeBar(time, symbol, 290m, 292m, 289m, 291m, 12345);
+            security.SetMarketPrice(tradeBar);
+
+            fill = fillModel.Fill(new FillModelParameters(
+                security,
+                order,
+                new MockSubscriptionDataConfigProvider(config),
+                Time.OneHour,
+                null)).Single();
+
+            AssertFilled(fill, orderQuantity, orderQuantity < 0 ? Math.Min(security.Price, stopPrice) : Math.Max(security.Price, stopPrice));
         }
 
         [TestCase(true)]
@@ -1163,9 +1470,72 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             Assert.AreEqual(OrderStatus.Filled, aaplFillEvent.Status);
         }
 
-        private SubscriptionDataConfig CreateTradeBarConfig(Symbol symbol, bool isInternal = false, bool extendedMarketHours = true)
+        [TestCase(Resolution.Tick, false)]
+        [TestCase(Resolution.Second, false)]
+        [TestCase(Resolution.Minute, false)]
+        [TestCase(Resolution.Hour, false)]
+        [TestCase(Resolution.Daily, true)]
+        public void PerformFillOutsideRegularAndExtendedHours(Resolution resolution, bool shouldFill)
         {
-            return new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, true, extendedMarketHours, isInternal);
+            var config = CreateTradeBarConfig(Symbols.SPY, resolution: resolution);
+            var configProvider = new MockSubscriptionDataConfigProvider(config);
+            configProvider.SubscriptionDataConfigs.Add(config);
+            var security = GetSecurity(config);
+            security.SetFillModel(new ImmediateFillModel());
+
+            var baseTime = resolution == Resolution.Daily ? new DateTime(2014, 6, 25) : new DateTime(2014, 6, 24, 12, 0, 0);
+            var orderTime = baseTime.ConvertToUtc(security.Exchange.TimeZone);
+            var resolutionTimeSpan = resolution.ToTimeSpan();
+            var tradeBarTime = baseTime.Subtract(resolutionTimeSpan);
+
+            var model = (ImmediateFillModel)security.FillModel;
+            var order = new MarketOrder(Symbols.SPY, 100, orderTime);
+
+            var parameters = new FillModelParameters(security, order, configProvider, Time.OneHour, null);
+
+            var timeKeeper = TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork);
+            // midnight, shouldn't be able to fill for resolutions < daily
+            timeKeeper.UpdateTime(new DateTime(2014, 6, 25).ConvertToUtc(TimeZones.NewYork));
+            security.SetLocalTimeKeeper(timeKeeper);
+
+            const decimal close = 101.234m;
+            security.SetMarketPrice(new TradeBar(tradeBarTime, Symbols.SPY, 101.123m, 101.123m, 101.123m, close, 100, resolutionTimeSpan));
+
+            var fill = model.Fill(parameters).Single();
+
+            if (shouldFill)
+            {
+                Assert.AreEqual(OrderStatus.Filled, fill.Status);
+                Assert.AreEqual(order.Quantity, fill.FillQuantity);
+                Assert.AreEqual(close, fill.FillPrice);
+            }
+            else
+            {
+                Assert.AreNotEqual(OrderStatus.Filled, fill.Status);
+                Assert.AreNotEqual(OrderStatus.PartiallyFilled, fill.Status);
+                Assert.AreEqual(0, fill.FillQuantity);
+                Assert.AreEqual(0, fill.FillPrice);
+            }
+        }
+
+        private static void AssertUnfilled(OrderEvent fill)
+        {
+            Assert.AreEqual(OrderStatus.None, fill.Status);
+            Assert.AreEqual(0, fill.FillQuantity);
+            Assert.AreEqual(0, fill.FillPrice);
+        }
+
+        private static void AssertFilled(OrderEvent fill, decimal expectedFillQuantity, decimal expectedFillPrice)
+        {
+            Assert.AreEqual(OrderStatus.Filled, fill.Status);
+            Assert.AreEqual(expectedFillQuantity, fill.FillQuantity);
+            Assert.AreEqual(expectedFillPrice, fill.FillPrice);
+        }
+
+        private SubscriptionDataConfig CreateTradeBarConfig(Symbol symbol, bool isInternal = false, bool extendedMarketHours = true,
+            Resolution resolution = Resolution.Minute)
+        {
+            return new SubscriptionDataConfig(typeof(TradeBar), symbol, resolution, TimeZones.NewYork, TimeZones.NewYork, true, extendedMarketHours, isInternal);
         }
 
         private Security GetSecurity(SubscriptionDataConfig config)

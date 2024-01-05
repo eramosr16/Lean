@@ -15,7 +15,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
+using QuantConnect.Data;
 using QuantConnect.Statistics;
 
 namespace QuantConnect.Tests.Common.Statistics
@@ -63,15 +65,19 @@ namespace QuantConnect.Tests.Common.Statistics
                 StatisticsBuilder.Generate(
                     new List<Trade>(),
                     new SortedDictionary<DateTime, decimal>(),
-                    testEquityPoints,
-                    misalignedTestPerformancePoints,
-                    testBenchmarkPoints,
-                    new List<ChartPoint>(),
+                    testEquityPoints.Cast<ISeriesPoint>().ToList(),
+                    misalignedTestPerformancePoints.Cast<ISeriesPoint>().ToList(),
+                    testBenchmarkPoints.Cast<ISeriesPoint>().ToList(),
+                    new List<ISeriesPoint>(),
                     100000m,
                     0m,
                     1,
                     null,
-                    "$");
+                    "$",
+                    new QuantConnect.Securities.SecurityTransactionManager(
+                        null,
+                        new QuantConnect.Securities.SecurityManager(new TimeKeeper(DateTime.UtcNow))),
+                    new InterestRateProvider());
             }, "Misaligned values provided, but we still generate statistics");
         }
     }

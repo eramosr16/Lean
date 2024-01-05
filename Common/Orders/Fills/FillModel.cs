@@ -83,6 +83,11 @@ namespace QuantConnect.Orders.Fills
                         ? PythonWrapper.StopMarketFill(parameters.Security, parameters.Order as StopMarketOrder)
                         : StopMarketFill(parameters.Security, parameters.Order as StopMarketOrder));
                     break;
+                case OrderType.TrailingStop:
+                    orderEvents.Add(PythonWrapper != null
+                        ? PythonWrapper.TrailingStopFill(parameters.Security, parameters.Order as TrailingStopOrder)
+                        : TrailingStopFill(parameters.Security, parameters.Order as TrailingStopOrder));
+                    break;
                 case OrderType.StopLimit:
                     orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.StopLimitFill(parameters.Security, parameters.Order as StopLimitOrder)
@@ -99,13 +104,19 @@ namespace QuantConnect.Orders.Fills
                         : MarketOnCloseFill(parameters.Security, parameters.Order as MarketOnCloseOrder));
                     break;
                 case OrderType.ComboMarket:
-                    orderEvents = ComboMarketFill(parameters.Order, parameters);
+                    orderEvents = PythonWrapper != null
+                        ? PythonWrapper.ComboMarketFill(parameters.Order, parameters)
+                        : ComboMarketFill(parameters.Order, parameters);
                     break;
                 case OrderType.ComboLimit:
-                    orderEvents = ComboLimitFill(parameters.Order, parameters);
+                    orderEvents = PythonWrapper != null
+                        ? PythonWrapper.ComboLimitFill(parameters.Order, parameters)
+                        : ComboLimitFill(parameters.Order, parameters);
                     break;
                 case OrderType.ComboLegLimit:
-                    orderEvents = ComboLegLimitFill(parameters.Order, parameters);
+                    orderEvents = PythonWrapper != null
+                        ? PythonWrapper.ComboLegLimitFill(parameters.Order, parameters)
+                        : ComboLegLimitFill(parameters.Order, parameters);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -372,6 +383,78 @@ namespace QuantConnect.Orders.Fills
         }
 
         /// <summary>
+        /// Default trailing stop fill model implementation in base class security. (Trailing Stop Order Type)
+        /// </summary>
+        /// <param name="asset">Security asset we're filling</param>
+        /// <param name="order">Order packet to model</param>
+        /// <returns>Order fill information detailing the average price and quantity filled.</returns>
+        public virtual OrderEvent TrailingStopFill(Security asset, TrailingStopOrder order)
+        {
+            // Default order event to return.
+            var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
+            var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
+
+            // If its canceled don't need anymore checks:
+            if (order.Status == OrderStatus.Canceled) return fill;
+
+            // Make sure the exchange is open/normal market hours before filling
+            if (!IsExchangeOpen(asset, false)) return fill;
+
+            // Get the range of prices in the last bar:
+            var prices = GetPricesCheckingPythonWrapper(asset, order.Direction);
+            var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
+
+            // Do not fill on stale data
+            if (pricesEndTime <= order.Time) return fill;
+
+            // Calculate the model slippage: e.g. 0.01c
+            var slip = asset.SlippageModel.GetSlippageApproximation(asset, order);
+
+            switch (order.Direction)
+            {
+                case OrderDirection.Sell:
+                    // Fill sell if market price drops below stop price
+                    if (prices.Low <= order.StopPrice)
+                    {
+                        fill.Status = OrderStatus.Filled;
+                        // Assuming worse case scenario fill - fill at lowest of the stop & asset price.
+                        fill.FillPrice = Math.Min(order.StopPrice, prices.Current - slip);
+                        // assume the order completely filled
+                        fill.FillQuantity = order.Quantity;
+                    }
+                    break;
+
+                case OrderDirection.Buy:
+                    // Fill buy if market price rises above stop price
+                    if (prices.High >= order.StopPrice)
+                    {
+                        fill.Status = OrderStatus.Filled;
+                        // Assuming worse case scenario fill - fill at highest of the stop & asset price.
+                        fill.FillPrice = Math.Max(order.StopPrice, prices.Current + slip);
+                        // assume the order completely filled
+                        fill.FillQuantity = order.Quantity;
+                    }
+                    break;
+            }
+
+            // Update the stop price:
+            // NOTE: Doing this after attempting to fill the order in the following cases:
+            //  - Sell: if low < stop price, order is filled. If we were to update the stop price before and it is moved towards the high price
+            //          placing the stop price above the low price, it will not trigger a fill.
+            //  - Buy: if high > stop price, order is filled. If we were to update the stop price before and it is moved towards the low price
+            //         placing the stop price below the high price, it will not trigger a fill.
+            if (fill.Status != OrderStatus.Filled &&
+                TrailingStopOrder.TryUpdateStopPrice(order.Direction == OrderDirection.Sell ? prices.High : prices.Low, order.StopPrice,
+                    order.TrailingAmount, order.TrailingAsPercentage, order.Direction, out var updatedStopPrice))
+            {
+                order.StopPrice = updatedStopPrice;
+                Parameters.OnOrderUpdated(order);
+            }
+
+            return fill;
+        }
+
+        /// <summary>
         /// Default stop limit fill model implementation in base class security. (Stop Limit Order Type)
         /// </summary>
         /// <param name="asset">Security asset we're filling</param>
@@ -414,7 +497,11 @@ namespace QuantConnect.Orders.Fills
                     //-> 1.2 Buy Stop: If Price Above Setpoint, Buy:
                     if (prices.High > order.StopPrice || order.StopTriggered)
                     {
-                        order.StopTriggered = true;
+                        if (!order.StopTriggered)
+                        {
+                            order.StopTriggered = true;
+                            Parameters.OnOrderUpdated(order);
+                        }
 
                         // Fill the limit order, using closing price of bar:
                         // Note > Can't use minimum price, because no way to be sure minimum wasn't before the stop triggered.
@@ -432,7 +519,11 @@ namespace QuantConnect.Orders.Fills
                     //-> 1.1 Sell Stop: If Price below setpoint, Sell:
                     if (prices.Low < order.StopPrice || order.StopTriggered)
                     {
-                        order.StopTriggered = true;
+                        if (!order.StopTriggered)
+                        {
+                            order.StopTriggered = true;
+                            Parameters.OnOrderUpdated(order);
+                        }
 
                         // Fill the limit order, using minimum price of the bar
                         // Note > Can't use minimum price, because no way to be sure minimum wasn't before the stop triggered.
@@ -992,9 +1083,28 @@ namespace QuantConnect.Orders.Fills
         /// <summary>
         /// Determines if the exchange is open using the current time of the asset
         /// </summary>
-        protected static bool IsExchangeOpen(Security asset, bool isExtendedMarketHours)
+        protected virtual bool IsExchangeOpen(Security asset, bool isExtendedMarketHours)
         {
-            return asset.IsMarketOpen(isExtendedMarketHours);
+            if (!asset.Exchange.Hours.IsOpen(asset.LocalTime, isExtendedMarketHours))
+            {
+                // if we're not open at the current time exactly, check the bar size, this handle large sized bars (hours/days)
+                var currentBar = asset.GetLastData();
+                if (currentBar == null)
+                {
+                    return false;
+                }
+
+                var resolution = (currentBar.EndTime - currentBar.Time).ToHigherResolutionEquivalent(false);
+                var isOnCurrentBar = resolution == Resolution.Daily
+                    // for fill purposes we consider the market open for daily bars if we are in the same day
+                    ? asset.LocalTime.Date == currentBar.EndTime.Date
+                    // for other resolution bars, market is considered open if we are within the bar time
+                    : asset.LocalTime <= currentBar.EndTime;
+
+                return isOnCurrentBar && asset.Exchange.IsOpenDuringBar(currentBar.Time, currentBar.EndTime, isExtendedMarketHours);
+            }
+
+            return true;
         }
 
         private class ComboLimitOrderLegParameters

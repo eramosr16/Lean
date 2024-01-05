@@ -22,6 +22,7 @@ using QuantConnect.Brokerages;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.Data.Market;
+using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Securities;
@@ -71,12 +72,13 @@ namespace QuantConnect.Tests.Common.Securities
                     null,
                     null,
                     TestGlobals.DataProvider,
-                    new SingleEntryDataCacheProvider(new DefaultDataProvider()),
+                    TestGlobals.DataCacheProvider,
                     TestGlobals.MapFileProvider,
                     TestGlobals.FactorFileProvider,
                     null,
                     true,
-                    new DataPermissionManager()
+                    new DataPermissionManager(),
+                    _algo.ObjectStore
                 )
             );
 

@@ -165,7 +165,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 209675;
+        public long DataPoints => 212195;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -184,23 +184,24 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "26.200%"},
             {"Expectancy", "-0.268"},
             {"Net Profit", "-24.757%"},
-            {"Sharpe Ratio", "-0.932"},
+            {"Sharpe Ratio", "-0.965"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0.060%"},
             {"Loss Rate", "50%"},
             {"Win Rate", "50%"},
             {"Profit-Loss Ratio", "0.46"},
-            {"Alpha", "-0.292"},
+            {"Alpha", "-0.303"},
             {"Beta", "0.016"},
             {"Annual Standard Deviation", "0.313"},
             {"Annual Variance", "0.098"},
             {"Information Ratio", "-0.649"},
             {"Tracking Error", "0.483"},
-            {"Treynor Ratio", "-17.96"},
+            {"Treynor Ratio", "-18.589"},
             {"Total Fees", "$7.10"},
             {"Estimated Strategy Capacity", "$24000000.00"},
             {"Lowest Capacity Asset", "ES XFH59UPBIJ7O|ES XFH59UK0MYO1"},
             {"Portfolio Turnover", "12.22%"},
-            {"OrderListHash", "3169abd2fe120400ab2da9daa6a51bc7"}
+            {"OrderListHash", "fc5a79087b450a15e7d040de1644a49a"}
         };
     }
 }

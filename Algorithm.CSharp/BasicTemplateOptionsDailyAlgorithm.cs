@@ -69,7 +69,7 @@ namespace QuantConnect.Algorithm.CSharp
                     var contractsByExpiration = chain.Where(x => x.Expiry != Time.Date).OrderBy(x => x.Expiry);
                     var contract = contractsByExpiration.FirstOrDefault();
 
-                    if (contract != null && IsMarketOpen(contract.Symbol))
+                    if (contract != null)
                     {
                         // if found, trade it
                         MarketOrder(contract.Symbol, 1);
@@ -122,7 +122,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 36838;
+        public long DataPoints => 36834;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -141,7 +141,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "1.300%"},
             {"Expectancy", "-1"},
             {"Net Profit", "-1.311%"},
-            {"Sharpe Ratio", "-3.31"},
+            {"Sharpe Ratio", "-3.607"},
+            {"Sortino Ratio", "-1.188"},
             {"Probabilistic Sharpe Ratio", "0.035%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
@@ -157,7 +158,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "GOOCV W78ZFMML01JA|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "0.05%"},
-            {"OrderListHash", "0b52bbe98ade8e3aab943e64fcf4abfe"}
+            {"OrderListHash", "27226eb0860aa34fd513a8a66a732ad0"}
         };
     }
 }

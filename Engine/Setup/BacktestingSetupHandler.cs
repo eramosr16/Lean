@@ -163,7 +163,8 @@ namespace QuantConnect.Lean.Engine.Setup
                     algorithm.SetAvailableDataTypes(BaseSetupHandler.GetConfiguredDataFeeds());
 
                     //Algorithm is backtesting, not live:
-                    algorithm.SetLiveMode(false);
+                    algorithm.SetAlgorithmMode(job.AlgorithmMode);
+                    algorithm.SetDeploymentTarget(job.DeploymentTarget);
 
                     //Set the source impl for the event scheduling
                     algorithm.Schedule.SetEventSchedule(parameters.RealTimeHandler);
@@ -173,9 +174,6 @@ namespace QuantConnect.Lean.Engine.Setup
 
                     // set the future chain provider
                     algorithm.SetFutureChainProvider(new CachingFutureChainProvider(new BacktestingFutureChainProvider(parameters.DataCacheProvider)));
-
-                    // set the object store
-                    algorithm.SetObjectStore(parameters.ObjectStore);
 
                     // before we call initialize
                     BaseSetupHandler.LoadBacktestJobAccountCurrency(algorithm, job);
@@ -191,6 +189,20 @@ namespace QuantConnect.Lean.Engine.Setup
                     if (job.PeriodFinish.HasValue)
                     {
                         algorithm.SetEndDate(job.PeriodFinish.Value);
+                    }
+
+                    if(job.OutOfSampleMaxEndDate.HasValue)
+                    {
+                        if(algorithm.EndDate > job.OutOfSampleMaxEndDate.Value)
+                        {
+                            Log.Trace($"BacktestingSetupHandler.Setup(): setting end date to {job.OutOfSampleMaxEndDate.Value:yyyyMMdd}");
+                            algorithm.SetEndDate(job.OutOfSampleMaxEndDate.Value);
+
+                            if (algorithm.StartDate > algorithm.EndDate)
+                            {
+                                algorithm.SetStartDate(algorithm.EndDate);
+                            }
+                        }
                     }
 
                     // after we call initialize

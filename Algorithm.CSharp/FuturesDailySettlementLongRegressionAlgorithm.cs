@@ -121,7 +121,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (ExpectedCash.Remove(currentTime, out var expected))
             {
                 var value = Portfolio.CashBook.TotalValueInAccountCurrency;
-                if (expected != value)
+                if (expected != Math.Round(value, 5))
                 {
                     throw new Exception($"Unexpected cash balance {value} expected {expected}");
                 }
@@ -145,7 +145,7 @@ namespace QuantConnect.Algorithm.CSharp
                 $"{Environment.NewLine}CashBook:{Environment.NewLine}{Portfolio.CashBook}" +
                 $"{Environment.NewLine}UnsettledCashBook:{Environment.NewLine}{Portfolio.UnsettledCashBook}");
 
-            var expected = Math.Round(_initialPortfolioValue + holdings.NetProfit, 5);
+            var expected = _initialPortfolioValue + holdings.NetProfit;
             if (expected != Portfolio.TotalPortfolioValue || expected != Portfolio.CashBook[Currencies.USD].Amount)
             {
                 throw new Exception($"Unexpected future profit {holdings.NetProfit}");
@@ -194,23 +194,24 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "3.800%"},
             {"Expectancy", "0.349"},
             {"Net Profit", "0.906%"},
-            {"Sharpe Ratio", "-3.934"},
+            {"Sharpe Ratio", "-3.968"},
+            {"Sortino Ratio", "-8.141"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "33%"},
             {"Win Rate", "67%"},
             {"Profit-Loss Ratio", "1.02"},
-            {"Alpha", "-1.084"},
+            {"Alpha", "-1.091"},
             {"Beta", "0.151"},
             {"Annual Standard Deviation", "0.216"},
             {"Annual Variance", "0.047"},
             {"Information Ratio", "-7.634"},
             {"Tracking Error", "0.313"},
-            {"Treynor Ratio", "-5.625"},
+            {"Treynor Ratio", "-5.675"},
             {"Total Fees", "$19.35"},
             {"Estimated Strategy Capacity", "$100000000.00"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
             {"Portfolio Turnover", "183.82%"},
-            {"OrderListHash", "f47b76908bc78f13100008a6d13560fc"}
+            {"OrderListHash", "0bc2214035105b7c7f63562491214ec3"}
         };
     }
 }

@@ -172,7 +172,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Drawdown", "0.000%"},
             {"Expectancy", "0"},
             {"Net Profit", "-0.004%"},
-            {"Sharpe Ratio", "-2.264"},
+            {"Sharpe Ratio", "-9.76"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "32.662%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -188,7 +189,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "NWSA VJ5IKAXU7WBQ|NWSA T3MO1488O0H1"},
             {"Portfolio Turnover", "0.06%"},
-            {"OrderListHash", "8b89135535d842f6df7b2849d6604fbd"}
+            {"OrderListHash", "6ea9880157b966d44dcc97ca6c6dacee"}
         };
     }
 }

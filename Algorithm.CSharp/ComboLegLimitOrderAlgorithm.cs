@@ -25,9 +25,26 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public class ComboLegLimitOrderAlgorithm : ComboOrderAlgorithm
     {
+        private List<decimal> _originalLimitPrices = new();
+
         protected override IEnumerable<OrderTicket> PlaceComboOrder(List<Leg> legs, int quantity, decimal? limitPrice = null)
         {
+            foreach (var leg in legs)
+            {
+                _originalLimitPrices.Add(leg.OrderPrice.Value);
+                leg.OrderPrice *= 2; // Won't fill
+            }
+
             return ComboLegLimitOrder(legs, quantity);
+        }
+
+        protected override void UpdateComboOrder(List<OrderTicket> tickets)
+        {
+            // Let's updated the limit prices to the original values
+            for (int i = 0; i < tickets.Count; i++)
+            {
+                tickets[i].Update(new UpdateOrderFields { LimitPrice = _originalLimitPrices[i] });
+            }
         }
 
         public override void OnEndOfAlgorithm()
@@ -53,7 +70,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 475788;
+        public override long DataPoints => 471135;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -73,6 +90,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Expectancy", "0"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -84,11 +102,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$75.00"},
+            {"Total Fees", "$26.00"},
             {"Estimated Strategy Capacity", "$58000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZERHAOVVQ|GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "30.16%"},
-            {"OrderListHash", "2b64aec759a089d23ccf9722d6b87ccd"}
+            {"Portfolio Turnover", "30.22%"},
+            {"OrderListHash", "216608fa33a238275b5f4f08e50e45b4"}
         };
     }
 }

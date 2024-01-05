@@ -24,6 +24,7 @@ using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
+using QuantConnect.Statistics;
 using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Engine
@@ -121,7 +122,7 @@ namespace QuantConnect.Tests.Engine
         {
         }
 
-        protected override void Sample(string chartName, string seriesName, int seriesIndex, SeriesType seriesType, DateTime time, decimal value, string unit = "$")
+        protected override void Sample(string chartName, string seriesName, int seriesIndex, SeriesType seriesType, ISeriesPoint value, string unit = "$")
         {
             //Add a copy locally:
             if (!Charts.ContainsKey(chartName))
@@ -136,7 +137,7 @@ namespace QuantConnect.Tests.Engine
             }
 
             //Add our value:
-            Charts[chartName].Series[seriesName].Values.Add(new ChartPoint(time, value));
+            Charts[chartName].Series[seriesName].Values.Add(value);
         }
 
         protected override void AddToLogStore(string message)
@@ -195,6 +196,15 @@ namespace QuantConnect.Tests.Engine
         }
 
         public void ProcessSynchronousEvents(bool forceProcess = false)
+        {
+        }
+
+        public StatisticsResults StatisticsResults()
+        {
+            return new StatisticsResults();
+        }
+
+        public void SetSummaryStatistic(string name, string value)
         {
         }
     }

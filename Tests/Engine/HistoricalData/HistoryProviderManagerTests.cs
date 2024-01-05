@@ -33,7 +33,6 @@ namespace QuantConnect.Tests.Engine.HistoricalData
     [TestFixture]
     public class HistoryProviderManagerTests
     {
-        private readonly ZipDataCacheProvider _zipCache = new(TestGlobals.DataProvider);
         private HistoryProviderManager _historyProviderWrapper;
 
         [SetUp]
@@ -50,18 +49,18 @@ namespace QuantConnect.Tests.Engine.HistoricalData
                 jobWithArrayHistoryProviders,
                 null,
                 TestGlobals.DataProvider,
-                _zipCache,
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 null,
                 false,
-                new DataPermissionManager()));
+                new DataPermissionManager(),
+                null));
         }
 
         [TearDown]
         public void TearDown()
         {
-            _zipCache.DisposeSafely();
             Composer.Instance.Reset();
         }
 

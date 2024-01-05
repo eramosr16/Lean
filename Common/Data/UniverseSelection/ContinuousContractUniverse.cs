@@ -30,6 +30,7 @@ namespace QuantConnect.Data.UniverseSelection
     public class ContinuousContractUniverse : Universe, ITimeTriggeredUniverse
     {
         private readonly  IMapFileProvider _mapFileProvider;
+        private readonly SubscriptionDataConfig _config;
         private readonly Security _security;
         private readonly bool _liveMode;
         private Symbol _currentSymbol;
@@ -39,6 +40,12 @@ namespace QuantConnect.Data.UniverseSelection
         /// Gets the settings used for subscriptions added for this universe
         /// </summary>
         public override UniverseSettings UniverseSettings { get; }
+
+        /// <summary>
+        /// True if this universe filter can run async in the data stack
+        /// TODO: see IContinuousSecurity.Mapped
+        /// </summary>
+        public override bool Asynchronous => false;
 
         /// <summary>
         /// Creates a new instance
@@ -51,6 +58,8 @@ namespace QuantConnect.Data.UniverseSelection
             UniverseSettings = universeSettings;
             var mapFileProviderTypeName = Config.Get("map-file-provider", "LocalDiskMapFileProvider");
             _mapFileProvider = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(mapFileProviderTypeName);
+
+            _config = new SubscriptionDataConfig(Configuration, dataMappingMode: UniverseSettings.DataMappingMode, symbol: _security.Symbol.Canonical);
         }
 
         /// <summary>
@@ -63,11 +72,8 @@ namespace QuantConnect.Data.UniverseSelection
         {
             yield return _security.Symbol.Canonical;
 
-            var mapFile = _mapFileProvider.ResolveMapFile(new SubscriptionDataConfig(Configuration,
-                dataMappingMode: UniverseSettings.DataMappingMode,
-                symbol: _security.Symbol.Canonical));
-
-            var mappedSymbol = mapFile.GetMappedSymbol(utcTime.ConvertFromUtc(_security.Exchange.TimeZone));
+            var mapFile = _mapFileProvider.ResolveMapFile(_config);
+            var mappedSymbol = mapFile.GetMappedSymbol(utcTime.ConvertFromUtc(_security.Exchange.TimeZone), dataMappingMode: _config.DataMappingMode);
             if (!string.IsNullOrEmpty(mappedSymbol) && mappedSymbol != _mappedSymbol)
             {
                 if (_currentSymbol != null)
@@ -84,6 +90,7 @@ namespace QuantConnect.Data.UniverseSelection
 
             if (_currentSymbol != null)
             {
+                // TODO: this won't work with async universe selection
                 ((IContinuousSecurity)_security).Mapped = _currentSymbol;
                 yield return _currentSymbol;
             }

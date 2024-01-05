@@ -154,17 +154,17 @@ namespace QuantConnect.Tests.Algorithm
             {
                 HistoryProvider = new SubscriptionDataReaderHistoryProvider()
             };
-            var zipCacheProvider = new ZipDataCacheProvider(TestGlobals.DataProvider);
             algo.HistoryProvider.Initialize(new HistoryProviderInitializeParameters(
                 null,
                 null,
                 TestGlobals.DataProvider,
-                zipCacheProvider,
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 null,
                 false,
-                new DataPermissionManager()));
+                new DataPermissionManager(),
+                algo.ObjectStore));
             algo.SetStartDate(2013, 10, 08);
             algo.AddEquity("SPY", Resolution.Minute);
 
@@ -191,8 +191,6 @@ namespace QuantConnect.Tests.Algorithm
                 Assert.IsTrue(atrIsReady.IsTrue());
                 Assert.IsTrue(vwapiIsReady.IsTrue());
             }
-
-            zipCacheProvider.DisposeSafely();
         }
 
         [TestCase(false)]

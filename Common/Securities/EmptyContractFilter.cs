@@ -14,8 +14,8 @@
  *
 */
 
+using System;
 using System.Linq;
-using QuantConnect.Data;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -27,20 +27,23 @@ namespace QuantConnect.Securities
     public class EmptyContractFilter : IDerivativeSecurityFilter
     {
         /// <summary>
+        /// True if this universe filter can run async in the data stack
+        /// </summary>
+        public bool Asynchronous { get; set; } = true;
+
+        /// <summary>
         /// Filters the input set of symbols represented by the universe
         /// </summary>
         /// <param name="universe">derivative symbols universe used in filtering</param>
         /// <returns>The filtered set of symbols</returns>
         public IDerivativeSecurityFilterUniverse Filter(IDerivativeSecurityFilterUniverse universe)
         {
-            return new NoneIDerivativeSecurityFilterUniverse { Underlying = universe.Underlying };
+            return new NoneIDerivativeSecurityFilterUniverse();
         }
 
         private class NoneIDerivativeSecurityFilterUniverse : IDerivativeSecurityFilterUniverse
         {
-            public BaseData Underlying { get; set; }
-
-            public bool IsDynamic => false;
+            public DateTime LocalTime => default;
 
             public IEnumerator<Symbol> GetEnumerator()
             {

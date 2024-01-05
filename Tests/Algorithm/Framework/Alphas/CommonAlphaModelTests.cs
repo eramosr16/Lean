@@ -40,7 +40,6 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
     public abstract class CommonAlphaModelTests
     {
         protected QCAlgorithm Algorithm;
-        protected ZipDataCacheProvider ZipCacheProvider;
 
         [OneTimeSetUp]
         public void Initialize()
@@ -323,17 +322,17 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
         protected void SetUpHistoryProvider()
         {
             Algorithm.HistoryProvider = new SubscriptionDataReaderHistoryProvider();
-            ZipCacheProvider = new ZipDataCacheProvider(TestGlobals.DataProvider);
             Algorithm.HistoryProvider.Initialize(new HistoryProviderInitializeParameters(
                 null,
                 null,
                 TestGlobals.DataProvider,
-                ZipCacheProvider,
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 null,
                 false,
-                new DataPermissionManager()));
+                new DataPermissionManager(),
+                Algorithm.ObjectStore));
         }
 
         /// <summary>

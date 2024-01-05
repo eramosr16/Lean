@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -49,7 +50,7 @@ namespace QuantConnect.Report
         /// <returns>Always true</returns>
         public override bool CanConvert(Type objectType)
         {
-            return true;
+            return objectType.IsAssignableTo(typeof(T));
         }
 
         /// <summary>
@@ -71,9 +72,17 @@ namespace QuantConnect.Report
                     var newValues = new List<JToken>();
                     foreach (var entry in seriesProperty.Value["Values"])
                     {
-                        if (entry["x"] == null || entry["x"].Value<long?>() == null ||
-                            entry["y"] == null || entry["y"].Value<decimal?>() == null)
+                        if (entry is JObject jobj &&
+                            (jobj["x"] == null || jobj["x"].Value<long?>() == null ||
+                             jobj["y"] == null || jobj["y"].Value<decimal?>() == null))
                         {
+                            // null chart point
+                            continue;
+                        }
+
+                        if (entry is JArray jArray && jArray.Any(jToken => jToken.Type == JTokenType.Null))
+                        {
+                            // null candlestick
                             continue;
                         }
 
