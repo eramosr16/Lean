@@ -71,22 +71,22 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        /// <param name="slice">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
             // can access the current set of active securitie through UniverseManager.ActiveSecurities
             Log(Time + ": Active Securities: " + string.Join(", ", UniverseManager.ActiveSecurities.Keys));
 
             // verify we don't receive data for inactive securities
-            var inactiveSymbols = data.Keys
+            var inactiveSymbols = slice.Keys
                 .Where(sym => !UniverseManager.ActiveSecurities.ContainsKey(sym))
                 // on daily data we'll get the last data point and the delisting at the same time
-                .Where(sym => !data.Delistings.ContainsKey(sym) || data.Delistings[sym].Type != DelistingType.Delisted)
+                .Where(sym => !slice.Delistings.ContainsKey(sym) || slice.Delistings[sym].Type != DelistingType.Delisted)
                 .ToList();
             if (inactiveSymbols.Any())
             {
                 var symbols = string.Join(", ", inactiveSymbols);
-                throw new Exception($"Received data for non-active security: {symbols}.");
+                throw new RegressionTestException($"Received data for non-active security: {symbols}.");
             }
 
             if (Transactions.OrdersCount == 0)
@@ -94,12 +94,12 @@ namespace QuantConnect.Algorithm.CSharp
                 MarketOrder("SPY", 100);
             }
 
-            foreach (var kvp in data.Delistings)
+            foreach (var kvp in slice.Delistings)
             {
                 _delistedSymbols.Add(kvp.Key);
             }
 
-            if (_changes != null && _changes.AddedSecurities.All(x => data.Bars.ContainsKey(x.Symbol)))
+            if (_changes != null && _changes.AddedSecurities.All(x => slice.Bars.ContainsKey(x.Symbol)))
             {
                 foreach (var security in _changes.AddedSecurities)
                 {
@@ -153,7 +153,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (actual != expected)
             {
                 var symbol = security.Symbol;
-                throw new Exception($"{symbol}({symbol.ID}) expected {expected.ToStringInvariant()}, but received {actual.ToStringInvariant()}.");
+                throw new RegressionTestException($"{symbol}({symbol.ID}) expected {expected.ToStringInvariant()}, but received {actual.ToStringInvariant()}.");
             }
         }
 
@@ -165,12 +165,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 78095;
+        public long DataPoints => 78092;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -178,35 +178,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
-            {"Average Win", "0.71%"},
+            {"Total Orders", "4"},
+            {"Average Win", "0.14%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-55.953%"},
-            {"Drawdown", "3.700%"},
+            {"Compounding Annual Return", "-59.145%"},
+            {"Drawdown", "4.100%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-3.747%"},
-            {"Sharpe Ratio", "-2.713"},
-            {"Sortino Ratio", "-3.067"},
-            {"Probabilistic Sharpe Ratio", "13.421%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "95916.61"},
+            {"Net Profit", "-4.083%"},
+            {"Sharpe Ratio", "-2.753"},
+            {"Sortino Ratio", "-3.15"},
+            {"Probabilistic Sharpe Ratio", "12.507%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.266"},
-            {"Beta", "1.241"},
-            {"Annual Standard Deviation", "0.167"},
-            {"Annual Variance", "0.028"},
-            {"Information Ratio", "-2.443"},
-            {"Tracking Error", "0.124"},
-            {"Treynor Ratio", "-0.364"},
+            {"Alpha", "-0.306"},
+            {"Beta", "1.175"},
+            {"Annual Standard Deviation", "0.175"},
+            {"Annual Variance", "0.031"},
+            {"Information Ratio", "-2.391"},
+            {"Tracking Error", "0.139"},
+            {"Treynor Ratio", "-0.41"},
             {"Total Fees", "$3.00"},
-            {"Estimated Strategy Capacity", "$870000.00"},
+            {"Estimated Strategy Capacity", "$120000000.00"},
             {"Lowest Capacity Asset", "GOOAV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "11.16%"},
-            {"OrderListHash", "9faa417ea1f279ce4dc61ba61e0bc636"}
+            {"Portfolio Turnover", "11.26%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "b9c45830fc218afd9de9ce729afc6200"}
         };
     }
 }

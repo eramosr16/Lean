@@ -51,7 +51,7 @@ namespace QuantConnect.Lean.Engine.HistoricalData
         /// <summary>
         /// Manager used to allow or deny access to a requested datasource for specific users
         /// </summary>
-        protected IDataPermissionManager DataPermissionManager;
+        protected IDataPermissionManager DataPermissionManager { get; set; }
 
         /// <summary>
         /// Initializes this history provider to work for the specified job
@@ -61,8 +61,7 @@ namespace QuantConnect.Lean.Engine.HistoricalData
         {
             if (_initialized)
             {
-                // let's make sure no one tries to change our parameters values
-                throw new InvalidOperationException("SubscriptionDataReaderHistoryProvider can only be initialized once");
+                return;
             }
             _initialized = true;
             _dataProvider = parameters.DataProvider;
@@ -70,6 +69,7 @@ namespace QuantConnect.Lean.Engine.HistoricalData
             _dataCacheProvider = parameters.DataCacheProvider;
             _factorFileProvider = parameters.FactorFileProvider;
             _objectStore = parameters.ObjectStore;
+            AlgorithmSettings = parameters.AlgorithmSettings;
             DataPermissionManager = parameters.DataPermissionManager;
             _parallelHistoryRequestsEnabled = parameters.ParallelHistoryRequestsEnabled;
 
@@ -103,7 +103,6 @@ namespace QuantConnect.Lean.Engine.HistoricalData
         private Subscription CreateSubscription(HistoryRequest request)
         {
             var config = request.ToSubscriptionDataConfig();
-            DataPermissionManager.AssertConfiguration(config, request.StartTimeLocal, request.EndTimeLocal);
 
             // this security is internal only we do not need to worry about a few of it's properties
             // TODO: we don't need fee/fill/BPM/etc either. Even better we should refactor & remove the need for the security
@@ -139,6 +138,13 @@ namespace QuantConnect.Lean.Engine.HistoricalData
                 reader = new ConcatEnumerator(true, reader, intraday);
             }
 
+            var useDailyStrictEndTimes = LeanData.UseDailyStrictEndTimes(AlgorithmSettings, request, config.Symbol, config.Increment);
+            if (useDailyStrictEndTimes)
+            {
+                // before corporate events which might yield data and we synchronize both feeds
+                reader = new StrictDailyEndTimesEnumerator(reader, request.ExchangeHours, request.StartTimeLocal);
+            }
+
             reader = CorporateEventEnumeratorFactory.CreateEnumerators(
                 reader,
                 config,
@@ -158,7 +164,8 @@ namespace QuantConnect.Lean.Engine.HistoricalData
                 }
 
                 var readOnlyRef = Ref.CreateReadOnly(() => request.FillForwardResolution.Value.ToTimeSpan());
-                reader = new FillForwardEnumerator(reader, security.Exchange, readOnlyRef, request.IncludeExtendedMarketHours, request.EndTimeLocal, config.Increment, config.DataTimeZone);
+                var exchange = GetSecurityExchange(security.Exchange, request.DataType, request.Symbol);
+                reader = new FillForwardEnumerator(reader, exchange, readOnlyRef, request.IncludeExtendedMarketHours, request.StartTimeLocal, request.EndTimeLocal, config.Increment, config.DataTimeZone, useDailyStrictEndTimes, request.DataType);
             }
 
             // since the SubscriptionDataReader performs an any overlap condition on the trade bar's entire
@@ -171,16 +178,16 @@ namespace QuantConnect.Lean.Engine.HistoricalData
             // allow all ticks
             if (config.Resolution != Resolution.Tick)
             {
-                var timeBasedFilter = new TimeBasedFilter { EndTimeLocal = request.EndTimeLocal, StartTimeLocal = request.StartTimeLocal };
+                var timeBasedFilter = new TimeBasedFilter(request);
                 reader = new FilterEnumerator<BaseData>(reader, timeBasedFilter.Filter);
             }
 
             var subscriptionRequest = new SubscriptionRequest(false, null, security, config, request.StartTimeUtc, request.EndTimeUtc);
             if (_parallelHistoryRequestsEnabled)
             {
-                return SubscriptionUtils.CreateAndScheduleWorker(subscriptionRequest, reader, _factorFileProvider, false);
+                return SubscriptionUtils.CreateAndScheduleWorker(subscriptionRequest, reader, _factorFileProvider, false, AlgorithmSettings.DailyPreciseEndTime);
             }
-            return SubscriptionUtils.Create(subscriptionRequest, reader);
+            return SubscriptionUtils.Create(subscriptionRequest, reader, AlgorithmSettings.DailyPreciseEndTime);
         }
 
         /// <summary>
@@ -196,12 +203,19 @@ namespace QuantConnect.Lean.Engine.HistoricalData
         /// </summary>
         private class TimeBasedFilter
         {
+            public Type RequestedType { get; set; }
             public DateTime EndTimeLocal { get; set; }
             public DateTime StartTimeLocal { get; set; }
+            public TimeBasedFilter(HistoryRequest request)
+            {
+                RequestedType = request.DataType;
+                EndTimeLocal = request.EndTimeLocal;
+                StartTimeLocal = request.StartTimeLocal;
+            }
             public bool Filter(BaseData data)
             {
-                // filter out all aux data. TODO: what if we are asking for aux data?
-                if (data.DataType == MarketDataType.Auxiliary) return false;
+                // filter out all aux data, unless if we are asking for aux data
+                if (data.DataType == MarketDataType.Auxiliary && data.GetType() != RequestedType) return false;
                 // filter out future data
                 if (data.EndTime > EndTimeLocal) return false;
                 // filter out data before the start

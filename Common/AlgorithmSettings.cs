@@ -17,6 +17,7 @@ using System;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Orders.Fills;
+using QuantConnect.Configuration;
 
 namespace QuantConnect
 {
@@ -25,6 +26,20 @@ namespace QuantConnect
     /// </summary>
     public class AlgorithmSettings : IAlgorithmSettings
     {
+        private static TimeSpan _defaultDatabasesRefreshPeriod =
+            TimeSpan.TryParse(Config.Get("databases-refresh-period", "1.00:00:00"), out var refreshPeriod) ? refreshPeriod : Time.OneDay;
+
+        // We default this to true so that we don't terminate live algorithms when the
+        // brokerage account has existing holdings for an asset that is not supported by Lean.
+        // Users can override this on initialization so that the algorithm is not terminated when
+        // placing orders for assets without a correct definition or mapping.
+        private static bool _defaultIgnoreUnknownAssetHoldings = Config.GetBool("ignore-unknown-asset-holdings", true);
+
+        /// <summary>
+        /// Gets whether or not WarmUpIndicator is allowed to warm up indicators
+        /// </summary>
+        public bool AutomaticIndicatorWarmUp { get; set; }
+
         /// <summary>
         /// True if should rebalance portfolio on security changes. True by default
         /// </summary>
@@ -120,11 +135,56 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Number of trading days per year for this Algorithm's portfolio statistics.
+        /// </summary>
+        /// <remarks>Effect on
+        /// <see cref="Statistics.PortfolioStatistics.AnnualVariance"/>,
+        /// <seealso cref="Statistics.PortfolioStatistics.AnnualStandardDeviation"/>,
+        /// <seealso cref="Statistics.PortfolioStatistics.SharpeRatio"/>,
+        /// <seealso cref="Statistics.PortfolioStatistics.SortinoRatio"/>,
+        /// <seealso cref="Statistics.PortfolioStatistics.TrackingError"/>,
+        /// <seealso cref="Statistics.PortfolioStatistics.InformationRatio"/>.
+        /// </remarks>
+        public int? TradingDaysPerYear { get; set; }
+
+        /// <summary>
+        /// True if daily strict end times are enabled
+        /// </summary>
+        public bool DailyPreciseEndTime { get; set; }
+
+        /// <summary>
+        /// True if extended market hours should be used for daily consolidation, when extended market hours is enabled
+        /// </summary>
+        public bool DailyConsolidationUseExtendedMarketHours { get; set; }
+
+        /// <summary>
+        /// Gets the time span used to refresh the market hours and symbol properties databases
+        /// </summary>
+        public TimeSpan DatabasesRefreshPeriod { get; set; }
+
+        /// <summary>
+        /// Determines whether to terminate the algorithm when an asset holding is not supported by Lean or the brokerage.
+        /// Defaults to true, meaning that the algorithm will not be terminated if an asset holding is not supported.
+        /// </summary>
+        public bool IgnoreUnknownAssetHoldings { get; set; }
+
+        /// <summary>
+        /// Performance tracking sample period to use if any, useful to debug performance issues
+        /// </summary>
+        public TimeSpan PerformanceSamplePeriod { get; set; }
+
+        /// <summary>
+        /// Determines whether to seed initial prices for all selected and manually added securities.
+        /// </summary>
+        public bool SeedInitialPrices { get; set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="AlgorithmSettings"/> class
         /// </summary>
         public AlgorithmSettings()
         {
             LiquidateEnabled = true;
+            DailyPreciseEndTime = true;
             FreePortfolioValuePercentage = 0.0025m;
             // Because the free portfolio value has a trailing behavior by default, let's add a default minimum order margin portfolio percentage
             // to avoid tiny trades when rebalancing, defaulting to 0.1% of the TPV
@@ -132,6 +192,9 @@ namespace QuantConnect
             StalePriceTimeSpan = Time.OneHour;
             MaxAbsolutePortfolioTargetPercentage = 1000000000;
             MinAbsolutePortfolioTargetPercentage = 0.0000000001m;
+            DatabasesRefreshPeriod = _defaultDatabasesRefreshPeriod;
+            IgnoreUnknownAssetHoldings = _defaultIgnoreUnknownAssetHoldings;
+            SeedInitialPrices = false;
         }
     }
 }

@@ -14,6 +14,7 @@
 */
 
 using QuantConnect.Data;
+using QuantConnect.Data.Common;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
@@ -33,11 +34,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds
     {
         private readonly ConcurrentDictionary<SecurityIdentifier, List<KeyValuePair<SubscriptionDataConfig, ScannableEnumerator<BaseData>>>> _enumerators
             = new ConcurrentDictionary<SecurityIdentifier, List<KeyValuePair<SubscriptionDataConfig, ScannableEnumerator<BaseData>>>>();
+        private bool _dailyStrictEndTimeEnabled;
 
         /// <summary>
         /// Continuous UTC time provider
         /// </summary>
         protected ITimeProvider TimeProvider { get; set; } = RealTimeProvider.Instance;
+
+        /// <summary>
+        /// Initialize this instance
+        /// </summary>
+        /// <param name="parameters">The parameters dto instance</param>
+        public void Initialize(DataAggregatorInitializeParameters parameters)
+        {
+            _dailyStrictEndTimeEnabled = parameters.AlgorithmSettings.DailyPreciseEndTime;
+            Log.Trace($"AggregationManager.Initialize(): daily strict end times: {_dailyStrictEndTimeEnabled}");
+        }
 
         /// <summary>
         /// Add new subscription to current <see cref="IDataAggregator"/> instance
@@ -135,6 +147,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         protected virtual IDataConsolidator GetConsolidator(SubscriptionDataConfig config)
         {
             var period = config.Resolution.ToTimeSpan();
+            if (config.Resolution == Resolution.Daily && (config.Type == typeof(QuoteBar) || config.Type == typeof(TradeBar)))
+            {
+                // in backtesting, daily resolution data does not have extended market hours even if requested, so let's respect the same behavior for live
+                // also this allows us to enable the daily strict end times if required. See 'SetStrictEndTimes'
+                return new MarketHourAwareConsolidator(_dailyStrictEndTimeEnabled, config.Resolution, typeof(Tick), config.TickType, extendedMarketHours: false);
+            }
             if (config.Type == typeof(QuoteBar))
             {
                 return new TickQuoteBarConsolidator(period);

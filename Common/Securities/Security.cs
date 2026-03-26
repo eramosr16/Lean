@@ -31,9 +31,9 @@ using QuantConnect.Data.Market;
 using QuantConnect.Python;
 using Python.Runtime;
 using QuantConnect.Data.Fundamental;
-using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Shortable;
+using QuantConnect.Util;
 
 namespace QuantConnect.Securities
 {
@@ -46,6 +46,7 @@ namespace QuantConnect.Securities
     /// </remarks>
     public class Security : DynamicObject, ISecurityPrice
     {
+        private SecurityExchange _exchange;
         private LocalTimeKeeper _localTimeKeeper;
 
         /// <summary>
@@ -53,7 +54,12 @@ namespace QuantConnect.Securities
         /// Uses concurrent bag to avoid list enumeration threading issues
         /// </summary>
         /// <remarks>Just use a list + lock, not concurrent bag, avoid garbage it creates for features we don't need here. See https://github.com/dotnet/runtime/issues/23103</remarks>
-        private readonly List<SubscriptionDataConfig> _subscriptionsBag;
+        private readonly HashSet<SubscriptionDataConfig> _subscriptionsBag;
+
+        /// <summary>
+        /// Flag to keep track of initialized securities, to avoid double initialization.
+        /// </summary>
+        internal bool IsInitialized { get; set; }
 
         /// <summary>
         /// This securities <see cref="IShortableProvider"/>
@@ -100,6 +106,7 @@ namespace QuantConnect.Securities
         public SymbolProperties SymbolProperties
         {
             get;
+            protected set;
         }
 
         /// <summary>
@@ -196,8 +203,15 @@ namespace QuantConnect.Securities
         /// <seealso cref="ForexExchange"/>
         public SecurityExchange Exchange
         {
-            get;
-            set;
+            get => _exchange;
+            set
+            {
+                _exchange = value;
+                if (_localTimeKeeper != null)
+                {
+                    _exchange.SetLocalDateTimeFrontierProvider(_localTimeKeeper);
+                }
+            }
         }
 
         /// <summary>
@@ -316,6 +330,11 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Gets the current session of this security
+        /// </summary>
+        public virtual Session Session => Cache.Session;
+
+        /// <summary>
         /// Construct a new security vehicle based on the user options.
         /// </summary>
         public Security(SecurityExchangeHours exchangeHours,
@@ -412,10 +431,15 @@ namespace QuantConnect.Securities
             }
 
             Symbol = symbol;
-            _subscriptionsBag = new ();
+            _subscriptionsBag = new();
             QuoteCurrency = quoteCurrency;
             SymbolProperties = symbolProperties;
-            IsTradable = true;
+
+            if (Symbol.SecurityType != SecurityType.Index)
+            {
+                IsTradable = true;
+            }
+
             Cache = cache;
             Exchange = exchange;
             DataFilter = dataFilter;
@@ -573,7 +597,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return new Fundamental(LocalTime, Symbol);
+                return Fundamental.ForDate(LocalTime, Symbol);
             }
         }
 
@@ -591,6 +615,7 @@ namespace QuantConnect.Securities
         public virtual void SetLocalTimeKeeper(LocalTimeKeeper localTimeKeeper)
         {
             _localTimeKeeper = localTimeKeeper;
+            Cache.SetLocalTimeKeeper(localTimeKeeper);
             Exchange.SetLocalDateTimeFrontierProvider(localTimeKeeper);
         }
 
@@ -614,10 +639,12 @@ namespace QuantConnect.Securities
         /// <param name="data">The security update data</param>
         /// <param name="dataType">The data type</param>
         /// <param name="containsFillForwardData">Flag indicating whether
+        /// <param name="isInternalConfig">True if this update data corresponds to an internal subscription
+        /// such as currency or security benchmark</param>
         /// <paramref name="data"/> contains any fill forward bar or not</param>
-        public void Update(IReadOnlyList<BaseData> data, Type dataType, bool? containsFillForwardData = null)
+        public void Update(IReadOnlyList<BaseData> data, Type dataType, bool? containsFillForwardData = null, bool isInternalConfig = false)
         {
-            Cache.AddDataList(data, dataType, containsFillForwardData);
+            Cache.AddDataList(data, dataType, containsFillForwardData, isInternalConfig);
 
             UpdateMarketPrice(data[data.Count - 1]);
         }
@@ -699,7 +726,10 @@ namespace QuantConnect.Securities
         /// <param name="feelModel">Model that represents a fee model</param>
         public void SetFeeModel(PyObject feelModel)
         {
-            FeeModel = new FeeModelPythonWrapper(feelModel);
+            FeeModel = PythonUtil.CreateInstanceOrWrapper<IFeeModel>(
+                feelModel,
+                py => new FeeModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -717,7 +747,31 @@ namespace QuantConnect.Securities
         /// <param name="fillModel">Model that represents a fill model</param>
         public void SetFillModel(PyObject fillModel)
         {
-            FillModel = new FillModelPythonWrapper(fillModel);
+            FillModel = PythonUtil.CreateInstanceOrWrapper<IFillModel>(
+                fillModel,
+                py => new FillModelPythonWrapper(py)
+            );
+        }
+
+        /// <summary>
+        /// Sets the settlement model
+        /// </summary>
+        /// <param name="settlementModel"> Model that represents a settlement model</param>
+        public void SetSettlementModel(ISettlementModel settlementModel)
+        {
+            SettlementModel = settlementModel;
+        }
+
+        /// <summary>
+        /// Sets the settlement model
+        /// </summary>
+        /// <param name="settlementModel">Model that represents a settlement model</param>
+        public void SetSettlementModel(PyObject settlementModel)
+        {
+            SettlementModel = PythonUtil.CreateInstanceOrWrapper<ISettlementModel>(
+                settlementModel,
+                py => new SettlementModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -735,7 +789,10 @@ namespace QuantConnect.Securities
         /// <param name="slippageModel">Model that represents a slippage model</param>
         public void SetSlippageModel(PyObject slippageModel)
         {
-            SlippageModel = new SlippageModelPythonWrapper(slippageModel);
+            SlippageModel = PythonUtil.CreateInstanceOrWrapper<ISlippageModel>(
+                slippageModel,
+                py => new SlippageModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -753,7 +810,10 @@ namespace QuantConnect.Securities
         /// <param name="volatilityModel">Model that represents a volatility model</param>
         public void SetVolatilityModel(PyObject volatilityModel)
         {
-            VolatilityModel = new VolatilityModelPythonWrapper(volatilityModel);
+            VolatilityModel = PythonUtil.CreateInstanceOrWrapper<IVolatilityModel>(
+                volatilityModel,
+                py => new VolatilityModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -771,7 +831,10 @@ namespace QuantConnect.Securities
         /// <param name="pyObject">Model that represents a security's model of buying power</param>
         public void SetBuyingPowerModel(PyObject pyObject)
         {
-            SetBuyingPowerModel(new BuyingPowerModelPythonWrapper(pyObject));
+            BuyingPowerModel = PythonUtil.CreateInstanceOrWrapper<IBuyingPowerModel>(
+                pyObject,
+                py => new BuyingPowerModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -789,7 +852,10 @@ namespace QuantConnect.Securities
         /// <param name="pyObject">Model that represents a security's model of margin interest rate</param>
         public void SetMarginInterestRateModel(PyObject pyObject)
         {
-            SetMarginInterestRateModel(new MarginInterestRateModelPythonWrapper(pyObject));
+            MarginInterestRateModel = PythonUtil.CreateInstanceOrWrapper<IMarginInterestRateModel>(
+                pyObject,
+                py => new MarginInterestRateModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -807,7 +873,10 @@ namespace QuantConnect.Securities
         /// <param name="pyObject">Model that represents a security's model of buying power</param>
         public void SetMarginModel(PyObject pyObject)
         {
-            SetMarginModel(new BuyingPowerModelPythonWrapper(pyObject));
+            MarginModel = PythonUtil.CreateInstanceOrWrapper<IBuyingPowerModel>(
+                pyObject,
+                py => new BuyingPowerModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -816,21 +885,10 @@ namespace QuantConnect.Securities
         /// <param name="pyObject">Python class that represents a custom shortable provider</param>
         public void SetShortableProvider(PyObject pyObject)
         {
-            if (pyObject.TryConvert<IShortableProvider>(out var shortableProvider))
-            {
-                SetShortableProvider(shortableProvider);
-            }
-            else if (Extensions.TryConvert<IShortableProvider>(pyObject, out _, allowPythonDerivative: true))
-            {
-                SetShortableProvider(new ShortableProviderPythonWrapper(pyObject));
-            }
-            else
-            {
-                using (Py.GIL())
-                {
-                    throw new Exception($"SetShortableProvider: {pyObject.Repr()} is not a valid argument");
-                }
-            }
+            ShortableProvider = PythonUtil.CreateInstanceOrWrapper<IShortableProvider>(
+                pyObject,
+                py => new ShortableProviderPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -849,21 +907,10 @@ namespace QuantConnect.Securities
         /// <exception cref="ArgumentException"></exception>
         public void SetDataFilter(PyObject pyObject)
         {
-            if (pyObject.TryConvert<ISecurityDataFilter>(out var dataFilter))
-            {
-                SetDataFilter(dataFilter);
-            }
-            else if (Extensions.TryConvert<ISecurityDataFilter>(pyObject, out _, allowPythonDerivative: true))
-            {
-                SetDataFilter(new SecurityDataFilterPythonWrapper(pyObject));
-            }
-            else
-            {
-                using (Py.GIL())
-                {
-                    throw new ArgumentException($"SetDataFilter: {pyObject.Repr()} is not a valid argument");
-                }
-            }
+            DataFilter = PythonUtil.CreateInstanceOrWrapper<ISecurityDataFilter>(
+                pyObject,
+                py => new SecurityDataFilterPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -919,6 +966,17 @@ namespace QuantConnect.Securities
         /// <param name="key">The property key</param>
         /// <param name="value">The property value</param>
         public void Add(string key, object value)
+        {
+            Set(key, value);
+        }
+
+        /// <summary>
+        /// Sets the specified custom property.
+        /// This allows us to use the security object as a dynamic object for quick storage.
+        /// </summary>
+        /// <param name="key">The property key</param>
+        /// <param name="value">The property value</param>
+        public void Set(string key, object value)
         {
             Cache.Properties[key] = value;
         }
@@ -1055,7 +1113,7 @@ namespace QuantConnect.Securities
                     }
                     if (!subscription.ExchangeTimeZone.Equals(Exchange.TimeZone))
                     {
-                         throw new ArgumentException(Messages.Security.UnmatchingExchangeTimeZones, $"{nameof(subscription)}.{nameof(subscription.ExchangeTimeZone)}");
+                        throw new ArgumentException(Messages.Security.UnmatchingExchangeTimeZones, $"{nameof(subscription)}.{nameof(subscription.ExchangeTimeZone)}");
                     }
                     _subscriptionsBag.Add(subscription);
                 }
@@ -1117,6 +1175,48 @@ namespace QuantConnect.Securities
             }
 
             return value;
+        }
+
+        /// <summary>
+        /// Applies the split to the security
+        /// </summary>
+        internal void ApplySplit(Split split)
+        {
+            Cache.ApplySplit(split);
+            UpdateMarketPrice(Cache.GetData());
+        }
+
+        /// <summary>
+        /// Updates the symbol properties of this security
+        /// </summary>
+        internal virtual void UpdateSymbolProperties(SymbolProperties symbolProperties)
+        {
+            if (symbolProperties != null)
+            {
+                SymbolProperties = symbolProperties;
+            }
+        }
+
+        /// <summary>
+        /// Returns the securities symbol
+        /// </summary>
+        public static implicit operator Symbol(Security security) => security.Symbol;
+
+        /// <summary>
+        /// Resets the security to its initial state by marking it as uninitialized and non-tradable
+        /// and clearing the subscriptions.
+        /// </summary>
+        public virtual void Reset()
+        {
+            IsInitialized = false;
+            IsTradable = false;
+
+            // Reset the subscriptions
+            lock (_subscriptionsBag)
+            {
+                _subscriptionsBag.Clear();
+                UpdateSubscriptionProperties();
+            }
         }
     }
 }

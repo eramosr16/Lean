@@ -14,46 +14,47 @@
 from AlgorithmImports import *
 from collections import deque
 
+import numpy as np
+
 ### <summary>
 ### Algorithm asserting that security dynamic properties keep Python references to the Python class they are instances of,
 ### specifically when this class is a subclass of a C# class.
 ### </summary>
 class SecurityDynamicPropertyPythonClassAlgorithm(QCAlgorithm):
-    def Initialize(self):
-        self.SetStartDate(2013, 10, 7)
-        self.SetEndDate(2013, 10, 7)
+    def initialize(self) -> None:
+        self.set_start_date(2013, 10, 7)
+        self.set_end_date(2013, 10, 7)
 
-        self.spy = self.AddEquity("SPY", Resolution.Minute)
+        self._spy = self.add_equity("SPY", Resolution.MINUTE)
 
-        customSMA = CustomSimpleMovingAverage('custom', 60)
-        self.spy.CustomSMA = customSMA
-        customSMA.Security = self.spy
+        custom_sma = CustomSimpleMovingAverage('custom', 60)
+        self._spy.custom_sma = custom_sma
+        custom_sma.security = self._spy
 
-        self.RegisterIndicator(self.spy.Symbol, self.spy.CustomSMA,  Resolution.Minute)
+        self.register_indicator(self._spy.symbol, self._spy.custom_sma, Resolution.MINUTE)
 
+    def on_warmup_finished(self) -> None:
+        if type(self._spy.custom_sma) != CustomSimpleMovingAverage:
+            raise AssertionError("spy.custom_sma is not an instance of CustomSimpleMovingAverage")
 
-    def OnWarmupFinished(self) -> None:
-        if type(self.spy.CustomSMA) != CustomSimpleMovingAverage:
-            raise Exception("spy.CustomSMA is not an instance of CustomSimpleMovingAverage")
-
-        if self.spy.CustomSMA.Security is None:
-            raise Exception("spy.CustomSMA.Security is None")
+        if not self._spy.custom_sma.security:
+            raise AssertionError("spy.custom_sma.security is None")
         else:
-            self.Debug(f"spy.CustomSMA.Security.Symbol: {self.spy.CustomSMA.Security.Symbol}")
+            self.debug(f"spy.custom_sma.security.symbol: {self._spy.custom_sma.security.symbol}")
 
-    def OnData(self, slice: Slice) -> None:
-        if self.spy.CustomSMA.IsReady:
-            self.Debug(f"CustomSMA: {self.spy.CustomSMA.Current.Value}")
+    def on_data(self, slice: Slice) -> None:
+        if self._spy.custom_sma.is_ready:
+            self.debug(f"CustomSMA: {self._spy.custom_sma.current.value}")
 
 class CustomSimpleMovingAverage(PythonIndicator):
-    def __init__(self, name, period):
+    def __init__(self, name: str, period: int) -> None:
         super().__init__()
-        self.Name = name
-        self.Value = 0
-        self.queue = deque(maxlen=period)
+        self.name = name
+        self.value = 0
+        self._queue = deque(maxlen=period)
 
-    def Update(self, input):
-        self.queue.appendleft(input.Value)
-        count = len(self.queue)
-        self.Value = np.sum(self.queue) / count
-        return count == self.queue.maxlen
+    def update(self, input: IndicatorDataPoint) -> bool:
+        self._queue.appendleft(input.value)
+        count = len(self._queue)
+        self.value = np.sum(self._queue) / count
+        return count == self._queue.maxlen

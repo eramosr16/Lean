@@ -33,6 +33,7 @@ namespace QuantConnect.Algorithm.CSharp
         private int _optionCount;
         private Symbol _lastEquityAdded;
         private Symbol _aapl;
+        private int _onSecuritiesChangedCallCount;
 
         public override void Initialize()
         {
@@ -58,15 +59,15 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (universe.Underlying == null)
                 {
-                    throw new Exception("Underlying data point is null! This shouldn't happen, each OptionChainUniverse handles and should provide this");
+                    throw new RegressionTestException("Underlying data point is null! This shouldn't happen, each OptionChainUniverse handles and should provide this");
                 }
                 return universe.IncludeWeeklys()
                     .BackMonth() // back month so that they don't get removed because of being delisted
-                    .Contracts(universe.Take(5));
+                    .Contracts(contracts => contracts.Take(5));
             });
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             // if we have no changes, do nothing
             if (_changes == SecurityChanges.None ||
@@ -88,7 +89,7 @@ namespace QuantConnect.Algorithm.CSharp
                     // options added should all match prev added security
                     if (security.Symbol.Underlying != _lastEquityAdded)
                     {
-                        throw new Exception($"Unexpected symbol added {security.Symbol}");
+                        throw new RegressionTestException($"Unexpected symbol added {security.Symbol}");
                     }
 
                     _optionCount++;
@@ -100,24 +101,25 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnSecuritiesChanged(SecurityChanges changes)
         {
             Debug($"{GetStatusLog()}. CHANGES {changes}");
+            _onSecuritiesChangedCallCount++;
             if (Time.Day == 6)
             {
-                if (Time.Hour != 0 && Time.Hour != 9)
+                if (Time.Hour != 0)
                 {
-                    throw new Exception($"Unexpected SecurityChanges time: {Time} {changes}");
+                    throw new RegressionTestException($"Unexpected SecurityChanges time: {Time} {changes}");
                 }
 
                 if (changes.RemovedSecurities.Count != 0)
                 {
-                    throw new Exception($"Unexpected removals: {changes}");
+                    throw new RegressionTestException($"Unexpected removals: {changes}");
                 }
 
-                if (Time.Hour == 0)
+                if (_onSecuritiesChangedCallCount == 1)
                 {
                     // first we expect the equity to get Added
                     if (changes.AddedSecurities.Count != 1 || changes.AddedSecurities[0].Symbol != _aapl)
                     {
-                        throw new Exception($"Unexpected SecurityChanges: {changes}");
+                        throw new RegressionTestException($"Unexpected SecurityChanges: {changes}");
                     }
                 }
                 else
@@ -125,7 +127,7 @@ namespace QuantConnect.Algorithm.CSharp
                     // later we expect the options to be Added
                     if (changes.AddedSecurities.Count != 5 || changes.AddedSecurities.Any(security => security.Symbol.SecurityType != SecurityType.Option))
                     {
-                        throw new Exception($"Unexpected SecurityChanges: {changes}");
+                        throw new RegressionTestException($"Unexpected SecurityChanges: {changes}");
                     }
                 }
             }
@@ -134,17 +136,14 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (Time.Hour != 0)
                 {
-                    throw new Exception($"Unexpected SecurityChanges time: {Time} {changes}");
+                    throw new RegressionTestException($"Unexpected SecurityChanges time: {Time} {changes}");
                 }
 
-                if (changes.AddedSecurities.Count != 0)
-                {
-                    throw new Exception($"Unexpected additions: {changes}");
-                }
+                // Options can be selected/deselected on this day, but the equity should be removed
 
-                if (changes.RemovedSecurities.Count != 1 || changes.RemovedSecurities[0].Symbol != _aapl)
+                if (changes.RemovedSecurities.Count == 0 || !changes.RemovedSecurities.Any(x => x.Symbol == _aapl))
                 {
-                    throw new Exception($"Unexpected SecurityChanges: {changes}");
+                    throw new RegressionTestException($"Unexpected SecurityChanges: {changes}");
                 }
             }
             // We expect the options to get Removed, happens in the next loop after removing the equity
@@ -152,7 +151,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (Time.Hour != 0)
                 {
-                    throw new Exception($"Unexpected SecurityChanges time: {Time} {changes}");
+                    throw new RegressionTestException($"Unexpected SecurityChanges time: {Time} {changes}");
                 }
 
                 // later we expect the options to be Removed
@@ -162,7 +161,7 @@ namespace QuantConnect.Algorithm.CSharp
                     // the removal of the 5 option contracts
                     || changes.RemovedSecurities.Count(security => security.Symbol.SecurityType == SecurityType.Option) != 5)
                 {
-                    throw new Exception($"Unexpected SecurityChanges: {changes}");
+                    throw new RegressionTestException($"Unexpected SecurityChanges: {changes}");
                 }
             }
 
@@ -173,11 +172,11 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_optionCount == 0)
             {
-                throw new Exception("Option universe chain did not add any option!");
+                throw new RegressionTestException("Option universe chain did not add any option!");
             }
             if (UniverseManager.Any(pair => pair.Value.DisposeRequested))
             {
-                throw new Exception("There shouldn't be any disposed universe, they should be removed and replaced by new universes");
+                throw new RegressionTestException("There shouldn't be any disposed universe, they should be removed and replaced by new universes");
             }
         }
 
@@ -200,12 +199,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 921994;
+        public long DataPoints => 17966;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -213,16 +212,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -241,6 +247,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

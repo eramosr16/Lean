@@ -55,7 +55,6 @@ namespace QuantConnect.Tests.Common.Securities.Futures
         private const string TwoThirtyPM = "14:30:00";
         private const string OneFortyFivePM = "13:45:00";
         private const string ThreeThirtyPM = "15:30:00";
-        private const string FourPM = "16:00:00";
         private const string FourFifteenPM = "16:15:00";
         private readonly SymbolPropertiesDatabase _symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder();
 
@@ -68,6 +67,45 @@ namespace QuantConnect.Tests.Common.Securities.Futures
                 var serializer = new XmlSerializer(typeof(Item[]));
                 _data = ((Item[])serializer.Deserialize(reader)).ToDictionary(i=>i.Symbol,i=>i.SymbolDates);
             }
+        }
+
+        // last day and previous are holidays
+        [TestCase("20250101", "20250127")]
+        // normal case
+        [TestCase("20250201", "20250227")]
+        [TestCase("20250301", "20250328")]
+        [TestCase("20250401", "20250429")]
+        [TestCase("20250501", "20250529")]
+        [TestCase("20250601", "20250627")]
+        [TestCase("20250701", "20250730")]
+        [TestCase("20250801", "20250828")]
+        [TestCase("20250901", "20250929")]
+        [TestCase("20251001", "20251030")]
+        [TestCase("20251101", "20251127")]
+        [TestCase("20251201", "20251230")]
+        public void HSIFutures(string input, string expectedStr)
+        {
+            var date = Time.ParseDate(input);
+            var expected = Time.ParseDate(expectedStr);
+
+            var canonical = Symbol.Create("HSI", SecurityType.Future, Market.HKFE);
+            var expiration = FuturesExpiryFunctions.FuturesExpiryDictionary[canonical];
+            var result = expiration(date);
+            Assert.AreEqual(expected, result.Date);
+        }
+
+        [Test]
+        public void MCLFutures()
+        {
+            var canonical = Symbol.Create("MCL", SecurityType.Future, Market.NYMEX);
+            var expiration = FuturesExpiryFunctions.FuturesExpiryDictionary[canonical];
+
+            // 1/25 is Saturday and 1/20 is a holiday
+            Assert.AreEqual(new DateTime(2025, 1, 17, 0, 0, 0), expiration(new DateTime(2025, 2, 1)));
+            // Whole weekend in between
+            Assert.AreEqual(new DateTime(2025, 2, 19, 0, 0, 0), expiration(new DateTime(2025, 3, 1)));
+            // Normal case
+            Assert.AreEqual(new DateTime(2025, 4, 21, 0, 0, 0), expiration(new DateTime(2025, 5, 1)));
         }
 
         [Test]
@@ -177,79 +215,78 @@ namespace QuantConnect.Tests.Common.Securities.Futures
             }
         }
 
-        [TestCase(QuantConnect.Securities.Futures.Energies.PropaneNonLDHMontBelvieu, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ArgusPropaneFarEastIndexBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MiniEuropeanThreePointPercentFiveFuelOilBargesPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MiniSingaporeFuelOil180CstPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GulfCoastULSDPlattsUpDownBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GulfCoastJetPlattsUpDownBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.PropaneNonLDHMontBelvieuOPIS, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EuropeanPropaneCIFARAArgusBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.PremiumUnleadedGasoline10ppmFOBMEDPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ArgusPropaneFarEastIndex, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GasolineEurobobOxyNWEBargesArgusCrackSpreadBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuNaturalGasolineOPIS, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuNormalButaneOPISBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ConwayPropaneOPIS, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuLDHPropaneOPISBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ArgusPropaneFarEastIndexVsEuropeanPropaneCIFARAArgus, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ArgusPropaneSaudiAramco, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GroupThreeULSDPlattsVsNYHarborULSD, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GroupThreeSuboctaneGasolinePlattsVsRBOB, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.SingaporeFuelOil180cstPlattsBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.SingaporeFuelOil380cstPlattsBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuEthaneOPIS, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuNormalButaneOPIS, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.BrentCrudeOilVsDubaiCrudeOilPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ArgusLLSvsWTIArgusTradeMonth, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.SingaporeGasoilPlattsVsLowSulphurGasoilFutures, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.LosAngelesCARBOBGasolineOPISvsRBOBGasoline, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.LosAngelesJetOPISvsNYHarborULSD, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.LosAngelesCARBDieselOPISvsNYHarborULSD, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EuropeanNaphthaPlattsBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EuropeanPropaneCIFARAArgus, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuNaturalGasolineOPISBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.RBOBGasolineCrackSpread, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GulfCoastHSFOPlattsBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MarsArgusVsWTITradeMonth, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MarsArgusVsWTIFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EthanolT2FOBRdamIncludingDutyPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MontBelvieuLDHPropaneOPIS, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GasolineEurobobOxyNWEBargesArgus, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.WTIBrentFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ThreePointFivePercentFuelOilBargesFOBRdamPlattsCrackSpread1000mt, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GasolineEurobobOxyNWEBargesArgusBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.BrentLastDayFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.CrudeOilWTI, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GulfCoastCBOBGasolineA2PlattsVsRBOBGasoline, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ClearbrookBakkenSweetCrudeOilMonthlyIndexNetEnergy, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.WTIFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ChicagoEthanolPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.SingaporeMogas92UnleadedPlattsBrentCrackSpread, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.DubaiCrudeOilPlattsFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.JapanCnFNaphthaPlattsBALMO, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.Ethanol, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EuropeanNaphthaPlattsCrackSpread, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EuropeanPropaneCIFARAArgusVsNaphthaCargoesCIFNWEPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.SingaporeFuelOil380cstPlattsVsEuropeanThreePointFivePercentFuelOilBargesFOBRdamPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EastWestGasolineSpreadPlattsArgus, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.EastWestNaphthaJapanCFvsCargoesCIFNWESpreadPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.RBOBGasolineVsEurobobOxyNWEBargesArgusThreeHundredFiftyThousandGallons, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.ThreePointFivePercentFuelOilBargesFOBRdamPlattsCrackSpread, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.FreightRouteTC14Baltic, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.OnePercentFuelOilCargoesFOBNWEPlattsVsThreePointFivePercentFuelOilBargesFOBRdamPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.GulfCoastHSFOPlattsVsEuropeanThreePointFivePercentFuelOilBargesFOBRdamPlatts, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.WTIHoustonCrudeOil, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.NaturalGasHenryHubLastDayFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.HeatingOil, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.NaturalGasHenryHubPenultimateFinancial, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.WTIHoustonArgusVsWTITradeMonth, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.Gasoline, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.NaturalGas, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.BrentCrude, Zero)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.LowSulfurGasoil, TwelveOclock)]
-        [TestCase(QuantConnect.Securities.Futures.Energies.MicroCrudeOilWTI, Zero)]
-        public void EnergiesExpiryDateFunction_WithDifferentDates_ShouldFollowContract(string symbol, string dayTime)
+        [TestCase(QuantConnect.Securities.Futures.Energy.PropaneNonLDHMontBelvieu, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ArgusPropaneFarEastIndexBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MiniEuropeanThreePointPercentFiveFuelOilBargesPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MiniSingaporeFuelOil180CstPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GulfCoastULSDPlattsUpDownBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GulfCoastJetPlattsUpDownBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.PropaneNonLDHMontBelvieuOPIS, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EuropeanPropaneCIFARAArgusBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.PremiumUnleadedGasoline10ppmFOBMEDPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ArgusPropaneFarEastIndex, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GasolineEurobobOxyNWEBargesArgusCrackSpreadBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuNaturalGasolineOPIS, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuNormalButaneOPISBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ConwayPropaneOPIS, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuLDHPropaneOPISBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ArgusPropaneFarEastIndexVsEuropeanPropaneCIFARAArgus, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ArgusPropaneSaudiAramco, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GroupThreeULSDPlattsVsNYHarborULSD, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GroupThreeSuboctaneGasolinePlattsVsRBOB, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.SingaporeFuelOil180cstPlattsBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.SingaporeFuelOil380cstPlattsBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuEthaneOPIS, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuNormalButaneOPIS, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.BrentCrudeOilVsDubaiCrudeOilPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ArgusLLSvsWTIArgusTradeMonth, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.SingaporeGasoilPlattsVsLowSulphurGasoilFutures, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.LosAngelesCARBOBGasolineOPISvsRBOBGasoline, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.LosAngelesJetOPISvsNYHarborULSD, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.LosAngelesCARBDieselOPISvsNYHarborULSD, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EuropeanNaphthaPlattsBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EuropeanPropaneCIFARAArgus, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuNaturalGasolineOPISBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.RBOBGasolineCrackSpread, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GulfCoastHSFOPlattsBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MarsArgusVsWTITradeMonth, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MarsArgusVsWTIFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EthanolT2FOBRdamIncludingDutyPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MontBelvieuLDHPropaneOPIS, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GasolineEurobobOxyNWEBargesArgus, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.WTIBrentFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ThreePointFivePercentFuelOilBargesFOBRdamPlattsCrackSpread1000mt, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GasolineEurobobOxyNWEBargesArgusBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.BrentLastDayFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.CrudeOilWTI, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GulfCoastCBOBGasolineA2PlattsVsRBOBGasoline, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.WTIFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ChicagoEthanolPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.SingaporeMogas92UnleadedPlattsBrentCrackSpread, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.DubaiCrudeOilPlattsFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.JapanCnFNaphthaPlattsBALMO, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.Ethanol, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EuropeanNaphthaPlattsCrackSpread, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EuropeanPropaneCIFARAArgusVsNaphthaCargoesCIFNWEPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.SingaporeFuelOil380cstPlattsVsEuropeanThreePointFivePercentFuelOilBargesFOBRdamPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EastWestGasolineSpreadPlattsArgus, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.EastWestNaphthaJapanCFvsCargoesCIFNWESpreadPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.RBOBGasolineVsEurobobOxyNWEBargesArgusThreeHundredFiftyThousandGallons, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.ThreePointFivePercentFuelOilBargesFOBRdamPlattsCrackSpread, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.FreightRouteTC14Baltic, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.OnePercentFuelOilCargoesFOBNWEPlattsVsThreePointFivePercentFuelOilBargesFOBRdamPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.GulfCoastHSFOPlattsVsEuropeanThreePointFivePercentFuelOilBargesFOBRdamPlatts, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.WTIHoustonCrudeOil, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.NaturalGasHenryHubLastDayFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.HeatingOil, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.NaturalGasHenryHubPenultimateFinancial, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.WTIHoustonArgusVsWTITradeMonth, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.Gasoline, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.NaturalGas, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.BrentCrude, Zero)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.LowSulfurGasoil, TwelveOclock)]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MicroCrudeOilWTI, Zero)]
+        public void EnergyExpiryDateFunction_WithDifferentDates_ShouldFollowContract(string symbol, string dayTime)
         {
             Assert.IsTrue(_data.ContainsKey(symbol), "Symbol " + symbol + " not present in Test Data");
             foreach (var date in _data[symbol])
@@ -267,15 +304,44 @@ namespace QuantConnect.Tests.Common.Securities.Futures
             }
         }
 
+        [Test]
+        public void BankHolidaysAreRespected()
+        {
+            //Arrange
+            var futureSymbol = GetFutureSymbol("6E", new DateTime(2025, 2, 1));
+            var func = FuturesExpiryFunctions.FuturesExpiryFunction(GetFutureSymbol("6E"));
+            // Expiry date is the second business day immediately preceding the third Wednesday of the contract month(usually Monday).
+            // The third wednesday is the 19th so the expiry date should be monday 17th, but that day is a bank holiday
+            // so the real expiry date is the 14th
+            var expiryDate = func(futureSymbol.ID.Date);
+
+            //Assert
+            Assert.AreEqual(new DateTime(2025, 2, 14), expiryDate.Date);
+        }
+
+        [TestCase(QuantConnect.Securities.Futures.Indices.NASDAQ100EMini, "20260302", "20260320")]
+        [TestCase(QuantConnect.Securities.Futures.Indices.NASDAQ100EMini, "20260602", "20260618")]
+        public void ExpirationUsesHolidays(string symbol, string dateStr, string expectedDate)
+        {
+            var date = Time.ParseDate(dateStr);
+            var expected = Time.ParseDate(expectedDate);
+
+            var futureSymbol = GetFutureSymbol(symbol, date);
+            var func = FuturesExpiryFunctions.FuturesExpiryFunction(GetFutureSymbol(symbol));
+
+            var actual = func(futureSymbol.ID.Date);
+            Assert.AreEqual(expected, actual.Date, $"Failed for symbol: {symbol}. Date {dateStr}");
+        }
+
         // 25th is a sunday
-        [TestCase(QuantConnect.Securities.Futures.Energies.MicroCrudeOilWTI, "20221001", "20220919")]
-        [TestCase(QuantConnect.Securities.Futures.Energies.CrudeOilWTI, "20221001", "20220920")]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MicroCrudeOilWTI, "20221001", "20220919")]
+        [TestCase(QuantConnect.Securities.Futures.Energy.CrudeOilWTI, "20221001", "20220920")]
         // 25th is a tuesday
-        [TestCase(QuantConnect.Securities.Futures.Energies.MicroCrudeOilWTI, "20221101", "20221019")]
-        [TestCase(QuantConnect.Securities.Futures.Energies.CrudeOilWTI, "20221101", "20221020")]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MicroCrudeOilWTI, "20221101", "20221019")]
+        [TestCase(QuantConnect.Securities.Futures.Energy.CrudeOilWTI, "20221101", "20221020")]
         // 25th is a friday but includes thanks giving
-        [TestCase(QuantConnect.Securities.Futures.Energies.MicroCrudeOilWTI, "20221201", "20221118")]
-        [TestCase(QuantConnect.Securities.Futures.Energies.CrudeOilWTI, "20221201", "20221121")]
+        [TestCase(QuantConnect.Securities.Futures.Energy.MicroCrudeOilWTI, "20221201", "20221118")]
+        [TestCase(QuantConnect.Securities.Futures.Energy.CrudeOilWTI, "20221201", "20221121")]
         public void MicroCrudeOilExpiration(string symbol, string dateStr, string expectedDate)
         {
             var date = Time.ParseDate(dateStr);
@@ -455,37 +521,13 @@ namespace QuantConnect.Tests.Common.Securities.Futures
             }
         }
 
-        [TestCase(QuantConnect.Securities.Futures.Dairy.CashSettledButter, TwelveTenCentralTime)]
-        [TestCase(QuantConnect.Securities.Futures.Dairy.CashSettledCheese, TwelveTenCentralTime)]
-        [TestCase(QuantConnect.Securities.Futures.Dairy.ClassIIIMilk, TwelveTenCentralTime)]
-        [TestCase(QuantConnect.Securities.Futures.Dairy.DryWhey, TwelveTenCentralTime)]
-        [TestCase(QuantConnect.Securities.Futures.Dairy.ClassIVMilk, TwelveTenCentralTime)]
-        [TestCase(QuantConnect.Securities.Futures.Dairy.NonfatDryMilk, TwelveTenCentralTime)]
-        public void DairyExpiryDateFunction_WithDifferentDates_ShouldFollowContract(string symbol, string dayTime)
-        {
-            Assert.IsTrue(_data.ContainsKey(symbol), "Symbol " + symbol + " not present in Test Data");
-            foreach (var date in _data[symbol])
-            {
-                // Arrange
-                var futureSymbol = GetFutureSymbol(symbol, date.ContractMonth);
-                var func = FuturesExpiryFunctions.FuturesExpiryFunction(GetFutureSymbol(symbol));
-
-                // Act
-                var actual = func(futureSymbol.ID.Date);
-                var expected = date.LastTrade + Parse.TimeSpan(dayTime);
-
-                // Assert
-                Assert.AreEqual(expected, actual, "Failed for symbol: " + symbol);
-            }
-        }
-
         /// <summary>
         /// Dates for Termination Conditions of futures
         /// </summary>
         public class Dates
         {
-            public DateTime ContractMonth;
-            public DateTime LastTrade;
+            public DateTime ContractMonth { get; set; }
+            public DateTime LastTrade { get; set; }
             public Dates() { }
             public Dates(DateTime c, DateTime l)
             {
@@ -500,8 +542,8 @@ namespace QuantConnect.Tests.Common.Securities.Futures
         public class Item
         {
             [XmlAttribute]
-            public String Symbol;
-            public List<Dates> SymbolDates;
+            public String Symbol { get; set; }
+            public List<Dates> SymbolDates { get; set; }
         }
 
         private Symbol GetFutureSymbol(string symbol, DateTime? date =null)

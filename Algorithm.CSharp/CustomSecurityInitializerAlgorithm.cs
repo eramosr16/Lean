@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -45,7 +45,7 @@ namespace QuantConnect.Algorithm.CSharp
             AddSecurity(SecurityType.Equity, "SPY", Resolution.Hour);
         }
 
-        public void OnData(TradeBars data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {

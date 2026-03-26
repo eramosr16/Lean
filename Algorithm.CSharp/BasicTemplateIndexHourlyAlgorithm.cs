@@ -8,7 +8,7 @@ namespace QuantConnect.Algorithm.CSharp
     public class BasicTemplateIndexHourlyAlgorithm : BasicTemplateIndexDailyAlgorithm
     {
         protected override Resolution Resolution => Resolution.Hour;
-        protected override int ExpectedBarCount => base.ExpectedBarCount * 7;
+        protected override int ExpectedBarCount => base.ExpectedBarCount * 8;
 
         /// <summary>
         /// This is used by the regression test system to indicate if the open source Lean repository has the required data to run this algorithm.
@@ -18,12 +18,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp };
+        public override List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 391;
+        public override long DataPoints => 401;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -31,16 +31,23 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "71"},
+            {"Total Orders", "81"},
             {"Average Win", "1.28%"},
             {"Average Loss", "-0.06%"},
             {"Compounding Annual Return", "-20.546%"},
             {"Drawdown", "1.800%"},
             {"Expectancy", "-0.402"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "990775"},
             {"Net Profit", "-0.922%"},
             {"Sharpe Ratio", "-2.903"},
             {"Sortino Ratio", "-6.081"},
@@ -57,9 +64,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "-6.189"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$300000.00"},
-            {"Lowest Capacity Asset", "SPX XL80P3GHDZXQ|SPX 31"},
+            {"Lowest Capacity Asset", "SPX XL80P3GHIA9A|SPX 31"},
             {"Portfolio Turnover", "24.63%"},
-            {"OrderListHash", "380076bc7854977f46318e8add9f1a25"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "7bc05310e971f09b0663bc380fdfee80"}
         };
     }
 }

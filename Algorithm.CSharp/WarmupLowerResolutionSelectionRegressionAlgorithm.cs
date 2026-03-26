@@ -62,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp
             var expected = _selection.Dequeue();
             if (expected != Time && !LiveMode)
             {
-                throw new Exception($"Unexpected selection time: {Time}. Expected {expected}");
+                throw new RegressionTestException($"Unexpected selection time: {Time}. Expected {expected}");
             }
 
             Debug($"Coarse selection happening at {Time} {IsWarmingUp}");
@@ -74,7 +74,7 @@ namespace QuantConnect.Algorithm.CSharp
             var expectedDataSpan = QuantConnect.Time.OneHour;
             if (Time <= StartDate)
             {
-                expectedDataSpan = QuantConnect.Time.OneDay;
+                expectedDataSpan = TimeSpan.FromHours(6.5);
             }
 
             foreach (var data in slice.Values)
@@ -82,7 +82,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var dataSpan = data.EndTime - data.Time;
                 if (dataSpan != expectedDataSpan)
                 {
-                    throw new Exception($"Unexpected bar span! {data}: {dataSpan} Expected {expectedDataSpan}");
+                    throw new RegressionTestException($"Unexpected bar span! {data}: {dataSpan} Expected {expectedDataSpan}");
                 }
             }
 
@@ -102,12 +102,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 78099;
+        public long DataPoints => 78098;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -115,35 +115,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-33.204%"},
+            {"Compounding Annual Return", "-32.091%"},
             {"Drawdown", "2.600%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-1.427%"},
-            {"Sharpe Ratio", "-0.748"},
-            {"Sortino Ratio", "-0.821"},
-            {"Probabilistic Sharpe Ratio", "35.939%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98631.08"},
+            {"Net Profit", "-1.369%"},
+            {"Sharpe Ratio", "-0.749"},
+            {"Sortino Ratio", "-0.822"},
+            {"Probabilistic Sharpe Ratio", "35.938%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0"},
-            {"Beta", "1.001"},
+            {"Alpha", "-0"},
+            {"Beta", "0.997"},
             {"Annual Standard Deviation", "0.097"},
             {"Annual Variance", "0.009"},
-            {"Information Ratio", "-0.538"},
+            {"Information Ratio", "0.644"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "-0.073"},
-            {"Total Fees", "$3.07"},
+            {"Total Fees", "$3.06"},
             {"Estimated Strategy Capacity", "$120000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Portfolio Turnover", "7.78%"},
-            {"OrderListHash", "3328c67df43ecdaa0e11c8ff3b4c9817"}
+            {"Portfolio Turnover", "7.75%"},
+            {"Drawdown Recovery", "5"},
+            {"OrderListHash", "520072ff9cd8239e46c8cf78b67ed4c7"}
         };
     }
 }

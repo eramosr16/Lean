@@ -34,21 +34,21 @@ namespace QuantConnect.Algorithm.CSharp
     /// <meta name="tag" content="filter selection" />
     public class BasicTemplateOptionsDailyAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        private const string UnderlyingTicker = "GOOG";
-        public Symbol OptionSymbol;
+        private const string UnderlyingTicker = "AAPL";
+        private Symbol _optionSymbol;
         private bool _optionExpired;
 
         public override void Initialize()
         {
-            SetStartDate(2015, 12, 23);
-            SetEndDate(2016, 1, 20);
+            SetStartDate(2015, 12, 15);
+            SetEndDate(2016, 2, 1);
             SetCash(100000);
 
             var equity = AddEquity(UnderlyingTicker, Resolution.Daily);
             var option = AddOption(UnderlyingTicker, Resolution.Daily);
-            OptionSymbol = option.Symbol;
+            _optionSymbol = option.Symbol;
 
-            option.SetFilter(x => x.CallsOnly().Strikes(0, 1).Expiration(0, 30));
+            option.SetFilter(x => x.CallsOnly().Expiration(0, 60));
 
             // use the underlying equity as the benchmark
             SetBenchmark(equity.Symbol);
@@ -63,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (!Portfolio.Invested)
             {
                 OptionChain chain;
-                if (slice.OptionChains.TryGetValue(OptionSymbol, out chain))
+                if (slice.OptionChains.TryGetValue(_optionSymbol, out chain))
                 {
                     // Grab us the contract nearest expiry that is not today
                     var contractsByExpiration = chain.Where(x => x.Expiry != Time.Date).OrderBy(x => x.Expiry);
@@ -117,12 +117,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 36834;
+        public long DataPoints => 308;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -130,35 +130,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
-            {"Average Loss", "-1.31%"},
-            {"Compounding Annual Return", "-15.304%"},
-            {"Drawdown", "1.300%"},
+            {"Average Loss", "-1.16%"},
+            {"Compounding Annual Return", "-8.351%"},
+            {"Drawdown", "1.200%"},
             {"Expectancy", "-1"},
-            {"Net Profit", "-1.311%"},
-            {"Sharpe Ratio", "-3.607"},
-            {"Sortino Ratio", "-1.188"},
-            {"Probabilistic Sharpe Ratio", "0.035%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98844"},
+            {"Net Profit", "-1.156%"},
+            {"Sharpe Ratio", "-4.04"},
+            {"Sortino Ratio", "-2.422"},
+            {"Probabilistic Sharpe Ratio", "0.099%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0"},
-            {"Beta", "0"},
-            {"Annual Standard Deviation", "0.034"},
-            {"Annual Variance", "0.001"},
-            {"Information Ratio", "-3.31"},
-            {"Tracking Error", "0.034"},
-            {"Treynor Ratio", "0"},
+            {"Alpha", "-0.058"},
+            {"Beta", "0.021"},
+            {"Annual Standard Deviation", "0.017"},
+            {"Annual Variance", "0"},
+            {"Information Ratio", "1.49"},
+            {"Tracking Error", "0.289"},
+            {"Treynor Ratio", "-3.212"},
             {"Total Fees", "$1.00"},
-            {"Estimated Strategy Capacity", "$0"},
-            {"Lowest Capacity Asset", "GOOCV W78ZFMML01JA|GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "0.05%"},
-            {"OrderListHash", "27226eb0860aa34fd513a8a66a732ad0"}
+            {"Estimated Strategy Capacity", "$72000.00"},
+            {"Lowest Capacity Asset", "AAPL W78ZEO29CFS6|AAPL R735QTJ8XC9X"},
+            {"Portfolio Turnover", "0.02%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "5639c19a7d56ec312f61029b943903b8"}
         };
     }
 }

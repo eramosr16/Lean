@@ -23,6 +23,668 @@ namespace QuantConnect.Tests.Python
     [TestFixture, Category("TravisExclude")]
     public class PythonPackagesTests
     {
+        [Test]
+        public void Tinygrad()
+        {
+            AssertCode(@"
+def RunTest():
+    import numpy as np
+    from tinygrad import Tensor
+
+    t1 = Tensor([1, 2, 3, 4, 5])
+    na = np.array([1, 2, 3, 4, 5])
+    t2 = Tensor(na)
+");
+        }
+
+        [Test]
+        public void Tigramite()
+        {
+            AssertCode(@"
+def RunTest():
+    import numpy as np
+    import matplotlib
+    from matplotlib import pyplot as plt
+
+    import tigramite
+    from tigramite import data_processing as pp
+    from tigramite.toymodels import structural_causal_processes as toys
+
+    from tigramite.toymodels import surrogate_generator
+
+    from tigramite import plotting as tp
+    from tigramite.pcmci import PCMCI
+    from tigramite.independence_tests.parcorr import ParCorr
+    from tigramite.models import Models, Prediction
+
+    import math
+    import sklearn
+    from sklearn.linear_model import LinearRegression
+
+    np.random.seed(14)     # Fix random seed
+    lin_f = lambda x: x
+    links_coeffs = {0: [((0, -1), 0.7, lin_f)],
+                    1: [((1, -1), 0.8, lin_f), ((0, -1), 0.3, lin_f)],
+                    2: [((2, -1), 0.5, lin_f), ((0, -2), -0.5, lin_f)],
+                    3: [((3, -1), 0., lin_f)], #, ((4, -1), 0.4, lin_f)],
+                    4: [((4, -1), 0., lin_f), ((3, 0), 0.5, lin_f)], #, ((3, -1), 0.3, lin_f)],
+                    }
+    T = 200     # time series length
+    # Make some noise with different variance, alternatively just noises=None
+    noises = np.array([(1. + 0.2*float(j))*np.random.randn((T + int(math.floor(0.2*T))))
+                       for j in range(len(links_coeffs))]).T
+
+    data, _ = toys.structural_causal_process(links_coeffs, T=T, noises=noises, seed=14)
+    T, N = data.shape
+
+    # For generality, we include some masking
+    # mask = np.zeros(data.shape, dtype='int')
+    # mask[:int(T/2)] = True
+    mask=None
+
+    # Initialize dataframe object, specify time axis and variable names
+    var_names = [r'$X^0$', r'$X^1$', r'$X^2$', r'$X^3$', r'$X^4$']
+    dataframe = pp.DataFrame(data,
+                             mask=mask,
+                             datatime = {0:np.arange(len(data))},
+                             var_names=var_names)
+");
+        }
+
+        [Test, Explicit()]
+        public void Tsfel()
+        {
+            AssertCode(@"
+def RunTest():
+    import tsfel
+    import pandas as pd
+
+    # load dataset
+    data = tsfel.datasets.load_biopluxecg()
+
+    # Retrieves a pre-defined feature configuration file to extract the temporal, statistical and spectral feature sets
+    cfg = tsfel.get_features_by_domain()
+
+    # Extract features
+    X = tsfel.time_series_features_extractor(cfg, data)
+");
+        }
+
+        [Test]
+        public void Cvxportfolio()
+        {
+            AssertCode(@"
+def RunTest():
+    import cvxportfolio as cvx
+    import numpy as np
+    import pandas as pd
+
+    objective = cvx.ReturnsForecast() - 0.5 * cvx.FullCovariance()
+    constraints = [cvx.LongOnly(), cvx.LeverageLimit(1)]
+
+    strategy = cvx.SinglePeriodOptimization(objective, constraints)
+");
+        }
+
+        [Test]
+        public void Cesium()
+        {
+            AssertCode(@"
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn
+from cesium import datasets, featurize
+
+def RunTest():
+    seaborn.set()
+
+    eeg = datasets.fetch_andrzejak()
+
+    # Group together classes (Z, O), (N, F), (S) as normal, interictal, ictal
+    eeg[""classes""] = eeg[""classes""].astype(""U16"")  # allocate memory for longer class names
+    eeg[""classes""][np.logical_or(eeg[""classes""] == ""Z"", eeg[""classes""] == ""O"")] = ""Normal""
+    eeg[""classes""][
+        np.logical_or(eeg[""classes""] == ""N"", eeg[""classes""] == ""F"")
+    ] = ""Interictal""
+    eeg[""classes""][eeg[""classes""] == ""S""] = ""Ictal""
+
+    fig, ax = plt.subplots(1, len(np.unique(eeg[""classes""])), sharey=True)
+    for label, subplot in zip(np.unique(eeg[""classes""]), ax):
+        i = np.where(eeg[""classes""] == label)[0][0]
+        subplot.plot(eeg[""times""][i], eeg[""measurements""][i])
+        subplot.set(xlabel=""time (s)"", ylabel=""signal"", title=label)
+
+    features_to_use = [
+        ""amplitude"",
+        ""percent_beyond_1_std"",
+        ""maximum"",
+        ""max_slope"",
+        ""median"",
+        ""median_absolute_deviation"",
+        ""percent_close_to_median"",
+        ""minimum"",
+        ""skew"",
+        ""std"",
+        ""weighted_average"",
+    ]
+    fset_cesium = featurize.featurize_time_series(
+        times=eeg[""times""],
+        values=eeg[""measurements""],
+        errors=None,
+        features_to_use=features_to_use,
+    )
+    print(fset_cesium.head())
+");
+        }
+
+        [Test, Explicit("Run separate")]
+        public void Thinc()
+        {
+            AssertCode(@"
+def RunTest():
+    from thinc.api import PyTorchWrapper, chain, Linear
+    import torch.nn
+
+    model = chain(
+        PyTorchWrapper(torch.nn.Linear(16, 8)),
+        Linear(4, 8)
+    )
+    X = model.ops.alloc2f(1, 16)  # make a dummy batch
+    model.initialize(X=X)
+    Y, backprop = model(X, is_train=True)
+    dX = backprop(Y)
+");
+        }
+
+        [Test]
+        public void Scs()
+        {
+            AssertCode(@"
+def RunTest():
+    import scipy
+    import scs
+    import numpy as np
+
+    # Set up the problem data
+    P = scipy.sparse.csc_matrix([[3.0, -1.0], [-1.0, 2.0]])
+    A = scipy.sparse.csc_matrix([[-1.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+    b = np.array([-1, 0.3, -0.5])
+    c = np.array([-1.0, -1.0])
+
+    # Populate dicts with data to pass into SCS
+    data = dict(P=P, A=A, b=b, c=c)
+    cone = dict(z=1, l=2)
+
+    # Initialize solver
+    solver = scs.SCS(data, cone, eps_abs=1e-9, eps_rel=1e-9)
+    # Solve!
+    sol = solver.solve()
+
+    print(f""SCS took {sol['info']['iter']} iters"")
+    print(""Optimal solution vector x*:"")
+    print(sol[""x""])
+
+    print(""Optimal dual vector y*:"")
+    print(sol[""y""])");
+        }
+
+        [Test]
+        public void ScikitImage()
+        {
+            AssertCode(@"
+def RunTest():
+    import skimage as ski
+    from skimage import data, color
+    from skimage.transform import rescale, resize, downscale_local_mean
+
+    img = ski.data.astronaut()
+    top_left = img[:100, :100]
+
+    image = color.rgb2gray(data.astronaut())
+
+    image_rescaled = rescale(image, 0.25, anti_aliasing=False)
+    image_resized = resize(
+        image, (image.shape[0] // 4, image.shape[1] // 4), anti_aliasing=True
+    )
+    image_downscaled = downscale_local_mean(image, (4, 3))");
+        }
+
+        [Test]
+        public void TensorboardX()
+        {
+            AssertCode(@"
+def RunTest():
+    from tensorboardX import SummaryWriter
+    #SummaryWriter encapsulates everything
+    writer = SummaryWriter('runs/exp-1')
+    #creates writer object. The log will be saved in 'runs/exp-1'
+    writer2 = SummaryWriter()
+    #creates writer2 object with auto generated file name, the dir will be something like 'runs/Aug20-17-20-33'
+    writer3 = SummaryWriter(comment='3x learning rate')");
+        }
+
+        [Test]
+        public void Peft()
+        {
+            AssertCode(@"
+def RunTest():
+    from transformers import AutoModelForSeq2SeqLM
+    from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
+    model_name_or_path = ""bigscience/mt0-large""
+    tokenizer_name_or_path = ""bigscience/mt0-large""
+
+    peft_config = LoraConfig(
+        task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+    )");
+        }
+
+        [Test, Explicit()]
+        public void StatsForecast()
+        {
+            AssertCode(@"
+from statsforecast import StatsForecast
+from statsforecast.models import AutoARIMA
+from statsforecast.utils import AirPassengersDF
+
+def RunTest():
+    df = AirPassengersDF
+    sf = StatsForecast(
+        models=[AutoARIMA(season_length=12)],
+        freq='ME',
+    )
+    sf.fit(df)
+    sf.predict(h=12, level=[95])");
+        }
+
+        [Test]
+        public void Ydf()
+        {
+            AssertCode(@"
+import ydf
+import pandas as pd
+
+def RunTest():
+    ds_path = ""https://raw.githubusercontent.com/google/yggdrasil-decision-forests/main/yggdrasil_decision_forests/test_data/dataset""
+    train_ds = pd.read_csv(f""{ds_path}/adult_train.csv"")
+    test_ds = pd.read_csv(f""{ds_path}/adult_test.csv"")
+
+    model = ydf.GradientBoostedTreesLearner(label=""income"").train(train_ds)
+
+    print(model.evaluate(test_ds))
+
+    model.save(""my_model"")
+
+    loaded_model = ydf.load_model(""my_model"")");
+        }
+
+        [Test]
+        public void Cmaes()
+        {
+            AssertCode(@"
+import numpy as np
+from cmaes import CMA
+
+def RunTest():
+    def quadratic(x1, x2):
+        return (x1 - 3) ** 2 + (10 * (x2 + 2)) ** 2
+
+    optimizer = CMA(mean=np.zeros(2), sigma=1.3)
+
+    for generation in range(1):
+        solutions = []
+        for _ in range(optimizer.population_size):
+            x = optimizer.ask()
+            value = quadratic(x[0], x[1])
+            solutions.append((x, value))
+            print(f""#{generation} {value} (x1={x[0]}, x2 = {x[1]})"")
+        optimizer.tell(solutions)");
+        }
+
+        [Test]
+        public void Transitions()
+        {
+            AssertCode(@"
+from transitions import Machine
+
+def RunTest():
+    # Define your states
+    states = ['awake', 'sleeping', 'dreaming']
+
+    # Create a model (can be any object)
+    class Human:
+        def __init__(self, name):
+            self.name = name
+
+    # Instantiate the model
+    person = Human(""Alice"")
+    machine = Machine(model=person, states=states, initial='awake')
+
+    machine.add_transition('fall_asleep', 'awake', 'sleeping')
+    machine.add_transition('start_dreaming', 'sleeping', 'dreaming')
+    machine.add_transition('wake_up', 'dreaming', 'awake')
+    machine.add_transition('wake_up', 'sleeping', 'awake') # Can have multiple transitions for same event
+
+    print(f""{person.name} is currently {person.state}"")
+    person.fall_asleep()
+    print(f""{person.name} is now {person.state}"")
+    person.start_dreaming()
+    print(f""{person.name} is now {person.state}"")");
+        }
+
+        [Test]
+        public void Casualml()
+        {
+            AssertCode(@"
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import Ridge
+from causalml.inference.meta import BaseRRegressor
+
+def RunTest():
+    # 1. Generate synthetic data (replace with your actual data)
+    np.random.seed(42)
+    n_samples = 100
+    X = pd.DataFrame(np.random.rand(n_samples, 5), columns=[f'feature_{i}' for i in range(5)])
+    treatment = np.random.randint(0, 2, n_samples)
+    y = (10 * treatment + 2 * X['feature_0'] + np.random.randn(n_samples))
+
+    # 2. Instantiate the R-Learner with a base model
+    rl = BaseRRegressor(learner=Ridge(alpha=1.0))
+
+    # 3. Estimate the Average Treatment Effect (ATE)
+    # Note: In a real scenario, 'p' (propensity scores) would be estimated
+    # if not available from a randomized experiment.
+    # For simplicity, we'll assume a constant propensity for this example.
+    p = np.full(n_samples, 0.5)
+
+    te, lb, ub = rl.estimate_ate(X=X, p=p, treatment=treatment, y=y)
+
+    print(f'Average Treatment Effect (BaseRRegressor using XGBoost): {te[0]:.2f} ({lb[0]:.2f}, {ub[0]:.2f})')");
+        }
+
+        [Test]
+        public void Networkx()
+        {
+            AssertCode(@"
+import networkx as nx
+def RunTest():
+    G = nx.Graph()
+    H = nx.path_graph(10)
+    G.add_nodes_from(H)
+    G.clear()");
+        }
+
+        [Test]
+        public void Accelerator()
+        {
+            AssertCode(@"
+def RunTest():
+	import torch
+	import torch.nn.functional as F
+	from datasets import load_dataset
+	from accelerate import Accelerator
+
+	accelerator = Accelerator()
+	device = accelerator.device
+
+	model = torch.nn.Transformer().to(device)
+	optimizer = torch.optim.Adam(model.parameters())
+");
+        }
+
+        [Test]
+        public void Lingam()
+        {
+            AssertCode(@"
+import numpy as np
+import pandas as pd
+import graphviz
+import lingam
+from lingam.utils import make_dot
+
+def RunTest():
+    x3 = np.random.uniform(size=1000)
+    x0 = 3.0*x3 + np.random.uniform(size=1000)
+    x2 = 6.0*x3 + np.random.uniform(size=1000)
+    x1 = 3.0*x0 + 2.0*x2 + np.random.uniform(size=1000)
+    x5 = 4.0*x0 + np.random.uniform(size=1000)
+    x4 = 8.0*x0 - 1.0*x2 + np.random.uniform(size=1000)
+    X = pd.DataFrame(np.array([x0, x1, x2, x3, x4, x5]).T ,columns=['x0', 'x1', 'x2', 'x3', 'x4', 'x5'])
+    X.head()
+
+    model = lingam.DirectLiNGAM()
+    model.fit(X)
+");
+        }
+
+        [Test]
+        public void Econml()
+        {
+            AssertCode(@"
+import numpy as np
+import pandas as pd
+from econml.dml import LinearDML
+from sklearn.ensemble import RandomForestRegressor
+
+def RunTest():
+    # Generate some synthetic data
+    np.random.seed(42)
+    n_samples = 1000
+    n_features = 5
+
+    # Confounders (W)
+    W = np.random.rand(n_samples, n_features)
+
+    # Treatment (T) - depends on W
+    T = (W[:, 0] + W[:, 1] + np.random.randn(n_samples) * 0.5 > 1).astype(int)
+
+    # Heterogeneous treatment effect (effect_modifier)
+    effect_modifier = W[:, 2] * 2 + W[:, 3]
+
+    # Outcome (Y) - depends on W, T, and effect_modifier
+    Y = 2 * W[:, 0] + 3 * W[:, 1] + T * effect_modifier + np.random.randn(n_samples) * 1
+
+    # Define the models for the nuisance functions
+    # These models are used to predict the outcome and treatment based on confounders
+    model_y = RandomForestRegressor(n_estimators=100, min_samples_leaf=10, random_state=42)
+    model_t = RandomForestRegressor(n_estimators=100, min_samples_leaf=10, random_state=42)
+
+    # Initialize the LinearDML estimator
+    # We specify the models for Y and T, and the features that modify the treatment effect (X)
+    dml = LinearDML(model_y=model_y,
+                    model_t=model_t,
+                    random_state=42)
+
+    # Fit the model
+    # Y: Outcome variable
+    # T: Treatment variable
+    # X: Features that modify the treatment effect (can be None if no heterogeneity is assumed)
+    # W: Confounders
+    dml.fit(Y, T, X=effect_modifier.reshape(-1, 1), W=W)
+
+    # Estimate the Conditional Average Treatment Effect (CATE)
+    # We need to provide the features (X) for which we want to estimate the CATE
+    X_test = np.array([[0.5], [1.0], [1.5]]) # Example values for the effect modifier
+    cate_estimates = dml.const_marginal_effect(X_test)
+
+    print(cate_estimates)
+
+    # Get the confidence intervals for the CATE estimates
+    cate_intervals = dml.const_marginal_effect_interval(X_test)
+    print(cate_intervals)
+");
+        }
+
+        [Test, Explicit("Legacy")]
+        public void alibi_detect()
+        {
+            AssertCode(@"
+def RunTest():
+	from alibi_detect.datasets import fetch_cifar10c
+
+	corruption = ['gaussian_noise']
+	X, y = fetch_cifar10c(corruption=corruption, severity=1, return_X_y=True)");
+        }
+
+        [Test]
+        public void PytorchTabnet()
+        {
+            AssertCode(@"
+def RunTest():
+    from pytorch_tabnet.tab_model import TabNetClassifier, TabNetRegressor
+
+    clf = TabNetClassifier()");
+        }
+
+        [Test]
+        public void FeatureEngine()
+        {
+            AssertCode(@"
+def RunTest():
+	import pandas as pd
+	from feature_engine.encoding import RareLabelEncoder
+
+	data = {'var_A': ['A'] * 10 + ['B'] * 10 + ['C'] * 2 + ['D'] * 1}
+	data = pd.DataFrame(data)
+	data['var_A'].value_counts()
+	rare_encoder = RareLabelEncoder(tol=0.10, n_categories=3)
+	data_encoded = rare_encoder.fit_transform(data)
+	data_encoded['var_A'].value_counts()");
+        }
+
+        [Test]
+        public void Nolds()
+        {
+            AssertCode(@"
+def RunTest():
+    import nolds
+    import numpy as np
+
+    rwalk = np.cumsum(np.random.random(1000))
+    h = nolds.dfa(rwalk)");
+        }
+
+        [Test]
+        public void Pgmpy()
+        {
+            AssertCode(@"
+def RunTest():
+    from pgmpy.base import DAG
+    G = DAG()
+    G.add_node(node='a')
+    G.add_nodes_from(nodes=['a', 'b'])");
+        }
+
+        [Test]
+        public void Control()
+        {
+            AssertCode(@"
+def RunTest():
+    import numpy as np
+    import control
+
+    num1 = np.array([2])
+    den1 = np.array([1, 0])
+    num2 = np.array([3])
+    den2 = np.array([4, 1])
+    H1 = control.tf(num1, den1)
+    H2 = control.tf(num2, den2)
+
+    H = control.series(H1, H2)");
+        }
+
+        [Test, Explicit("Requires older pandas")]
+        public void PyCaret()
+        {
+            AssertCode(@"
+from pycaret.datasets import get_data
+from pycaret.classification import setup
+
+def RunTest():
+    data = get_data('diabetes')
+    s = setup(data, target = 'Class variable', session_id = 123)");
+        }
+
+        [Test]
+        public void NGBoost()
+        {
+            AssertCode(@"
+def RunTest():
+	from ngboost import NGBClassifier
+	from ngboost.distns import k_categorical, Bernoulli
+	from sklearn.datasets import load_breast_cancer
+	from sklearn.model_selection import train_test_split
+
+	X, y = load_breast_cancer(return_X_y=True)
+	y[0:15] = 2 # artificially make this a 3-class problem instead of a 2-class problem
+	X_cls_train, X_cls_test, Y_cls_train, Y_cls_test = train_test_split(X, y, test_size=0.2)
+
+	ngb_cat = NGBClassifier(Dist=k_categorical(3), verbose=False) # tell ngboost that there are 3 possible outcomes
+	_ = ngb_cat.fit(X_cls_train, Y_cls_train) # Y should have only 3 values: {0,1,2}");
+        }
+
+        [Test]
+        public void MLFlow()
+        {
+            AssertCode(@"
+def RunTest():
+    import mlflow
+    from mlflow.models import infer_signature
+
+    import pandas as pd
+    from sklearn import datasets
+    from sklearn.model_selection import train_test_split
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+
+    # Load the Iris dataset
+    X, y = datasets.load_iris(return_X_y=True)
+
+    # Split the data into training and test sets
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    # Define the model hyperparameters
+    params = {
+        ""solver"": ""lbfgs"",
+        ""max_iter"": 1000,
+        ""multi_class"": ""auto"",
+        ""random_state"": 8888,
+    }
+
+    # Train the model
+    lr = LogisticRegression(**params)
+    lr.fit(X_train, y_train)
+
+    # Predict on the test set
+    y_pred = lr.predict(X_test)
+
+    # Calculate metrics
+    accuracy = accuracy_score(y_test, y_pred)");
+        }
+
+        [Test]
+        public void TPOT()
+        {
+            AssertCode(@"
+def RunTest():
+    from tpot import TPOTClassifier
+    from sklearn.datasets import load_digits
+    from sklearn.model_selection import train_test_split
+
+    digits = load_digits()
+    X_train, X_test, y_train, y_test = train_test_split(digits.data, digits.target,
+                                                        train_size=0.75, test_size=0.25)
+
+    pipeline_optimizer = TPOTClassifier(generations=2, population_size=2, cv=5,
+                                        random_state=42, verbosity=2)
+    pipeline_optimizer.fit(X_train, y_train)
+    print(pipeline_optimizer.score(X_test, y_test))
+    pipeline_optimizer.export('tpot_exported_pipeline.py')");
+        }
+
         [Test, Explicit("Needs to be run by itself to avoid hanging")]
         public void XTransformers()
         {
@@ -53,21 +715,21 @@ def RunTest():
     loss.backward()");
         }
 
-        [Test]
+        [Test, Explicit("Requires old polars")]
         public void Functime()
         {
             AssertCode(
                 @"
 import polars as pl
 from functime.cross_validation import train_test_split
-from functime.feature_extraction import add_fourier_terms
+from functime.seasonality import add_fourier_terms
 from functime.forecasting import linear_model
 from functime.preprocessing import scale
 from functime.metrics import mase
 
 def RunTest():
     # Load commodities price data
-    y = pl.read_parquet(""https://github.com/descendant-ai/functime/raw/main/data/commodities.parquet"")
+    y = pl.read_parquet(""https://github.com/functime-org/functime/raw/main/data/commodities.parquet"")
     entity_col, time_col = y.columns[:2]
 
     # Time series split
@@ -105,7 +767,7 @@ def RunTest():
     y_pred = forecaster.predict(fh=3, X=X_future)");
         }
 
-        [Test]
+        [Test, Explicit("Run separate")]
         public void Mlforecast()
         {
             AssertCode(
@@ -133,22 +795,46 @@ def RunTest():
             AssertCode(
                 @"
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.datasets import make_regression
-from sklearn.model_selection import train_test_split
+from matplotlib import pyplot as plt
+from numpy.typing import NDArray
+from sklearn.neural_network import MLPRegressor
+from mapie.metrics.regression import regression_coverage_score
+from mapie.regression import SplitConformalRegressor
+from mapie.utils import train_conformalize_test_split
 
-from mapie.regression import MapieRegressor
+RANDOM_STATE = 1
 
 def RunTest():
-    X, y = make_regression(n_samples=500, n_features=1)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+    def f(x: NDArray) -> NDArray:
+        """"""Polynomial function used to generate one-dimensional data.""""""
+        return np.array(5 * x + 5 * x**4 - 9 * x**2)
 
-    regressor = LinearRegression()
 
-    mapie_regressor = MapieRegressor(estimator=regressor, method='plus', cv=5)
+    rng = np.random.default_rng(1)
+    sigma = 0.1
+    n_samples = 10000
+    X = np.linspace(0, 1, n_samples)
+    y = f(X) + rng.normal(0, sigma, n_samples)
+    X = X.reshape(-1, 1)
+    (X_train, X_conformalize, X_test,
+     y_train, y_conformalize, y_test) = train_conformalize_test_split(
+        X, y,
+        train_size=0.8, conformalize_size=0.1, test_size=0.1,
+        random_state=RANDOM_STATE
+    )
+    regressor = MLPRegressor(activation=""relu"", random_state=RANDOM_STATE)
+    regressor.fit(X_train, y_train)
 
-    mapie_regressor = mapie_regressor.fit(X_train, y_train)
-    y_pred, y_pis = mapie_regressor.predict(X_test, alpha=[0.05, 0.32])");
+    confidence_level = 0.95
+    mapie_regressor = SplitConformalRegressor(
+        estimator=regressor, confidence_level=confidence_level, prefit=True
+    )
+    mapie_regressor.conformalize(X_conformalize, y_conformalize)
+    y_pred, y_pred_interval = mapie_regressor.predict_interval(X_test)
+    coverage_score = regression_coverage_score(y_test, y_pred_interval)
+    print(f""For a confidence level of {confidence_level:.2f}, ""
+          f""the target coverage is {confidence_level:.3f}, ""
+          f""and the effective coverage is {coverage_score[0]:.3f}."")");
         }
 
         [Test]
@@ -159,7 +845,8 @@ def RunTest():
 import h2o
 
 def RunTest():
-    h2o.init(ip = ""localhost"", port = 54321)");
+    h2o.init(ip = ""localhost"", port = 54321)
+    h2o.cluster().shutdown()");
         }
 
         [Test]
@@ -198,31 +885,6 @@ def RunTest():
     classifier = pipeline('sentiment-analysis')
 
     classifier('We are very happy to introduce pipeline to the transformers repository.')");
-        }
-
-        [Test]
-        public void Tick()
-        {
-            AssertCode(
-                @"
-import numpy as np
-
-from tick.dataset import fetch_hawkes_bund_data
-from tick.hawkes import HawkesConditionalLaw
-from tick.plot import plot_hawkes_kernel_norms
-
-def RunTest():
-    timestamps_list = fetch_hawkes_bund_data()
-
-    kernel_discretization = np.hstack((0, np.logspace(-5, 0, 50)))
-    hawkes_learner = HawkesConditionalLaw(
-        claw_method=""log"", delta_lag=0.1, min_lag=5e-4, max_lag=500,
-        quad_method=""log"", n_quad=10, min_support=1e-4, max_support=1, n_threads=4)
-
-    hawkes_learner.fit(timestamps_list)
-
-    plot_hawkes_kernel_norms(hawkes_learner,
-                             node_names=[""P_u"", ""P_d"", ""T_a"", ""T_b""])");
         }
 
         [Test]
@@ -275,8 +937,8 @@ def RunTest():
     schools_code = """"""
     data {
       int<lower=0> J;         // number of schools
-      real y[J];              // estimated treatment effects
-      real<lower=0> sigma[J]; // standard error of effect estimates
+      array[J] real y;              // estimated treatment effects
+      array[J] real<lower=0> sigma; // standard error of effect estimates
     }
     parameters {
       real mu;                // population treatment effect
@@ -303,6 +965,49 @@ def RunTest():
         }
 
         [Test]
+        public void Deslib()
+        {
+            AssertCode(@"
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from deslib.des import METADES
+from deslib.des import KNORAE
+
+def RunTest():
+    # Setting up the random state to have consistent results
+    rng = np.random.RandomState(42)
+
+    # Generate a classification dataset
+    X, y = make_classification(n_samples=1000, random_state=rng)
+    # split the data into training and test data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33,
+                                                        random_state=rng)
+
+    # Split the data into training and DSEL for DS techniques
+    X_train, X_dsel, y_train, y_dsel = train_test_split(X_train, y_train,
+                                                        test_size=0.5,
+                                                        random_state=rng)
+
+    # Initialize the DS techniques. DS methods can be initialized without
+    # specifying a single input parameter. In this example, we just pass the random
+    # state in order to always have the same result.
+    kne = KNORAE(random_state=rng)
+    meta = METADES(random_state=rng)
+
+    # Fitting the des techniques
+    kne.fit(X_dsel, y_dsel)
+    meta.fit(X_dsel, y_dsel)
+
+    # Calculate classification accuracy of each technique
+    print('Evaluating DS techniques:')
+    print('Classification accuracy KNORA-Eliminate: ',
+          kne.score(X_test, y_test))
+    print('Classification accuracy META-DES: ', meta.score(X_test, y_test))
+");
+        }
+
+        [Test, Explicit("Run separate")]
         public void PyvinecopulibTest()
         {
             AssertCode(
@@ -311,35 +1016,30 @@ import pyvinecopulib as pv
 import numpy as np
 
 def RunTest():
-    np.random.seed(1234)  # seed for the random generator
-    n = 1000  # number of observations
-    d = 5  # the dimension
-    mean = np.random.normal(size=d)  # mean vector
-    cov = np.random.normal(size=(d, d))  # covariance matrix
-    cov = np.dot(cov.transpose(), cov)  # make it non-negative definite
-    x = np.random.multivariate_normal(mean, cov, n)
+    pv.Bicop()
+    cop = pv.Bicop(family=pv.gaussian, parameters=np.array([[0.5]]))
+    print(cop)
+    print(pv.Bicop(family=pv.clayton, rotation=90, parameters=np.array([[3.0]])))
 
-    # Transform copula data using the empirical distribution
-    u = pv.to_pseudo_obs(x)
-
-    # Fit a Gaussian vine
-    # (i.e., properly specified since the data is multivariate normal)
-    controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
-    cop = pv.Vinecop(u, controls=controls)
-
-    # Sample from the copula
-    n_sim = 1000
-    u_sim = cop.simulate(n_sim, seeds=[1, 2, 3, 4])
-
-    # Transform back simulations to the original scale
-    x_sim = np.asarray([np.quantile(x[:, i], u_sim[:, i]) for i in range(0, d)])
-
-    # Both the mean and covariance matrix look ok!
-    [mean, np.mean(x_sim, 1)]
-    [cov, np.cov(x_sim)]");
+    cop = pv.Bicop(family=pv.student, parameters=np.array([[0.5], [4]]))
+    print(cop)
+    u = cop.simulate(n=10, seeds=[1, 2, 3])
+    fcts = [
+      cop.pdf,
+      cop.cdf,
+      cop.hfunc1,
+      cop.hfunc2,
+      cop.hinv1,
+      cop.hinv2,
+      cop.loglik,
+      cop.aic,
+      cop.bic,
+    ]
+    [f(u) for f in fcts]
+");
         }
 
-        [Test, Explicit("Needs to be run byitself to avoid exception on init: A colormap named \"cet_gray\" is already registered.")]
+        [Test]
         public void HvplotTest()
         {
             AssertCode(
@@ -366,7 +1066,7 @@ import stumpy
 import numpy as np
 
 def RunTest():
-    your_time_series = np.random.rand(1000)
+    your_time_series = np.random.rand(100)
     window_size = 10  # Approximately, how many data points might be found in a pattern
 
     stumpy.stump(your_time_series, m=window_size)");
@@ -622,7 +1322,7 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Run separate")]
         public void MlxtendTest()
         {
             AssertCode(
@@ -672,6 +1372,31 @@ def RunTest():
             );
         }
 
+        [Test]
+        public void Filterpy()
+        {
+            AssertCode(
+                $@"
+from filterpy.kalman import KalmanFilter
+
+def RunTest():
+    kf = KalmanFilter(dim_x=3, dim_z=1)"
+            );
+        }
+
+        [Test]
+        public void Genai()
+        {
+            AssertCode(
+                $@"
+from google import genai
+from google.genai import types
+
+def RunTest():
+    assert(genai.__version__ == '1.56.0')"
+            );
+        }
+
         [Test, Explicit("Hangs if run along side the rest")]
         public void IgniteTest()
         {
@@ -680,7 +1405,7 @@ def RunTest():
 import ignite
 
 def RunTest():
-    assert(ignite.__version__ == '0.4.12')"
+    assert(ignite.__version__ == '0.5.3')"
             );
         }
 
@@ -820,10 +1545,10 @@ def RunTest():
         {
             AssertCode(
                 @"
-import scipy
+from scipy.ndimage import mean as nd_mean
 import numpy
 def RunTest():
-    return scipy.mean(numpy.array([1, 2, 3, 4, 5]))"
+    return nd_mean(numpy.array([1, 2, 3, 4, 5]))"
             );
         }
 
@@ -921,7 +1646,7 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Legacy")]
         public void AesaraTest()
         {
             AssertCode(
@@ -1258,7 +1983,7 @@ def RunTest():
         df[df.columns[:-1]], df[""income""], test_size=0.25
     )
 
-    automl = AutoML()
+    automl = AutoML(total_time_limit=3)
     automl.fit(X_train, y_train)
 
     predictions = automl.predict(X_test)");
@@ -1294,7 +2019,7 @@ def RunTest():
 	print('Number of variables =', solver.NumVariables())");
         }
 
-        [Test]
+        [Test, Explicit("Requires old version of TF, addons are winding down")]
         public void TensorflowAddons()
         {
             AssertCode(
@@ -1335,15 +2060,8 @@ def RunTest():
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
 
-import torch
-from torch import nn, optim
-from torch.utils.data import TensorDataset, DataLoader
-
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
-
-from livelossplot import PlotLosses
-from livelossplot.outputs import matplotlib_subplots
 
 def RunTest():
 	# try with make_moons
@@ -1450,7 +2168,7 @@ def RunTest():
     seed = 1
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=seed)
 
-    ebm = ExplainableBoostingClassifier(random_state=seed)
+    ebm = ExplainableBoostingClassifier(random_state=seed, outer_bags=2, max_rounds=50)
     ebm.fit(X_train, y_train)");
         }
 
@@ -1499,7 +2217,7 @@ def RunTest():
     print(sorted(Counter(y_resampled).items()))");
         }
 
-        [Test, Explicit("Has issues when run along side the other tests")]
+        [Test, Explicit("Requires keras < 3")]
         public void ScikerasTest()
         {
             AssertCode(
@@ -1558,22 +2276,6 @@ def RunTest():
 
     clf = LazyClassifier(verbose=0,ignore_warnings=True, custom_metric=None)
     models,predictions = clf.fit(X_train, X_test, y_train, y_test)");
-        }
-
-        [Test]
-        public void Fracdiff()
-        {
-            AssertCode(
-                @"
-import numpy as np
-from fracdiff import fdiff
-
-def RunTest():
-    a = np.array([1, 2, 4, 7, 0])
-    fdiff(a, 0.5)
-    # array([ 1.       ,  1.5      ,  2.875    ,  4.6875   , -4.1640625])
-    np.array_equal(fdiff(a, n=1), np.diff(a, n=1))
-    # True");
         }
 
         [Test]
@@ -1769,35 +2471,7 @@ def RunTest():
             );
         }
 
-        [Test]
-        public void ScikitMultiflowTest()
-        {
-            AssertCode(
-                @"
-from skmultiflow.data import WaveformGenerator
-from skmultiflow.trees import HoeffdingTree
-from skmultiflow.evaluation import EvaluatePrequential
-
-def RunTest():
-    # 1. Create a stream
-    stream = WaveformGenerator()
-    stream.prepare_for_use()
-
-    # 2. Instantiate the HoeffdingTree classifier
-    ht = HoeffdingTree()
-
-    # 3. Setup the evaluator
-    evaluator = EvaluatePrequential(show_plot=False,
-                                    pretrain_size=200,
-                                    max_samples=20000)
-
-    # 4. Run evaluation
-    evaluator.evaluate(stream=stream, model=ht)
-    return 'Test passed, module exists'"
-            );
-        }
-
-        [Test]
+        [Test, Explicit()]
         public void ScikitOptimizeTest()
         {
             AssertCode(
@@ -1809,7 +2483,7 @@ def f(x):
     return (np.sin(5 * x[0]) * (1 - np.tanh(x[0] ** 2)) * np.random.randn() * 0.1)
 
 def RunTest():
-    res = gp_minimize(f, [(-2.0, 2.0)])
+    res = gp_minimize(f, [(-2.0, 2.0)], n_calls=10)
     return f'Test passed: {res}'"
             );
         }
@@ -1943,7 +2617,7 @@ def RunTest():
             );
         }
 
-        [Test, Explicit("Has issues when run along side the other tests. random.PRNGKey call hangs")]
+        [Test, Explicit("Legacy")]
         public void NeuralTangentsTest()
         {
             AssertCode(
@@ -1997,7 +2671,7 @@ def RunTest():
             );
         }
 
-        [Test]
+        [Test, Explicit("Hangs if run along side the rest")]
         public void RiskparityportfolioTest()
         {
             AssertCode(
@@ -2007,8 +2681,8 @@ import numpy as np
 
 def RunTest():
     Sigma = np.vstack((np.array((1.0000, 0.0015, -0.0119)),
-                   np.array((0.0015, 1.0000, -0.0308)),
-                   np.array((-0.0119, -0.0308, 1.0000))))
+                    np.array((0.0015, 1.0000, -0.0308)),
+                    np.array((-0.0119, -0.0308, 1.0000))))
     b = np.array((0.1594, 0.0126, 0.8280))
     w = rp.vanilla.design(Sigma, b)
     rc = w @ (Sigma * w)
@@ -2101,63 +2775,53 @@ def RunTest():
             );
         }
 
-        [Test]
-        public void Tigramite()
-        {
-            AssertCode(@"
-import numpy as np
-from tigramite.pcmci import PCMCI
-from tigramite.independence_tests.parcorr import ParCorr
-import tigramite.data_processing as pp
-from tigramite.toymodels import structural_causal_processes as toys
-
-def RunTest():
-    # Example process to play around with
-    # Each key refers to a variable and the incoming links are supplied
-    # as a list of format [((var, -lag), coeff, function), ...]
-    def lin_f(x): return x
-    links = {0: [((0, -1), 0.9, lin_f)],
-             1: [((1, -1), 0.8, lin_f), ((0, -1), 0.8, lin_f)],
-             2: [((2, -1), 0.7, lin_f), ((1, 0), 0.6, lin_f)],
-             3: [((3, -1), 0.7, lin_f), ((2, 0), -0.5, lin_f)],
-             }
-    data, nonstat = toys.structural_causal_process(links,
-                        T=1000, seed=7)
-    # Data must be array of shape (time, variables)
-    print (data.shape)
-    (1000, 4)
-    dataframe = pp.DataFrame(data)
-    cond_ind_test = ParCorr()
-    pcmci = PCMCI(dataframe=dataframe, cond_ind_test=cond_ind_test)
-    results = pcmci.run_pcmciplus(tau_min=0, tau_max=2, pc_alpha=0.01)
-    pcmci.print_results(results, alpha_level=0.01)
-");
-        }
-
         [Test, Explicit("Sometimes hangs when run along side the other tests")]
         public void AxPlatformTest()
         {
             AssertCode(@"
-from ax import optimize
+from ax import Client, RangeParameterConfig
 
 def RunTest():
-    best_parameters, best_values, experiment, model = optimize(
-            parameters=[
-              {
-                ""name"": ""x1"",
-                ""type"": ""range"",
-                ""bounds"": [-10.0, 10.0],
-              },
-              {
-                ""name"": ""x2"",
-                ""type"": ""range"",
-                ""bounds"": [-10.0, 10.0],
-              },
-            ],
-            # Booth function
-            evaluation_function=lambda p: (p[""x1""] + 2*p[""x2""] - 7)**2 + (2*p[""x1""] + p[""x2""] - 5)**2,
-            minimize=True,
-        )
+    # 1. Initialize the Client.
+    client = Client()
+
+    # 2. Configure where Ax will search.
+    client.configure_experiment(
+        name=""booth_function"",
+        parameters=[
+            RangeParameterConfig(
+                name=""x1"",
+                bounds=(-10.0, 10.0),
+                parameter_type=""float"",
+            ),
+            RangeParameterConfig(
+                name=""x2"",
+                bounds=(-10.0, 10.0),
+                parameter_type=""float"",
+            ),
+        ],
+    )
+
+    # 3. Configure a metric Ax will target (see other Tutorials for adding constraints,
+    # multiple objectives, tracking metrics etc.)
+    client.configure_optimization(objective=""-1 * booth"")
+
+    # 4 Conduct the experiment with 20 trials: get each trial from Ax, evaluate the
+    # objective function, log data back to Ax.
+    for _ in range(10):
+        # Use higher value of `max_trials` to run trials in parallel.
+        for trial_index, parameters in client.get_next_trials(max_trials=1).items():
+            client.complete_trial(
+                trial_index=trial_index,
+                raw_data={
+                    ""booth"": (parameters[""x1""] + 2 * parameters[""x2""] - 7) ** 2
+                    + (2 * parameters[""x1""] + parameters[""x2""] - 5) ** 2
+                },
+            )
+
+    # 5. Obtain the best-performing configuration; the true minimum for the booth
+    # function is at (1, 3)
+    client.get_best_parameterization()
 ");
         }
 
@@ -2181,7 +2845,7 @@ def RunTest():
 	method_mu='hist' # Method to estimate expected returns based on historical data.
 	method_cov='hist' # Method to estimate covariance matrix based on historical data.
 
-	port.assets_stats(method_mu=method_mu, method_cov=method_cov, d=0.94)
+	port.assets_stats(method_mu=method_mu, method_cov=method_cov)
 
 	# Estimate optimal portfolio:
 
@@ -2197,68 +2861,156 @@ def RunTest():
 	w.T");
         }
 
+        [Test, Explicit("Needs to be run by itself")]
+        public void Neuralforecast()
+        {
+            AssertCode(@"from neuralforecast import NeuralForecast
+from neuralforecast.models import NBEATS
+from neuralforecast.utils import AirPassengersDF
+
+def RunTest():
+    nf = NeuralForecast(
+        models = [NBEATS(input_size=12, h=12, max_steps=20)],
+        freq = 'ME'
+    )
+
+    nf.fit(df=AirPassengersDF)
+    nf.predict()");
+        }
+
+        [Test]
+        public void KDEpy()
+        {
+            AssertCode(@"
+from KDEpy import FFTKDE
+from scipy.stats import norm
+import numpy as np
+
+def RunTest():
+    # Generate a distribution and draw 2**6 data points
+    dist = norm(loc=0, scale=1)
+    data = dist.rvs(2**6)
+
+    # Compute kernel density estimate on a grid using Silverman's rule for bw
+    x, y1 = FFTKDE(bw=""silverman"").fit(data).evaluate(2**10)
+
+    # Compute a weighted estimate on the same grid, using verbose API
+    weights = np.arange(len(data)) + 1
+    estimator = FFTKDE(kernel='biweight', bw='silverman')
+    y2 = estimator.fit(data, weights=weights).evaluate(x)
+    ");
+        }
+
+        [Test]
+        public void Skfolio()
+        {
+            AssertCode(@"import numpy as np
+from sklearn.model_selection import train_test_split
+
+from skfolio import Population, RiskMeasure
+from skfolio.datasets import load_sp500_dataset
+from skfolio.optimization import InverseVolatility, MeanRisk, ObjectiveFunction
+from skfolio.preprocessing import prices_to_returns
+
+def RunTest():
+    prices = load_sp500_dataset()
+
+    X = prices_to_returns(prices)
+    X_train, X_test = train_test_split(X, test_size=0.33, shuffle=False)
+
+    print(X_train.head())");
+        }
+
+        [Test]
+        public void Sweetviz()
+        {
+            AssertCode(@"
+def RunTest():
+    import sweetviz as sv
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'col1': [1, 2, 3],
+        'col2': [4, 5, 6],
+        'target': [0, 1, 0]
+    })
+    
+    report = sv.analyze(df, target_feat='target')");
+        }
+
+        [TestCase("tf2onnx", "1.16.1", "__version__"), Explicit("These need to be run by themselves")]
+        [TestCase("skl2onnx", "1.19.1", "__version__")]
+        [TestCase("onnxmltools", "1.14.0", "__version__")]
+        public void ModuleVersionTestExplicit(string module, string value, string attribute)
+        {
+            RunModuleVersionTest(module, value, attribute);
+        }
+
         /// <summary>
         /// Simple test for modules that don't have short test example
         /// </summary>
         /// <param name="module">The module we are testing</param>
         /// <param name="version">The module version</param>
-        [TestCase("pulp", "2.7.0", "VERSION")]
-        [TestCase("pymc", "5.6.1", "__version__")]
+        [TestCase("pulp", "3.3.0", "VERSION")]
+        [TestCase("pymc", "5.25.1", "__version__")]
         [TestCase("pypfopt", "pypfopt", "__name__")]
-        [TestCase("wrapt", "1.14.1", "__version__")]
-        [TestCase("tslearn", "0.6.2", "__version__")]
-        [TestCase("tweepy", "4.14.0", "__version__")]
-        [TestCase("pywt", "1.4.1", "__version__")]
-        [TestCase("umap", "0.5.3", "__version__")]
-        [TestCase("dtw", "1.3.0", "__version__")]
+        [TestCase("wrapt", "1.17.3", "__version__")]
+        [TestCase("tslearn", "0.7.0", "__version__")]
+        [TestCase("tweepy", "4.16.0", "__version__")]
+        [TestCase("pywt", "1.8.0", "__version__")]
+        [TestCase("umap", "0.5.9.post2", "__version__")]
+        [TestCase("dtw", "1.5.3", "__version__")]
         [TestCase("mplfinance", "0.12.10b0", "__version__")]
         [TestCase("cufflinks", "0.17.3", "__version__")]
-        [TestCase("ipywidgets", "8.1.1", "__version__")]
-        [TestCase("astropy", "5.2.2", "__version__")]
-        [TestCase("gluonts", "0.13.7", "__version__")]
-        [TestCase("gplearn", "0.4.2", "__version__")]
-        [TestCase("featuretools", "1.27.0", "__version__")]
-        [TestCase("pennylane", "0.32.0", "version()")]
-        [TestCase("pyfolio", "0.9.5", "__version__")]
-        [TestCase("altair", "5.1.2", "__version__")]
-        [TestCase("modin", "0.22.3", "__version__")]
-        [TestCase("persim", "0.3.1", "__version__")]
-        [TestCase("pydmd", "0.4.1.post2308", "__version__")]
+        [TestCase("ipywidgets", "8.1.8", "__version__")]
+        [TestCase("astropy", "7.2.0", "__version__")]
+        [TestCase("gluonts", "0.16.2", "__version__")]
+        [TestCase("featuretools", "1.31.0", "__version__")]
+        [TestCase("pennylane", "0.43.1", "version()")]
+        [TestCase("pyfolio", "0.9.9", "__version__")]
+        [TestCase("altair", "6.0.0", "__version__")]
+        [TestCase("modin", "0.37.1", "__version__")]
+        [TestCase("persim", "0.3.8", "__version__")]
+        [TestCase("pydmd", "pydmd", "__name__")]
         [TestCase("pandas_ta", "0.3.14b0", "__version__")]
         [TestCase("tensortrade", "1.0.3", "__version__")]
-        [TestCase("quantstats", "0.0.62", "__version__")]
-        [TestCase("autokeras", "1.1.0", "__version__")]
-        [TestCase("panel", "1.2.3", "__version__")]
+        [TestCase("quantstats", "0.0.77", "__version__")]
+        [TestCase("panel", "1.7.5", "__version__")]
         [TestCase("pyheat", "pyheat", "__name__")]
-        [TestCase("tensorflow_decision_forests", "1.5.0", "__version__")]
-        [TestCase("tensorflow_ranking", "0.5.3.dev", "__version__")]
-        [TestCase("pomegranate", "1.0.3", "__version__")]
+        [TestCase("tensorflow_decision_forests", "1.12.0", "__version__")]
+        [TestCase("pomegranate", "1.1.2", "__version__")]
+        [TestCase("cv2", "4.11.0", "__version__")]
+        [TestCase("ot", "0.9.6.post1", "__version__")]
+        [TestCase("datasets", "3.6.0", "__version__")]
+        [TestCase("ipympl", "0.9.8", "__version__")]
+        [TestCase("PyQt6", "PyQt6", "__name__")]
+        [TestCase("pytorch_forecasting", "1.5.0", "__version__")]
+        [TestCase("sismic", "1.6.11", "__version__")]
+        [TestCase("chronos", "chronos", "__name__")]
         public void ModuleVersionTest(string module, string value, string attribute)
+        {
+            RunModuleVersionTest(module, value, attribute);
+        }
+
+        private void RunModuleVersionTest(string module, string value, string attribute)
         {
             AssertCode(
                 $@"
 import {module}
 
 def RunTest():
-    assert({module}.{attribute} == '{value}')
-    return 'Test passed, module exists'"
+    assert({module}.{attribute} == '{value}')"
             );
         }
 
         private static void AssertCode(string code)
         {
-            using (Py.GIL())
+            using var _ = Py.GIL();
+            using var module = PyModule.FromString(Guid.NewGuid().ToString(), code);
+            Assert.DoesNotThrow(() =>
             {
-                using dynamic module = PyModule.FromString(Guid.NewGuid().ToString(), code);
-                Assert.DoesNotThrow(() =>
-                {
-                    var response = module.RunTest();
-                    if(response != null)
-                    {
-                        response.Dispose();
-                    }
-                });
-            }
+                using var response = module.InvokeMethod("RunTest");
+            });
         }
     }
 }

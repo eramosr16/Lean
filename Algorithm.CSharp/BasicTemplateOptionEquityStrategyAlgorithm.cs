@@ -32,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp
     /// <meta name="tag" content="trading and orders" />
     public class BasicTemplateOptionEquityStrategyAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        protected Symbol _optionSymbol;
+        private Symbol _optionSymbol;
 
         public override void Initialize()
         {
@@ -44,7 +44,7 @@ namespace QuantConnect.Algorithm.CSharp
             _optionSymbol = option.Symbol;
 
             // set our strike/expiry filter for this option chain
-            option.SetFilter(u => u.Strikes(-2, +2)
+            option.SetFilter(u => u.StandardsOnly().Strikes(-2, +2)
                 // Expiration method accepts TimeSpan objects or integer for days.
                 // The following statements yield the same filtering criteria
                 .Expiration(0, 180));
@@ -73,7 +73,7 @@ namespace QuantConnect.Algorithm.CSharp
                     var higherStrike = callContracts[2].Strike;
 
                     var optionStrategy = OptionStrategies.CallButterfly(_optionSymbol, higherStrike, middleStrike, lowerStrike, expiry);
-                    
+
                     Order(optionStrategy, 10);
                 }
             }
@@ -97,12 +97,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 471135;
+        public long DataPoints => 15023;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -110,16 +110,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "3"},
+            {"Total Orders", "3"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98024"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -135,10 +142,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$26.00"},
-            {"Estimated Strategy Capacity", "$70000.00"},
-            {"Lowest Capacity Asset", "GOOCV W78ZERHAOVVQ|GOOCV VP83T1ZUHROL"},
+            {"Estimated Strategy Capacity", "$69000.00"},
+            {"Lowest Capacity Asset", "GOOCV W78ZERHAT67A|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "61.31%"},
-            {"OrderListHash", "a36c60c5fb020121d6541683138d8f28"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "ccd6cb1b6244d0c6d30b2760938958f1"}
         };
     }
 }

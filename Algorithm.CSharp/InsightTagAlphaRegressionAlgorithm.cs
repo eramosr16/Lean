@@ -65,7 +65,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (insight.Tag != OneTimeAlphaModel.GenerateInsightTag(insight.Symbol))
                 {
-                    throw new Exception("Unexpected insight tag was emitted");
+                    throw new RegressionTestException("Unexpected insight tag was emitted");
                 }
 
                 _symbolsWithGeneratedInsights.Add(insight.Symbol);
@@ -76,22 +76,22 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_symbolsWithGeneratedInsights.Count != 3)
             {
-                throw new Exception("Unexpected number of symbols with generated insights");
+                throw new RegressionTestException("Unexpected number of symbols with generated insights");
             }
 
             if (!_symbolsWithGeneratedInsights.Contains(_spy))
             {
-                throw new Exception("SPY symbol was not found in symbols with generated insights");
+                throw new RegressionTestException("SPY symbol was not found in symbols with generated insights");
             }
 
             if (!_symbolsWithGeneratedInsights.Contains(_fb))
             {
-                throw new Exception("FB symbol was not found in symbols with generated insights");
+                throw new RegressionTestException("FB symbol was not found in symbols with generated insights");
             }
 
             if (!_symbolsWithGeneratedInsights.Contains(_ibm))
             {
-                throw new Exception("IBM symbol was not found in symbols with generated insights");
+                throw new RegressionTestException("IBM symbol was not found in symbols with generated insights");
             }
         }
 
@@ -134,7 +134,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -147,16 +147,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "9"},
+            {"Total Orders", "9"},
             {"Average Win", "0.86%"},
             {"Average Loss", "-0.27%"},
-            {"Compounding Annual Return", "184.364%"},
+            {"Compounding Annual Return", "206.404%"},
             {"Drawdown", "1.700%"},
             {"Expectancy", "1.781"},
+            {"Start Equity", "100000"},
+            {"End Equity", "101441.92"},
             {"Net Profit", "1.442%"},
             {"Sharpe Ratio", "4.836"},
             {"Sortino Ratio", "10.481"},
@@ -172,10 +179,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.532"},
             {"Treynor Ratio", "-1.174"},
             {"Total Fees", "$14.78"},
-            {"Estimated Strategy Capacity", "$47000000.00"},
+            {"Estimated Strategy Capacity", "$120000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
             {"Portfolio Turnover", "41.18%"},
-            {"OrderListHash", "e07dec6ddf0ef6b5d9c791b0593ec4dc"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "713c956deb193bed2290e9f379c0f9f9"}
         };
     }
 }

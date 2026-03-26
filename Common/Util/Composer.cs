@@ -64,7 +64,7 @@ namespace QuantConnect.Util
             if (string.IsNullOrWhiteSpace(dllDirectoryString))
             {
                 // Check our appdomain directory for QC Dll's, for most cases this will be true and fine to use
-                if (!string.IsNullOrEmpty(AppDomain.CurrentDomain.BaseDirectory) && Directory.GetFiles(AppDomain.CurrentDomain.BaseDirectory, "QuantConnect.*.dll").Any())
+                if (!string.IsNullOrEmpty(AppDomain.CurrentDomain.BaseDirectory) && Directory.EnumerateFiles(AppDomain.CurrentDomain.BaseDirectory, "QuantConnect.*.dll").Any())
                 {
                     dllDirectoryString = AppDomain.CurrentDomain.BaseDirectory;
                 }
@@ -77,7 +77,7 @@ namespace QuantConnect.Util
 
                     // If our parent directory contains QC Dlls use it, otherwise default to current working directory
                     // In cloud and CLI research cases we expect the parent directory to contain the Dlls; but locally it's likely current directory
-                    dllDirectoryString = Directory.GetFiles(parentDirectory, "QuantConnect.*.dll").Any() ? parentDirectory : currentDirectory;
+                    dllDirectoryString = Directory.EnumerateFiles(parentDirectory, "QuantConnect.*.dll").Any() ? parentDirectory : currentDirectory;
                 }
             }
 
@@ -88,76 +88,17 @@ namespace QuantConnect.Util
             var loadFromPluginDir = !string.IsNullOrWhiteSpace(PluginDirectory)
                 && Directory.Exists(PluginDirectory) &&
                 new DirectoryInfo(PluginDirectory).FullName != primaryDllLookupDirectory;
-            _composableParts = Task.Run(() =>
-            {
-                try
-                {
-                    var catalogs = new List<ComposablePartCatalog>
-                    {
-                        new DirectoryCatalog(primaryDllLookupDirectory, "*.dll"),
-                        new DirectoryCatalog(primaryDllLookupDirectory, "*.exe")
-                    };
-                    if (loadFromPluginDir)
-                    {
-                        catalogs.Add(new DirectoryCatalog(PluginDirectory, "*.dll"));
-                    }
-                    var aggregate = new AggregateCatalog(catalogs);
-                    _compositionContainer = new CompositionContainer(aggregate);
-                    return _compositionContainer.Catalog.Parts.ToList();
-                }
-                catch (Exception exception)
-                {
-                    // ThreadAbortException is triggered when we shutdown ignore the error log
-                    if (!(exception is ThreadAbortException))
-                    {
-                        Log.Error(exception);
-                    }
-                }
-                return new List<ComposablePartDefinition>();
-            });
-
-            // for performance we will load our assemblies and keep their exported types
-            // which is much faster that using CompositionContainer which uses reflexion
-            var exportedTypes = new ConcurrentBag<Type>();
-            var fileNames = Directory.EnumerateFiles(primaryDllLookupDirectory, $"{nameof(QuantConnect)}.*.dll");
+            var fileNames = Directory.EnumerateFiles(primaryDllLookupDirectory, "*.dll");
             if (loadFromPluginDir)
             {
-                fileNames = fileNames.Concat(Directory.EnumerateFiles(PluginDirectory, $"{nameof(QuantConnect)}.*.dll"));
+                fileNames = fileNames.Concat(Directory.EnumerateFiles(PluginDirectory, "*.dll"));
             }
-
-            // guarantee file name uniqueness
-            var files = new Dictionary<string, string>();
-            foreach (var filePath in fileNames)
-            {
-                var fileName = Path.GetFileName(filePath);
-                if (!string.IsNullOrEmpty(fileName))
-                {
-                    files[fileName] = filePath;
-                }
-            }
-            Parallel.ForEach(files.Values,
-                file =>
-                {
-                    try
-                    {
-                        foreach (var type in
-                            Assembly.LoadFrom(file).ExportedTypes.Where(type => !type.IsAbstract && !type.IsInterface && !type.IsEnum))
-                        {
-                            exportedTypes.Add(type);
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        // ignored, just in case
-                    }
-                }
-            );
-            _exportedTypes.AddRange(exportedTypes);
+            LoadPartsSafely(fileNames.DistinctBy(Path.GetFileName));
         }
 
         private CompositionContainer _compositionContainer;
-        private readonly List<Type> _exportedTypes = new List<Type>();
-        private readonly Task<List<ComposablePartDefinition>> _composableParts;
+        private IReadOnlyList<Type> _exportedTypes;
+        private List<ComposablePartDefinition> _composableParts;
         private readonly object _exportedValuesLockObject = new object();
         private readonly Dictionary<Type, IEnumerable> _exportedValues = new Dictionary<Type, IEnumerable>();
 
@@ -186,14 +127,14 @@ namespace QuantConnect.Util
             lock (_exportedValuesLockObject)
             {
                 IEnumerable values;
-                if (_exportedValues.TryGetValue(typeof (T), out values))
+                if (_exportedValues.TryGetValue(typeof(T), out values))
                 {
-                    ((IList<T>) values).Add(instance);
+                    ((IList<T>)values).Add(instance);
                 }
                 else
                 {
-                    values = new List<T> {instance};
-                    _exportedValues[typeof (T)] = values;
+                    values = new List<T> { instance };
+                    _exportedValues[typeof(T)] = values;
                 }
             }
         }
@@ -204,14 +145,32 @@ namespace QuantConnect.Util
         /// <typeparam name="T">The contract type</typeparam>
         public T GetPart<T>()
         {
+            return GetPart<T>(null);
+        }
+
+        /// <summary>
+        /// Gets the first type T instance if any
+        /// </summary>
+        /// <typeparam name="T">The contract type</typeparam>
+        public T GetPart<T>(Func<T, bool> filter)
+        {
+            return GetParts<T>().Where(x => filter == null || filter(x)).FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Gets all parts of type T instance if any
+        /// </summary>
+        /// <typeparam name="T">The contract type</typeparam>
+        public IEnumerable<T> GetParts<T>()
+        {
             lock (_exportedValuesLockObject)
             {
                 IEnumerable values;
                 if (_exportedValues.TryGetValue(typeof(T), out values))
                 {
-                    return ((IList<T>)values).FirstOrDefault();
+                    return ((IEnumerable<T>)values).ToList();
                 }
-                return default(T);
+                return Enumerable.Empty<T>();
             }
         }
 
@@ -250,73 +209,68 @@ namespace QuantConnect.Util
         {
             try
             {
-                lock (_exportedValuesLockObject)
+                // if we've already loaded this part, then just return the same one
+                var instance = GetParts<T>().FirstOrDefault(x => !forceTypeNameOnExisting || x.GetType().MatchesTypeName(typeName));
+                if (instance != null)
                 {
-                    T instance = null;
-                    IEnumerable values;
-                    var type = typeof(T);
-                    if (_exportedValues.TryGetValue(type, out values))
-                    {
-                        // if we've already loaded this part, then just return the same one
-                        instance = values.OfType<T>().FirstOrDefault(x => !forceTypeNameOnExisting || x.GetType().MatchesTypeName(typeName));
-                        if (instance != null)
-                        {
-                            return instance;
-                        }
-                    }
+                    return instance;
+                }
 
-                    var typeT = _exportedTypes.Where(type1 =>
+                var type = typeof(T);
+                var typeT = _exportedTypes.Where(type1 =>
+                    {
+                        try
+                        {
+                            return type.IsAssignableFrom(type1) && type1.MatchesTypeName(typeName);
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    })
+                .FirstOrDefault();
+
+                if (typeT != null)
+                {
+                    instance = (T)Activator.CreateInstance(typeT);
+                }
+
+                if (instance == null)
+                {
+                    // we want to get the requested part without instantiating each one of that type
+                    var selectedPart = _composableParts
+                        .Where(x =>
                             {
                                 try
                                 {
-                                    return type.IsAssignableFrom(type1) && type1.MatchesTypeName(typeName);
+                                    var xType = ReflectionModelServices.GetPartType(x).Value;
+                                    return type.IsAssignableFrom(xType) && xType.MatchesTypeName(typeName);
                                 }
                                 catch
                                 {
                                     return false;
                                 }
-                            })
+                            }
+                        )
                         .FirstOrDefault();
 
-                    if (typeT != null)
+                    if (selectedPart == null)
                     {
-                        instance = (T)Activator.CreateInstance(typeT);
+                        throw new ArgumentException(
+                            $"Unable to locate any exports matching the requested typeName: {typeName}. Type: {type}", nameof(typeName));
                     }
 
-                    if(instance == null)
-                    {
-                        // we want to get the requested part without instantiating each one of that type
-                        var selectedPart = _composableParts.Result
-                            .Where(x =>
-                                {
-                                    try
-                                    {
-                                        var xType =  ReflectionModelServices.GetPartType(x).Value;
-                                        return type.IsAssignableFrom(xType) && xType.MatchesTypeName(typeName);
-                                    }
-                                    catch
-                                    {
-                                        return false;
-                                    }
-                                }
-                            )
-                            .FirstOrDefault();
+                    var exportDefinition =
+                        selectedPart.ExportDefinitions.First(
+                            x => x.ContractName == AttributedModelServices.GetContractName(type));
+                    instance = (T)selectedPart.CreatePart().GetExportedValue(exportDefinition);
+                }
 
-                        if (selectedPart == null)
-                        {
-                            throw new ArgumentException(
-                                $"Unable to locate any exports matching the requested typeName: {typeName}", nameof(typeName));
-                        }
+                var exportedParts = instance.GetType().GetInterfaces()
+                    .Where(interfaceType => interfaceType.GetCustomAttribute<InheritedExportAttribute>() != null);
 
-                        var exportDefinition =
-                            selectedPart.ExportDefinitions.First(
-                                x => x.ContractName == AttributedModelServices.GetContractName(type));
-                        instance = (T)selectedPart.CreatePart().GetExportedValue(exportDefinition);
-                    }
-
-                    var exportedParts = instance.GetType().GetInterfaces()
-                        .Where(interfaceType => interfaceType.GetCustomAttribute<InheritedExportAttribute>() != null);
-
+                lock (_exportedValuesLockObject)
+                {
                     foreach (var export in exportedParts)
                     {
                         var exportList = _exportedValues.SingleOrDefault(kvp => kvp.Key == export).Value;
@@ -360,17 +314,13 @@ namespace QuantConnect.Util
                 lock (_exportedValuesLockObject)
                 {
                     IEnumerable values;
-                    if (_exportedValues.TryGetValue(typeof (T), out values))
+                    if (_exportedValues.TryGetValue(typeof(T), out values))
                     {
                         return values.OfType<T>();
                     }
 
-                    if (!_composableParts.IsCompleted)
-                    {
-                        _composableParts.Wait();
-                    }
                     values = _compositionContainer.GetExportedValues<T>().ToList();
-                    _exportedValues[typeof (T)] = values;
+                    _exportedValues[typeof(T)] = values;
                     return values.OfType<T>();
                 }
             }
@@ -390,9 +340,71 @@ namespace QuantConnect.Util
         /// </summary>
         public void Reset()
         {
-            lock(_exportedValuesLockObject)
+            lock (_exportedValuesLockObject)
             {
                 _exportedValues.Clear();
+            }
+        }
+
+        private void LoadPartsSafely(IEnumerable<string> files)
+        {
+            try
+            {
+                var exportedTypes = new ConcurrentBag<Type>();
+                var catalogs = new ConcurrentBag<ComposablePartCatalog>();
+                Parallel.ForEach(files, file =>
+                {
+                    try
+                    {
+                        // we need to load assemblies so that C# algorithm dependencies are resolved correctly
+                        // at the same time we need to load all QC dependencies to find all exports
+                        Assembly assembly;
+                        try
+                        {
+                            var asmName = AssemblyName.GetAssemblyName(file);
+                            assembly = Assembly.Load(asmName);
+                        }
+                        catch
+                        {
+                            // handles dependencies that are not in the probing path but might duplicate loading an already loaded assembly
+                            assembly = Assembly.LoadFrom(file);
+                        }
+
+                        if (Path.GetFileName(file).StartsWith($"{nameof(QuantConnect)}.", StringComparison.InvariantCulture))
+                        {
+                            foreach (var type in assembly.ExportedTypes.Where(type => !type.IsAbstract && !type.IsInterface && !type.IsEnum))
+                            {
+                                exportedTypes.Add(type);
+                            }
+                        }
+                        var asmCatalog = new AssemblyCatalog(assembly);
+                        var parts = asmCatalog.Parts.ToArray();
+                        if (parts.Length > 0)
+                        {
+                            catalogs.Add(asmCatalog);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!file.Contains("quickfix.fix", StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            Log.Trace($"Composer.LoadPartsSafely({file}): Skipping {ex.GetType().Name}: {ex.Message}");
+                        }
+                    }
+                });
+
+                _exportedTypes = new List<Type>(exportedTypes);
+                var aggregate = new AggregateCatalog(catalogs);
+                _compositionContainer = new CompositionContainer(aggregate);
+                _composableParts = _compositionContainer.Catalog.Parts.ToList();
+            }
+            catch (Exception exception)
+            {
+                // ThreadAbortException is triggered when we shutdown ignore the error log
+                if (!(exception is ThreadAbortException))
+                {
+                    Log.Error(exception);
+                }
             }
         }
     }

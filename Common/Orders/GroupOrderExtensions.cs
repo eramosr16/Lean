@@ -87,7 +87,7 @@ namespace QuantConnect.Orders
                 var order = orders[i];
                 var security = securityProvider.GetSecurity(order.Symbol);
 
-                if(security == null)
+                if (security == null)
                 {
                     return false;
                 }
@@ -96,6 +96,10 @@ namespace QuantConnect.Orders
             return true;
         }
 
+        /// <summary>
+        /// Returns an error string message saying there is insufficient buying power for the given orders associated with their respective
+        /// securities
+        /// </summary>
         public static string GetErrorMessage(this Dictionary<Order, Security> securities, HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult)
         {
             return Messages.GroupOrderExtensions.InsufficientBuyingPowerForOrders(securities, hasSufficientBuyingPowerResult);
@@ -124,6 +128,33 @@ namespace QuantConnect.Orders
         public static decimal GetOrderLegRatio(this decimal legGroupQuantity, GroupOrderManager groupOrderManager)
         {
             return groupOrderManager != null ? legGroupQuantity / groupOrderManager.Quantity : legGroupQuantity;
+        }
+
+        /// <summary>
+        /// Calculates the greatest common divisor (GCD) of the provided leg quantities
+        /// and returns it as a signed quantity based on the <see cref="OrderDirection"/>.
+        /// </summary>
+        /// <param name="legQuantity">A collection of leg quantities.</param>
+        /// <param name="orderDirection">
+        /// Determines the sign of the returned quantity:
+        /// <see cref="OrderDirection.Buy"/> returns a positive quantity,
+        /// <see cref="OrderDirection.Sell"/> returns a negative quantity.
+        /// </param>
+        /// <returns>
+        /// The greatest common divisor of the leg quantities, signed according to <paramref name="orderDirection"/>.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="orderDirection"/> has an unsupported value.
+        /// </exception>
+        public static decimal GetGroupQuantityByEachLegQuantity(IEnumerable<decimal> legQuantity, OrderDirection orderDirection)
+        {
+            var groupQuantity = Extensions.GreatestCommonDivisor(legQuantity.Select(Math.Abs));
+            return orderDirection switch
+            {
+                OrderDirection.Buy => groupQuantity,
+                OrderDirection.Sell => decimal.Negate(groupQuantity),
+                _ => throw new ArgumentException($"Unsupported {nameof(OrderDirection)} value: '{orderDirection}'.", nameof(orderDirection))
+            };
         }
     }
 }

@@ -29,15 +29,25 @@ namespace QuantConnect
         /// </summary>
         public static class DefaultExerciseModel
         {
+            /// <summary>
+            /// String message saying: Option Assignment
+            /// </summary>
             public static string OptionAssignment = "Option Assignment";
 
+            /// <summary>
+            /// String message saying: Option exercise
+            /// </summary>
             public static string OptionExercise = "Option Exercise";
 
+            /// <summary>
+            /// Returns a string message containing basic information such as if it's
+            /// an assignment or an exercise, if it's ITM or OTM  and the underlying option price
+            /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string ContractHoldingsAdjustmentFillTag(bool inTheMoney, bool isAssignment, Option option)
             {
-                var action = isAssignment ? "Assignment" : "Exercise";
-                var tag = inTheMoney ? $"Automatic {action}" : "OTM";
+                var action = isAssignment ? "Assigned" : "Automatic Exercise";
+                var tag = inTheMoney ? action : "OTM";
 
                 return $"{tag}. Underlying: {option.Underlying.Price.ToStringInvariant()}";
             }

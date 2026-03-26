@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -32,9 +33,28 @@ namespace QuantConnect.Tests.Compression
             const string file = "../../../Data/equity/usa/minute/spy/20131008_trade.zip";
 
             const int expected = 828;
-            int actual = QuantConnect.Compression.ReadLines(file).Count();
+            int actual = QuantConnect.Compression.ReadLines(file).Count;
 
             Assert.AreEqual(expected, actual);
+        }
+
+        [Test]
+        public void ZipsStream()
+        {
+            const string zipName = "stream_entry.zip";
+            File.Delete(zipName);
+            const string fileContents = "this is the contents of a file!";
+            using var memoryStream = new MemoryStream();
+            var array = Encoding.UTF8.GetBytes(fileContents);
+            memoryStream.Write(array);
+            memoryStream.Position = 0;
+
+            QuantConnect.Compression.ZipStreamsAsync(zipName, [new ("entry", memoryStream)]).Wait();
+
+            using var file = File.OpenRead(zipName);
+            using var streamReader = QuantConnect.Compression.UnzipStreamToStreamReader(file);
+            var contents = streamReader.ReadToEnd();
+            Assert.AreEqual(fileContents, contents);
         }
 
         [Test]
@@ -45,7 +65,8 @@ namespace QuantConnect.Tests.Compression
             var zippedBytes = QuantConnect.Compression.ZipBytes(fileBytes, "entry");
             File.WriteAllBytes("entry.zip", zippedBytes);
 
-            using (var streamReader = QuantConnect.Compression.UnzipStreamToStreamReader(File.OpenRead("entry.zip")))
+            using var file = File.OpenRead("entry.zip");
+            using (var streamReader = QuantConnect.Compression.UnzipStreamToStreamReader(file))
             {
                 var contents = streamReader.ReadToEnd();
                 Assert.AreEqual(fileContents, contents);
@@ -59,7 +80,7 @@ namespace QuantConnect.Tests.Compression
             var fileBytes = File.ReadAllBytes(file);
             var zippedBytes = QuantConnect.Compression.ZipBytes(fileBytes, "entry");
 
-            Assert.AreEqual(OS.IsWindows ? 905921 : 906121, zippedBytes.Length);
+            Assert.AreEqual(OS.IsWindows ? 905693 : 906121, zippedBytes.Length);
         }
 
         [Test]
@@ -189,6 +210,26 @@ namespace QuantConnect.Tests.Compression
         }
 
         [Test]
+        public void ZipUnzipDataToFile()
+        {
+            var data = new Dictionary<string, string>
+            {
+                {"Ł", "The key is unicode"},
+                {"2", "something"}
+            };
+
+            var fileName = Guid.NewGuid().ToString();
+            var compressed = QuantConnect.Compression.ZipData(fileName, data);
+
+            Assert.IsTrue(compressed);
+
+            using var fileStream = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var result = QuantConnect.Compression.UnzipDataAsync(fileStream).Result;
+
+            CollectionAssert.AreEqual(data.OrderBy(kv => kv.Key).ToList(), result.OrderBy(kv => kv.Key).ToList());
+        }
+
+        [Test]
         public void UnzipDataSupportsEncoding()
         {
             var data = new Dictionary<string, string>
@@ -200,6 +241,30 @@ namespace QuantConnect.Tests.Compression
             var bytes = encoding.GetBytes(JsonConvert.SerializeObject(data));
             var compressed = QuantConnect.Compression.ZipBytes(bytes, "entry.json");
             var decompressed = QuantConnect.Compression.UnzipData(compressed, encoding);
+            var redata = JsonConvert.DeserializeObject<Dictionary<string, string>>(
+                decompressed.Single().Value
+            );
+
+            var expected = data.Single();
+            var actual = redata.Single();
+            Assert.AreEqual(expected.Key, actual.Key);
+            Assert.AreEqual(expected.Value, actual.Value);
+        }
+
+        [Test]
+        public void UnzipDataStream()
+        {
+            var data = new Dictionary<string, string>
+            {
+                {"Ł", "The key is unicode"}
+            };
+
+            var encoding = Encoding.UTF8;
+            var bytes = encoding.GetBytes(JsonConvert.SerializeObject(data));
+            var compressed = QuantConnect.Compression.ZipBytes(bytes, "entry.json");
+
+            using var stream = new MemoryStream(compressed);
+            var decompressed = QuantConnect.Compression.UnzipDataAsync(stream, encoding).Result;
             var redata = JsonConvert.DeserializeObject<Dictionary<string, string>>(
                 decompressed.Single().Value
             );

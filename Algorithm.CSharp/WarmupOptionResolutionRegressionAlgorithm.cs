@@ -32,14 +32,14 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnEndOfAlgorithm()
         {
-            var start = new DateTime(2015, 12, 24, 0, 0, 0);
+            var start = new DateTime(2015, 12, 23, 16, 0, 0);
             var end = new DateTime(2015, 12, 24, 0, 0, 0);
             var count = 0;
             do
             {
                 if (OptionWarmupTimes[count] != start)
                 {
-                    throw new Exception($"Unexpected time {OptionWarmupTimes[count]} expected {start}");
+                    throw new RegressionTestException($"Unexpected time {OptionWarmupTimes[count]} expected {start}");
                 }
                 count++;
                 start = start.AddDays(1);
@@ -50,6 +50,6 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 542803;
+        public override long DataPoints => 84590;
     }
 }

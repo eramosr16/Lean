@@ -61,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetWarmup(SymbolData.RequiredBarsWarmup);
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             // we are only using warmup for indicator spooling, so wait for us to be warm then continue
             if (IsWarmingUp) return;
@@ -77,12 +77,12 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
-        public override void OnOrderEvent(OrderEvent fill)
+        public override void OnOrderEvent(OrderEvent orderEvent)
         {
             SymbolData sd;
-            if (_sd.TryGetValue(fill.Symbol, out sd))
+            if (_sd.TryGetValue(orderEvent.Symbol, out sd))
             {
-                sd.OnOrderEvent(fill);
+                sd.OnOrderEvent(orderEvent);
             }
         }
 
@@ -166,7 +166,7 @@ namespace QuantConnect.Algorithm.CSharp
                         ? fill.FillPrice*(1 - PercentGlobalStopLoss)
                         : fill.FillPrice*(1 + PercentGlobalStopLoss);
 
-                    _currentStopLoss = _algorithm.StopMarketOrder(Symbol, -Quantity, stop, "StopLoss at: " + stop);
+                    _currentStopLoss = _algorithm.StopMarketOrder(Symbol, -Quantity, stop, tag: "StopLoss at: " + stop);
                 }
                 // check for an exit, cancel the stop loss
                 else
@@ -211,7 +211,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 if (qty != 0)
                 {
-                    ticket = _algorithm.LimitOrder(Symbol, qty, limit, "TryEnter at: " + limit);
+                    ticket = _algorithm.LimitOrder(Symbol, qty, limit, tag: "TryEnter at: " + limit);
                 }
                 return qty != 0;
             }
@@ -238,7 +238,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 if (limit != 0)
                 {
-                    ticket = _algorithm.LimitOrder(Symbol, -Quantity, limit, "TryExit at: " + limit);
+                    ticket = _algorithm.LimitOrder(Symbol, -Quantity, limit, tag: "TryExit at: " + limit);
                 }
                 return -Quantity != 0;
             }

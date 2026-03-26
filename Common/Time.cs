@@ -481,6 +481,18 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Define an enumerable date time range using the given time step
+        /// </summary>
+        /// <param name="from">DateTime start date time</param>
+        /// <param name="thru">DateTime end date time</param>
+        /// <returns>Enumerable date time range</returns>
+        public static IEnumerable<DateTime> DateTimeRange(DateTime from, DateTime thru, TimeSpan step)
+        {
+            for (var dateTime = from; dateTime <= thru; dateTime = dateTime.Add(step))
+                yield return dateTime;
+        }
+
+        /// <summary>
         /// Define an enumerable date range and return each date as a datetime object in the date range
         /// </summary>
         /// <param name="from">DateTime start date</param>
@@ -488,8 +500,7 @@ namespace QuantConnect
         /// <returns>Enumerable date range</returns>
         public static IEnumerable<DateTime> EachDay(DateTime from, DateTime thru)
         {
-            for (var day = from.Date; day.Date <= thru.Date; day = day.AddDays(1))
-                yield return day;
+            return DateTimeRange(from.Date, thru.Date, TimeSpan.FromDays(1));
         }
 
 
@@ -518,12 +529,12 @@ namespace QuantConnect
         /// <param name="security">The security to get tradeable dates for</param>
         /// <param name="from">Start date</param>
         /// <param name="thru">End date</param>
+        /// <param name="extendedMarketHours">True to include days with extended market hours only, like sunday for futures</param>
         /// <returns>Enumerable date range</returns>
-        public static IEnumerable<DateTime> EachTradeableDay(Security security, DateTime from, DateTime thru)
+        public static IEnumerable<DateTime> EachTradeableDay(Security security, DateTime from, DateTime thru, bool extendedMarketHours = false)
         {
-            return EachTradeableDay(security.Exchange.Hours, from, thru);
+            return EachTradeableDay(security.Exchange.Hours, from, thru, extendedMarketHours);
         }
-
 
         /// <summary>
         /// Define an enumerable date range of tradeable dates - skip the holidays and weekends when securities in this algorithm don't trade.
@@ -531,12 +542,13 @@ namespace QuantConnect
         /// <param name="exchange">The security to get tradeable dates for</param>
         /// <param name="from">Start date</param>
         /// <param name="thru">End date</param>
+        /// <param name="extendedMarketHours">True to include days with extended market hours only, like sunday for futures</param>
         /// <returns>Enumerable date range</returns>
-        public static IEnumerable<DateTime> EachTradeableDay(SecurityExchangeHours exchange, DateTime from, DateTime thru)
+        public static IEnumerable<DateTime> EachTradeableDay(SecurityExchangeHours exchange, DateTime from, DateTime thru, bool extendedMarketHours = false)
         {
             for (var day = from.Date; day.Date <= thru.Date; day = day.AddDays(1))
             {
-                if (exchange.IsDateOpen(day))
+                if (exchange.IsDateOpen(day, extendedMarketHours))
                 {
                     yield return day;
                 }
@@ -644,16 +656,38 @@ namespace QuantConnect
         /// <param name="barCount">The number of bars requested</param>
         /// <param name="extendedMarketHours">True to allow extended market hours bars, otherwise false for only normal market hours</param>
         /// <param name="dataTimeZone">Timezone for this data</param>
+        /// <param name="dailyPreciseEndTime">True if daily strict end times are enabled</param>
         /// <returns>The start time that would provide the specified number of bars ending at the specified end time, rounded down by the requested bar size</returns>
-        public static DateTime GetStartTimeForTradeBars(SecurityExchangeHours exchangeHours, DateTime end, TimeSpan barSize, int barCount, bool extendedMarketHours, DateTimeZone dataTimeZone)
+        public static DateTime GetStartTimeForTradeBars(SecurityExchangeHours exchangeHours, DateTime end, TimeSpan barSize, int barCount,
+            bool extendedMarketHours, DateTimeZone dataTimeZone, bool dailyPreciseEndTime = false)
         {
             if (barSize <= TimeSpan.Zero)
             {
                 throw new ArgumentException(Messages.Time.InvalidBarSize, nameof(barSize));
             }
 
-            // need to round down in data timezone because data is stored in this time zone
-            var current = end.RoundDownInTimeZone(barSize, exchangeHours.TimeZone, dataTimeZone);
+            var current = end;
+            if (dailyPreciseEndTime && barSize == OneDay)
+            {
+                if (
+                    // Round down so that time in the current date (closed) is not accounted for when counting business days
+                    !exchangeHours.IsDateOpen(current) ||
+                    // we round down, because data for today isn't ready/wont pass through current time.
+                    // for example, for equities, current time is 3pm, 1 bar in daily should be yesterdays, today does not count
+                    exchangeHours.GetNextMarketClose(current.Date, extendedMarketHours) > current)
+                {
+                    current = end.RoundDownInTimeZone(barSize, exchangeHours.TimeZone, dataTimeZone);
+                }
+            }
+            else
+            {
+                // need to round down in data timezone because data is stored in this time zone but only if not doing daily resolution or
+                // dailyPreciseEndTime is disabled because if we round down we might include 2 bars when we want 1, for example: say
+                // current is monday 8pm NY, if we round down we get minight monday which will return false as open, so we will return
+                // friday and monday data for daily equity, when we want only monday.
+                current = end.RoundDownInTimeZone(barSize, exchangeHours.TimeZone, dataTimeZone);
+            }
+
             for (int i = 0; i < barCount;)
             {
                 var previous = current;

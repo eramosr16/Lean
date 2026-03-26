@@ -18,30 +18,40 @@ from AlgorithmImports import *
 ### </summary>
 class CustomShortableProviderRegressionAlgorithm(QCAlgorithm):
 
-    def Initialize(self):
-        self.SetCash(1000000);
-        self.SetStartDate(2013,10,4)
-        self.SetEndDate(2013,10,6)
-        self.spy = self.AddSecurity(SecurityType.Equity, "SPY", Resolution.Daily)
-        self.spy.SetShortableProvider(CustomShortableProvider())
+    def initialize(self) -> None:
+        self.set_cash(10000000)
+        self.set_start_date(2013,10,4)
+        self.set_end_date(2013,10,6)
+        self._spy = self.add_security(SecurityType.EQUITY, "SPY", Resolution.DAILY)
+        self._spy.set_shortable_provider(CustomShortableProvider())
 
-    def OnData(self, data):
-        spyShortableQuantity = self.spy.ShortableProvider.ShortableQuantity(self.spy.Symbol, self.Time)
-        if spyShortableQuantity > 1000:
-            self.orderId = self.Sell("SPY", int(spyShortableQuantity))
+    def on_data(self, data: Slice) -> None:
+        spy_shortable_quantity = self._spy.shortable_provider.shortable_quantity(self._spy.symbol, self.time)
+        if spy_shortable_quantity and spy_shortable_quantity > 1000:
+            self._order_id = self.sell("SPY", int(spy_shortable_quantity)).order_id
 
-    def OnEndOfAlgorithm(self):
-        transactions = self.Transactions.OrdersCount
+    def on_end_of_algorithm(self) -> None:
+        transactions = self.transactions.orders_count
         if transactions != 1:
-            raise Exception("Algorithm should have just 1 order, but was " + str(transactions))
+            raise AssertionError("Algorithm should have just 1 order, but was " + str(transactions))
 
-        orderQuantity = self.Transactions.GetOrderById(self.orderId).Quantity
-        if orderQuantity != -1001:
-            raise Exception("Quantity of order " + str(_orderId) + " should be " + str(-1001)+", but was {orderQuantity}")
+        order_quantity = self.transactions.get_order_by_id(self._order_id).quantity
+        if order_quantity != -1001:
+            raise AssertionError(f"Quantity of order {self._order_id} should be -1001 but was {order_quantity}")
+        
+        fee_rate = self._spy.shortable_provider.fee_rate(self._spy.symbol, self.time)
+        if fee_rate != 0.0025:
+            raise AssertionError(f"Fee rate should be 0.0025, but was {fee_rate}")
+        rebate_rate = self._spy.shortable_provider.rebate_rate(self._spy.symbol, self.time)
+        if rebate_rate != 0.0507:
+            raise AssertionError(f"Rebate rate should be 0.0507, but was {rebate_rate}")
 
 class CustomShortableProvider(NullShortableProvider):
-    def ShortableQuantity(self, symbol: Symbol, localTime: DateTime):
-        if localTime < datetime(2013,10,5):
+    def fee_rate(self, symbol: Symbol, local_time: datetime) -> float:
+        return 0.0025
+    def rebate_rate(self, symbol: Symbol, local_time: datetime) -> float:
+        return 0.0507
+    def shortable_quantity(self, symbol: Symbol, local_time: datetime) -> int:
+        if local_time < datetime(2013,10,4,16,0,0):
             return 10
-        else:
-            return 1001
+        return 1001

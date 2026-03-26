@@ -42,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp
             _aapl = AddEquity("AAPL", Resolution.Minute, extendedMarketHours: true, dataNormalizationMode: DataNormalizationMode.Raw).Symbol;
 
             var option = AddOption(_aapl, Resolution.Minute);
-            option.SetFilter(-1, +1, 0, 365);
+            option.SetFilter(u => u.StandardsOnly().Strikes(-1, +1).Expiration(0, 365));
         }
 
         public override void OnData(Slice slice)
@@ -59,13 +59,14 @@ namespace QuantConnect.Algorithm.CSharp
                         .First();
                     _ticket = MarketOrder(contract.Symbol, 1);
 
+                    // The actual error received now is "zero price" since it's midnight and the selection options have not been updated yet
                     if (_ticket.Status != OrderStatus.Invalid ||
                         _ticket.SubmitRequest.Response.IsSuccess ||
-                        _ticket.SubmitRequest.Response.ErrorCode != OrderResponseErrorCode.OptionOrderOnStockSplit ||
-                        _ticket.SubmitRequest.Response.ErrorMessage != "Options orders are not allowed when a split occurred for its underlying stock")
+                        _ticket.SubmitRequest.Response.ErrorCode != OrderResponseErrorCode.SecurityPriceZero ||
+                        !_ticket.SubmitRequest.Response.ErrorMessage.Contains("The security does not have an accurate price as it has not yet received a bar of data", StringComparison.InvariantCulture))
                     {
-                        throw new Exception(
-                            $"Expected invalid order ticket with error code {nameof(OrderResponseErrorCode.OptionOrderOnStockSplit)}, " +
+                        throw new RegressionTestException(
+                            $"Expected invalid order ticket with error code {nameof(OrderResponseErrorCode.SecurityPriceZero)}, " +
                             $"but received {_ticket.SubmitRequest.Response.ErrorCode} - {_ticket.SubmitRequest.Response.ErrorMessage}");
                     }
                 }
@@ -76,7 +77,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_ticket == null)
             {
-                throw new Exception("Expected invalid order ticket with error code OptionOrderOnStockSplit, but no order was submitted");
+                throw new RegressionTestException("Expected invalid order ticket with error code OptionOrderOnStockSplit, but no order was submitted");
             }
         }
 
@@ -88,12 +89,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 6972054;
+        public long DataPoints => 67775;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -101,16 +102,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -129,6 +137,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

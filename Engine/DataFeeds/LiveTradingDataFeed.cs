@@ -55,6 +55,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private SubscriptionCollection _subscriptions;
         private IFactorFileProvider _factorFileProvider;
         private IDataChannelProvider _channelProvider;
+        // in live trading we delay scheduled universe selection between 11 & 12 hours after midnight UTC so that we allow new selection data to be piped in
+        // NY goes from -4/-5 UTC time, so:
+        // 11 UTC - 4 => 7am NY
+        // 12 UTC - 4 => 8am NY
+        private readonly TimeSpan _scheduledUniverseUtcTimeShift = TimeSpan.FromMinutes(11 * 60 + DateTime.UtcNow.Second);
         private readonly HashSet<string> _unsupportedConfigurations = new();
 
         /// <summary>
@@ -112,10 +117,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>The created <see cref="Subscription"/> if successful, null otherwise</returns>
         public override Subscription CreateSubscription(SubscriptionRequest request)
         {
-            // create and add the subscription to our collection
-            var subscription = request.IsUniverseSubscription
-                ? CreateUniverseSubscription(request)
-                : CreateDataSubscription(request);
+            Subscription subscription = null;
+            try
+            {
+                // create and add the subscription to our collection
+                subscription = request.IsUniverseSubscription
+                    ? CreateUniverseSubscription(request)
+                    : CreateDataSubscription(request);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err, $"CreateSubscription(): Failed configuration: '{request.Configuration}'");
+                // kill the algorithm, this shouldn't happen
+                _algorithm.SetRuntimeError(err, $"Failed to subscribe to {request.Configuration.Symbol}");
+            }
 
             return subscription;
         }
@@ -166,7 +181,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>The loaded <see cref="IDataQueueHandler"/></returns>
         protected virtual IDataQueueHandler GetDataQueueHandler()
         {
-            var result = new DataQueueHandlerManager();
+            var result = new DataQueueHandlerManager(_algorithm.Settings);
             result.UnsupportedConfiguration += HandleUnsupportedConfigurationEvent;
             return result;
         }
@@ -189,88 +204,93 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         {
             Subscription subscription = null;
 
-            try
+            // let's keep track of the last point we got from the file based enumerator and start our history enumeration from this point
+            // this is much more efficient since these duplicated points will be dropped by the filter righ away causing memory usage spikes
+            var lastPointTracker = new LastPointTracker();
+
+            var localStartTime = request.StartTimeUtc.ConvertFromUtc(request.Security.Exchange.TimeZone);
+            var localEndTime = request.EndTimeUtc.ConvertFromUtc(request.Security.Exchange.TimeZone);
+            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
+
+            IEnumerator<BaseData> enumerator = null;
+            if (!_channelProvider.ShouldStreamSubscription(request.Configuration))
             {
-                var localEndTime = request.EndTimeUtc.ConvertFromUtc(request.Security.Exchange.TimeZone);
-                var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
-
-                IEnumerator<BaseData> enumerator = null;
-                if (!_channelProvider.ShouldStreamSubscription(request.Configuration))
+                if (!Tiingo.IsAuthCodeSet)
                 {
-                    if (!Tiingo.IsAuthCodeSet)
-                    {
-                        // we're not using the SubscriptionDataReader, so be sure to set the auth token here
-                        Tiingo.SetAuthCode(Config.Get("tiingo-auth-token"));
-                    }
-
-                    var factory = new LiveCustomDataSubscriptionEnumeratorFactory(_timeProvider, _algorithm.ObjectStore);
-                    var enumeratorStack = factory.CreateEnumerator(request, _dataProvider);
-
-                    var enqueable = new EnqueueableEnumerator<BaseData>();
-                    _customExchange.AddEnumerator(request.Configuration.Symbol, enumeratorStack, handleData: data =>
-                    {
-                        enqueable.Enqueue(data);
-
-                        subscription?.OnNewDataAvailable();
-                    });
-
-                    enumerator = enqueable;
-                }
-                else
-                {
-                    var auxEnumerators = new List<IEnumerator<BaseData>>();
-
-                    if (LiveAuxiliaryDataEnumerator.TryCreate(request.Configuration, _timeProvider, _dataQueueHandler,
-                        request.Security.Cache, _mapFileProvider, _factorFileProvider, request.StartTimeLocal, out var auxDataEnumator))
-                    {
-                        auxEnumerators.Add(auxDataEnumator);
-                    }
-
-                    EventHandler handler = (_, _) => subscription?.OnNewDataAvailable();
-                    enumerator = Subscribe(request.Configuration, handler, IsExpired);
-
-                    if (auxEnumerators.Count > 0)
-                    {
-                        enumerator = new LiveAuxiliaryDataSynchronizingEnumerator(_timeProvider, request.Configuration.ExchangeTimeZone, enumerator, auxEnumerators);
-                    }
+                    // we're not using the SubscriptionDataReader, so be sure to set the auth token here
+                    Tiingo.SetAuthCode(Config.Get("tiingo-auth-token"));
                 }
 
-                // scale prices before 'SubscriptionFilterEnumerator' since it updates securities realtime price
-                // and before fill forwarding so we don't happen to apply twice the factor
-                if (request.Configuration.PricesShouldBeScaled(liveMode: true))
+                var factory = new LiveCustomDataSubscriptionEnumeratorFactory(_timeProvider, _algorithm.ObjectStore);
+                var enumeratorStack = factory.CreateEnumerator(request, _dataProvider);
+
+                var enqueable = new EnqueueableEnumerator<BaseData>();
+                _customExchange.AddEnumerator(request.Configuration.Symbol, enumeratorStack, handleData: data =>
                 {
-                    enumerator = new PriceScaleFactorEnumerator(
-                        enumerator,
-                        request.Configuration,
-                        _factorFileProvider,
-                        liveMode: true);
-                }
+                    enqueable.Enqueue(data);
 
-                if (request.Configuration.FillDataForward)
-                {
-                    var fillForwardResolution = _subscriptions.UpdateAndGetFillForwardResolution(request.Configuration);
+                    subscription?.OnNewDataAvailable();
+                });
 
-                    enumerator = new LiveFillForwardEnumerator(_frontierTimeProvider, enumerator, request.Security.Exchange, fillForwardResolution, request.Configuration.ExtendedMarketHours, localEndTime, request.Configuration.Increment, request.Configuration.DataTimeZone);
-                }
-
-                // make our subscriptions aware of the frontier of the data feed, prevents future data from spewing into the feed
-                enumerator = new FrontierAwareEnumerator(enumerator, _frontierTimeProvider, timeZoneOffsetProvider);
-
-                // define market hours and user filters to incoming data after the frontier enumerator so during warmup we avoid any realtime data making it's way into the securities
-                if (request.Configuration.IsFilteredSubscription)
-                {
-                    enumerator = new SubscriptionFilterEnumerator(enumerator, request.Security, localEndTime, request.Configuration.ExtendedMarketHours, true, request.ExchangeHours);
-                }
-
-                enumerator = GetWarmupEnumerator(request, enumerator);
-
-                var subscriptionDataEnumerator = new SubscriptionDataEnumerator(request.Configuration, request.Security.Exchange.Hours, timeZoneOffsetProvider, enumerator, request.IsUniverseSubscription);
-                subscription = new Subscription(request, subscriptionDataEnumerator, timeZoneOffsetProvider);
+                enumerator = enqueable;
             }
-            catch (Exception err)
+            else
             {
-                Log.Error(err);
+                var auxEnumerators = new List<IEnumerator<BaseData>>();
+
+                if (LiveAuxiliaryDataEnumerator.TryCreate(request.Configuration, _timeProvider, request.Security.Cache, _mapFileProvider,
+                    _factorFileProvider, request.StartTimeLocal, out var auxDataEnumator))
+                {
+                    auxEnumerators.Add(auxDataEnumator);
+                }
+
+                EventHandler handler = (_, _) => subscription?.OnNewDataAvailable();
+                enumerator = Subscribe(request.Configuration, handler, IsExpired);
+
+                if (auxEnumerators.Count > 0)
+                {
+                    enumerator = new LiveAuxiliaryDataSynchronizingEnumerator(_timeProvider, request.Configuration.ExchangeTimeZone, enumerator, auxEnumerators);
+                }
             }
+
+            // scale prices before 'SubscriptionFilterEnumerator' since it updates securities realtime price
+            // and before fill forwarding so we don't happen to apply twice the factor
+            if (request.Configuration.PricesShouldBeScaled(liveMode: true))
+            {
+                enumerator = new PriceScaleFactorEnumerator(
+                    enumerator,
+                    request.Configuration,
+                    _factorFileProvider,
+                    liveMode: true);
+            }
+
+            if (request.Configuration.FillDataForward)
+            {
+                var fillForwardResolution = _subscriptions.UpdateAndGetFillForwardResolution(request.Configuration);
+                // Pass the security exchange hours explicitly to avoid using the ones in the request, since
+                // those could be different. e.g. when requests are created for open interest data the exchange
+                // hours are set to always open to avoid OI data being filtered out due to the exchange being closed.
+                var useDailyStrictEndTimes = LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Configuration.Symbol, request.Configuration.Increment, request.Security.Exchange.Hours);
+
+                enumerator = new LiveFillForwardEnumerator(_frontierTimeProvider, enumerator, request.Security.Exchange, fillForwardResolution,
+                    request.Configuration.ExtendedMarketHours, localStartTime, localEndTime, request.Configuration.Resolution, request.Configuration.DataTimeZone,
+                    useDailyStrictEndTimes, request.Configuration.Type, lastPointTracker);
+            }
+
+            // make our subscriptions aware of the frontier of the data feed, prevents future data from spewing into the feed
+            enumerator = new FrontierAwareEnumerator(enumerator, _frontierTimeProvider, timeZoneOffsetProvider);
+
+            // define market hours and user filters to incoming data after the frontier enumerator so during warmup we avoid any realtime data making it's way into the securities
+            if (request.Configuration.IsFilteredSubscription)
+            {
+                enumerator = new SubscriptionFilterEnumerator(enumerator, request.Security, localEndTime, request.Configuration.ExtendedMarketHours, true, request.ExchangeHours);
+            }
+
+            enumerator = GetWarmupEnumerator(request, enumerator, lastPointTracker);
+
+            var subscriptionDataEnumerator = new SubscriptionDataEnumerator(request.Configuration, request.Security.Exchange.Hours, timeZoneOffsetProvider,
+                enumerator, request.IsUniverseSubscription, _algorithm.Settings.DailyPreciseEndTime);
+            subscription = new Subscription(request, subscriptionDataEnumerator, timeZoneOffsetProvider);
 
             return subscription;
         }
@@ -308,23 +328,26 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             var tzOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
 
             IEnumerator<BaseData> enumerator = null;
-
-            var timeTriggered = request.Universe as ITimeTriggeredUniverse;
-            if (timeTriggered != null)
+            if (request.Universe is ITimeTriggeredUniverse timeTriggered)
             {
                 Log.Trace($"LiveTradingDataFeed.CreateUniverseSubscription(): Creating user defined universe: {config.Symbol.ID}");
 
                 // spoof a tick on the requested interval to trigger the universe selection function
-                var enumeratorFactory = new TimeTriggeredUniverseSubscriptionEnumeratorFactory(timeTriggered, MarketHoursDatabase.FromDataFolder(), _frontierTimeProvider);
+                var enumeratorFactory = new TimeTriggeredUniverseSubscriptionEnumeratorFactory(timeTriggered, MarketHoursDatabase.FromDataFolder());
                 enumerator = enumeratorFactory.CreateEnumerator(request, _dataProvider);
 
                 enumerator = new FrontierAwareEnumerator(enumerator, _timeProvider, tzOffsetProvider);
-
-                var enqueueable = new EnqueueableEnumerator<BaseData>();
-                _customExchange.AddEnumerator(new EnumeratorHandler(config.Symbol, enumerator, enqueueable));
-                enumerator = enqueueable;
+                if (request.Universe is not UserDefinedUniverse)
+                {
+                    var enqueueable = new EnqueueableEnumerator<BaseData>();
+                    _customExchange.AddEnumerator(new EnumeratorHandler(config.Symbol, enumerator, enqueueable));
+                    enumerator = enqueueable;
+                }
             }
-            else if (config.Type == typeof(ETFConstituentData) || config.Type == typeof(Fundamentals))
+            else if (config.Type.IsAssignableTo(typeof(ETFConstituentUniverse)) ||
+                config.Type.IsAssignableTo(typeof(FundamentalUniverse)) ||
+                request.Universe is OptionChainUniverse ||
+                request.Universe is FuturesChainUniverse)
             {
                 Log.Trace($"LiveTradingDataFeed.CreateUniverseSubscription(): Creating {config.Type.Name} universe: {config.Symbol.ID}");
 
@@ -333,7 +356,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 var factory = new LiveCustomDataSubscriptionEnumeratorFactory(_timeProvider,
                     _algorithm.ObjectStore,
                     // we adjust time to the previous tradable date
-                    time => Time.GetStartTimeForTradeBars(request.Security.Exchange.Hours, time, Time.OneDay, 1, false, config.DataTimeZone),
+                    time => Time.GetStartTimeForTradeBars(request.Security.Exchange.Hours, time, Time.OneDay, 1, false, config.DataTimeZone, _algorithm.Settings.DailyPreciseEndTime),
                     TimeSpan.FromMinutes(10)
                 );
                 var enumeratorStack = factory.CreateEnumerator(request, _dataProvider);
@@ -351,33 +374,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     // advance time if before 23pm or after 5am and not on Saturdays
                     time => time.Hour < 23 && time.Hour > 5 && time.DayOfWeek != DayOfWeek.Saturday);
             }
-            else if (request.Universe is OptionChainUniverse)
-            {
-                Log.Trace("LiveTradingDataFeed.CreateUniverseSubscription(): Creating option chain universe: " + config.Symbol.ID);
-
-                Func<SubscriptionRequest, IEnumerator<BaseData>> configure = (subRequest) =>
-                {
-                    var fillForwardResolution = _subscriptions.UpdateAndGetFillForwardResolution(subRequest.Configuration);
-                    var input = Subscribe(subRequest.Configuration, (sender, args) => subscription?.OnNewDataAvailable(), (_) => false);
-                    return new LiveFillForwardEnumerator(_frontierTimeProvider, input, subRequest.Security.Exchange, fillForwardResolution, subRequest.Configuration.ExtendedMarketHours, localEndTime, subRequest.Configuration.Increment, subRequest.Configuration.DataTimeZone);
-                };
-
-                var symbolUniverse = GetUniverseProvider(SecurityType.Option);
-
-                var enumeratorFactory = new OptionChainUniverseSubscriptionEnumeratorFactory(configure, symbolUniverse, _timeProvider);
-                enumerator = enumeratorFactory.CreateEnumerator(request, _dataProvider);
-
-                enumerator = new FrontierAwareEnumerator(enumerator, _frontierTimeProvider, tzOffsetProvider);
-            }
-            else if (request.Universe is FuturesChainUniverse)
-            {
-                Log.Trace("LiveTradingDataFeed.CreateUniverseSubscription(): Creating futures chain universe: " + config.Symbol.ID);
-
-                var symbolUniverse = GetUniverseProvider(SecurityType.Future);
-
-                enumerator = new DataQueueFuturesChainUniverseDataCollectionEnumerator(request, symbolUniverse, _timeProvider);
-                enumerator = new FrontierAwareEnumerator(enumerator, _frontierTimeProvider, tzOffsetProvider);
-            }
             else
             {
                 Log.Trace("LiveTradingDataFeed.CreateUniverseSubscription(): Creating custom universe: " + config.Symbol.ID);
@@ -391,17 +387,17 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 enumerator = enqueueable;
             }
 
+            enumerator = AddScheduleWrapper(request, enumerator, new PredicateTimeProvider(_frontierTimeProvider, (currentUtcDateTime) => {
+                // will only let time advance after it's passed the live time shift frontier
+                return currentUtcDateTime.TimeOfDay > _scheduledUniverseUtcTimeShift;
+            }));
+
             enumerator = GetWarmupEnumerator(request, enumerator);
 
             // create the subscription
-            var subscriptionDataEnumerator = new SubscriptionDataEnumerator(request.Configuration, request.Security.Exchange.Hours, tzOffsetProvider, enumerator, request.IsUniverseSubscription);
+            var subscriptionDataEnumerator = new SubscriptionDataEnumerator(request.Configuration, request.Security.Exchange.Hours, tzOffsetProvider,
+                enumerator, request.IsUniverseSubscription, _algorithm.Settings.DailyPreciseEndTime);
             subscription = new Subscription(request, subscriptionDataEnumerator, tzOffsetProvider);
-
-            // send the subscription for the new symbol through to the data queuehandler
-            if (_channelProvider.ShouldStreamSubscription(subscription.Configuration))
-            {
-                Subscribe(request.Configuration, (sender, args) => subscription?.OnNewDataAvailable(), (_) => false);
-            }
 
             return subscription;
         }
@@ -409,7 +405,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// Build and apply the warmup enumerators when required
         /// </summary>
-        private IEnumerator<BaseData> GetWarmupEnumerator(SubscriptionRequest request, IEnumerator<BaseData> liveEnumerator)
+        private IEnumerator<BaseData> GetWarmupEnumerator(SubscriptionRequest request, IEnumerator<BaseData> liveEnumerator, LastPointTracker lastPointTracker = null)
         {
             if (_algorithm.IsWarmingUp)
             {
@@ -433,16 +429,16 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         historyWarmup = new SubscriptionRequest(warmupRequest, startTimeUtc: warmupHistoryStartDate);
                     }
 
-                    // let's keep track of the last point we got from the file based enumerator and start our history enumeration from this point
-                    // this is much more efficient since these duplicated points will be dropped by the filter righ away causing memory usage spikes
-                    var lastPointTracker = new LastPointTracker();
+                    lastPointTracker ??= new LastPointTracker();
 
                     var synchronizedWarmupEnumerator = TryAddFillForwardEnumerator(warmupRequest,
                         // we concatenate the file based and history based warmup enumerators, dropping duplicate time stamps
-                        new ConcatEnumerator(true, GetFileBasedWarmupEnumerator(warmupRequest, lastPointTracker), GetHistoryWarmupEnumerator(historyWarmup, lastPointTracker)) { CanEmitNull = false },
+                        new ConcatEnumerator(true, GetFileBasedWarmupEnumerator(warmupRequest), GetHistoryWarmupEnumerator(historyWarmup, lastPointTracker)) { CanEmitNull = false },
                         // if required by the original request, we will fill forward the Synced warmup data
                         request.Configuration.FillDataForward,
                         _algorithm.Settings.WarmupResolution);
+                    synchronizedWarmupEnumerator = ConfigureLastPointTracker(synchronizedWarmupEnumerator, lastPointTracker, isWarmUpEnumerator: true);
+                    synchronizedWarmupEnumerator = AddScheduleWrapper(warmupRequest, synchronizedWarmupEnumerator, null);
 
                     // don't let future data past. We let null pass because that's letting the next enumerator know we've ended because we always return true in live
                     synchronizedWarmupEnumerator = new FilterEnumerator<BaseData>(synchronizedWarmupEnumerator, data => data == null || data.EndTime <= warmupRequest.EndTimeLocal);
@@ -457,25 +453,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// File based warmup enumerator
         /// </summary>
-        private IEnumerator<BaseData> GetFileBasedWarmupEnumerator(SubscriptionRequest warmup, LastPointTracker lastPointTracker)
+        private IEnumerator<BaseData> GetFileBasedWarmupEnumerator(SubscriptionRequest warmup)
         {
             IEnumerator<BaseData> result = null;
             try
             {
-                result = new FilterEnumerator<BaseData>(CreateEnumerator(warmup),
-                    data =>
-                    {
-                        // don't let future data past, nor fill forward, that will be handled after merging with the history request response
-                        if (data == null || data.EndTime < warmup.EndTimeLocal && !data.IsFillForward)
-                        {
-                            if (data != null)
-                            {
-                                lastPointTracker.LastDataPoint = data;
-                            }
-                            return true;
-                        }
-                        return false;
-                    });
+                var enumerator = CreateEnumerator(warmup);
+                if (warmup.Configuration.PricesShouldBeScaled())
+                {
+                    enumerator = new PriceScaleFactorEnumerator(enumerator, warmup.Configuration, _factorFileProvider);
+                }
+                result = new FilterEnumerator<BaseData>(enumerator,
+                    // don't let future data past, nor fill forward, that will be handled after merging with the history request response
+                    data => data == null || data.EndTime < warmup.EndTimeLocal && !data.IsFillForward);
             }
             catch (Exception e)
             {
@@ -493,7 +483,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             if (warmup.IsUniverseSubscription)
             {
                 // we ignore the fill forward time span argument because we will fill forwared the concatenated file and history based enumerators next in the stack
-                result = CreateUniverseEnumerator(warmup, createUnderlyingEnumerator: (req, _) => GetHistoryWarmupEnumerator(req, lastPointTracker));
+                result = CreateUniverseEnumerator(warmup);
             }
             else
             {
@@ -504,8 +494,15 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     var startTimeUtc = warmup.StartTimeUtc;
                     if (lastPointTracker != null && lastPointTracker.LastDataPoint != null)
                     {
-                        var utcLastPointTime = lastPointTracker.LastDataPoint.Time.ConvertToUtc(warmup.ExchangeHours.TimeZone);
-                        if(utcLastPointTime > startTimeUtc)
+                        var lastPointExchangeTime = lastPointTracker.LastDataPoint.Time;
+                        if (warmup.Configuration.Resolution == Resolution.Daily)
+                        {
+                            // time could be 9.30 for example using strict daily end times, but we just want the date in this case
+                            lastPointExchangeTime = lastPointExchangeTime.Date;
+                        }
+
+                        var utcLastPointTime = lastPointExchangeTime.ConvertToUtc(warmup.ExchangeHours.TimeZone);
+                        if (utcLastPointTime > startTimeUtc)
                         {
                             if (Log.DebuggingEnabled)
                             {
@@ -598,11 +595,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 EnumeratorFinished += (_, _) => enqueueable.Stop();
             }
-        }
-
-        private class LastPointTracker
-        {
-            public BaseData LastDataPoint { get; set; }
         }
     }
 }

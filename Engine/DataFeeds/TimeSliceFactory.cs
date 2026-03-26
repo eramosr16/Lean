@@ -22,6 +22,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using QuantConnect.Data.UniverseSelection;
+using System.Linq;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -265,7 +266,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         }
 
                         // special handling of options data to build the option chain
-                        if (symbol.SecurityType.IsOption())
+                        if (symbol.SecurityType.IsOption() && baseData.Symbol.SecurityType.IsOption())
                         {
                             // internal feeds, like open interest, will not create the chain but will update it if it exists
                             // this is because the open interest could arrive at some closed market hours in which there is no other data and we don't
@@ -275,32 +276,40 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                                 optionChains = new OptionChains(algorithmTime);
                             }
 
-                            if (baseData.DataType == MarketDataType.OptionChain)
+                            if (optionChains != null)
                             {
-                                optionChains[baseData.Symbol] = (OptionChain)baseData;
-                            }
-                            else if (optionChains != null && !HandleOptionData(algorithmTime, baseData, optionChains, packet.Security, sliceFuture, optionUnderlyingUpdates))
-                            {
-                                continue;
+                                if (baseData.DataType == MarketDataType.OptionChain)
+                                {
+                                    optionChains[baseData.Symbol] = (OptionChain)baseData;
+                                }
+                                else if (!HandleOptionData(algorithmTime, baseData, optionChains, packet.Security, sliceFuture, optionUnderlyingUpdates))
+                                {
+                                    continue;
+                                }
                             }
                         }
 
                         // special handling of futures data to build the futures chain. Don't push canonical continuous contract
                         // We don't push internal feeds because it could be a continuous mapping future not part of the requested chain
-                        if (symbol.SecurityType == SecurityType.Future && !symbol.IsCanonical() && !packet.Configuration.IsInternalFeed)
+                        if (symbol.SecurityType == SecurityType.Future && !symbol.IsCanonical() && baseData.Symbol.SecurityType == SecurityType.Future)
                         {
-                            if (futuresChains == null)
+                            if (futuresChains == null && !packet.Configuration.IsInternalFeed)
                             {
                                 futuresChains = new FuturesChains(algorithmTime);
                             }
-                            if (baseData.DataType == MarketDataType.FuturesChain)
+
+                            if (futuresChains != null)
                             {
-                                futuresChains[baseData.Symbol] = (FuturesChain)baseData;
+                                if (baseData.DataType == MarketDataType.FuturesChain)
+                                {
+                                    futuresChains[baseData.Symbol] = (FuturesChain)baseData;
+                                }
+                                else if (!HandleFuturesData(algorithmTime, baseData, futuresChains, packet.Security, packet.Configuration))
+                                {
+                                    continue;
+                                }
                             }
-                            else if (futuresChains != null && !HandleFuturesData(algorithmTime, baseData, futuresChains, packet.Security))
-                            {
-                                continue;
-                            }
+
                         }
 
                         // this is the data used set market prices
@@ -315,10 +324,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             optionUnderlyingUpdates[symbol] = baseData;
                         }
                     }
-                    else if (!packet.Configuration.IsInternalFeed)
+                    // We emit aux data for non internal subscriptions only, except for delistings which are required in case
+                    // of holdings in the algorithm that may require liquidation, or just for marking the security as delisted and not tradable
+                    else if ((delisting = baseData as Delisting) != null || !packet.Configuration.IsInternalFeed)
                     {
                         // include checks for various aux types so we don't have to construct the dictionaries in Slice
-                        if ((delisting = baseData as Delisting) != null)
+                        if (delisting != null)
                         {
                             if (delistings == null)
                             {
@@ -451,21 +462,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 {
                     foreach (var addedContract in chain.Contracts)
                     {
-                        addedContract.Value.UnderlyingLastPrice = chain.Underlying.Price;
+                        addedContract.Value.Update(chain.Underlying);
                     }
                 }
-                foreach (var contractSymbol in universeData.FilteredContracts)
+                foreach (var contractSymbol in universeData.FilteredContracts ?? Enumerable.Empty<Symbol>())
                 {
                     chain.FilteredContracts.Add(contractSymbol);
                 }
                 return false;
             }
 
-            OptionContract contract;
-            if (!chain.Contracts.TryGetValue(baseData.Symbol, out contract))
+            if (!chain.Contracts.TryGetValue(baseData.Symbol, out var contract))
             {
-                contract = OptionContract.Create(baseData, security, chain.Underlying.Price);
-
+                contract = OptionContract.Create(baseData, security, chain.Underlying);
                 chain.Contracts[baseData.Symbol] = contract;
 
                 if (option != null)
@@ -474,36 +483,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 }
             }
 
-            // populate ticks and tradebars dictionaries with no aux data
-            switch (baseData.DataType)
-            {
-                case MarketDataType.Tick:
-                    var tick = (Tick)baseData;
-                    chain.Ticks.Add(tick.Symbol, tick);
-                    UpdateContract(contract, tick);
-                    break;
+            contract.Update(baseData);
+            chain.AddData(baseData);
 
-                case MarketDataType.TradeBar:
-                    var tradeBar = (TradeBar)baseData;
-                    chain.TradeBars[symbol] = tradeBar;
-                    UpdateContract(contract, tradeBar);
-                    break;
-
-                case MarketDataType.QuoteBar:
-                    var quote = (QuoteBar)baseData;
-                    chain.QuoteBars[symbol] = quote;
-                    UpdateContract(contract, quote);
-                    break;
-
-                case MarketDataType.Base:
-                    chain.AddAuxData(baseData);
-                    break;
-            }
             return true;
         }
 
 
-        private bool HandleFuturesData(DateTime algorithmTime, BaseData baseData, FuturesChains futuresChains, ISecurityPrice security)
+        private bool HandleFuturesData(DateTime algorithmTime, BaseData baseData, FuturesChains futuresChains, ISecurityPrice security, SubscriptionDataConfig configuration)
         {
             var symbol = baseData.Symbol;
 
@@ -511,6 +498,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             var canonical = symbol.Canonical;
             if (!futuresChains.TryGetValue(canonical, out chain))
             {
+                // We don't create a chain for internal feeds, this data might belong to a continuous mapping future
+                if (configuration.IsInternalFeed)
+                {
+                    return false;
+                }
+
                 chain = new FuturesChain(canonical, algorithmTime);
                 futuresChains[canonical] = chain;
             }
@@ -518,155 +511,29 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             var universeData = baseData as BaseDataCollection;
             if (universeData != null)
             {
-                foreach (var contractSymbol in universeData.FilteredContracts)
+                foreach (var contractSymbol in universeData.FilteredContracts ?? Enumerable.Empty<Symbol>())
                 {
                     chain.FilteredContracts.Add(contractSymbol);
                 }
                 return false;
             }
 
-            FuturesContract contract;
-            if (!chain.Contracts.TryGetValue(baseData.Symbol, out contract))
+            if (!chain.Contracts.TryGetValue(baseData.Symbol, out var contract))
             {
-                var underlyingSymbol = baseData.Symbol.Underlying;
-                contract = new FuturesContract(baseData.Symbol, underlyingSymbol)
+                // We don't create a contract for internal feeds, this data might belong to a continuous mapping future
+                if (configuration.IsInternalFeed)
                 {
-                    Time = baseData.EndTime,
-                    LastPrice = security.Close,
-                    Volume = (long)security.Volume,
-                    BidPrice = security.BidPrice,
-                    BidSize = (long)security.BidSize,
-                    AskPrice = security.AskPrice,
-                    AskSize = (long)security.AskSize,
-                    OpenInterest = security.OpenInterest
-                };
+                    return false;
+                }
+
+                contract = new FuturesContract(baseData.Symbol);
                 chain.Contracts[baseData.Symbol] = contract;
             }
 
-            // populate ticks and tradebars dictionaries with no aux data
-            switch (baseData.DataType)
-            {
-                case MarketDataType.Tick:
-                    var tick = (Tick)baseData;
-                    chain.Ticks.Add(tick.Symbol, tick);
-                    UpdateContract(contract, tick);
-                    break;
+            contract.Update(baseData);
+            chain.AddData(baseData);
 
-                case MarketDataType.TradeBar:
-                    var tradeBar = (TradeBar)baseData;
-                    chain.TradeBars[symbol] = tradeBar;
-                    UpdateContract(contract, tradeBar);
-                    break;
-
-                case MarketDataType.QuoteBar:
-                    var quote = (QuoteBar)baseData;
-                    chain.QuoteBars[symbol] = quote;
-                    UpdateContract(contract, quote);
-                    break;
-
-                case MarketDataType.Base:
-                    chain.AddAuxData(baseData);
-                    break;
-            }
             return true;
-        }
-
-        private static void UpdateContract(OptionContract contract, QuoteBar quote)
-        {
-            if (quote.Ask != null && quote.Ask.Close != 0m)
-            {
-                contract.AskPrice = quote.Ask.Close;
-                contract.AskSize = (long)quote.LastAskSize;
-            }
-            if (quote.Bid != null && quote.Bid.Close != 0m)
-            {
-                contract.BidPrice = quote.Bid.Close;
-                contract.BidSize = (long)quote.LastBidSize;
-            }
-        }
-
-        private static void UpdateContract(OptionContract contract, Tick tick)
-        {
-            if (tick.TickType == TickType.Trade)
-            {
-                contract.LastPrice = tick.Price;
-            }
-            else if (tick.TickType == TickType.Quote)
-            {
-                if (tick.AskPrice != 0m)
-                {
-                    contract.AskPrice = tick.AskPrice;
-                    contract.AskSize = (long)tick.AskSize;
-                }
-                if (tick.BidPrice != 0m)
-                {
-                    contract.BidPrice = tick.BidPrice;
-                    contract.BidSize = (long)tick.BidSize;
-                }
-            }
-            else if (tick.TickType == TickType.OpenInterest)
-            {
-                if (tick.Value != 0m)
-                {
-                    contract.OpenInterest = tick.Value;
-                }
-            }
-        }
-
-        private static void UpdateContract(OptionContract contract, TradeBar tradeBar)
-        {
-            if (tradeBar.Close == 0m) return;
-            contract.LastPrice = tradeBar.Close;
-            contract.Volume = (long)tradeBar.Volume;
-        }
-
-        private static void UpdateContract(FuturesContract contract, QuoteBar quote)
-        {
-            if (quote.Ask != null && quote.Ask.Close != 0m)
-            {
-                contract.AskPrice = quote.Ask.Close;
-                contract.AskSize = (long)quote.LastAskSize;
-            }
-            if (quote.Bid != null && quote.Bid.Close != 0m)
-            {
-                contract.BidPrice = quote.Bid.Close;
-                contract.BidSize = (long)quote.LastBidSize;
-            }
-        }
-
-        private static void UpdateContract(FuturesContract contract, Tick tick)
-        {
-            if (tick.TickType == TickType.Trade)
-            {
-                contract.LastPrice = tick.Price;
-            }
-            else if (tick.TickType == TickType.Quote)
-            {
-                if (tick.AskPrice != 0m)
-                {
-                    contract.AskPrice = tick.AskPrice;
-                    contract.AskSize = (long)tick.AskSize;
-                }
-                if (tick.BidPrice != 0m)
-                {
-                    contract.BidPrice = tick.BidPrice;
-                    contract.BidSize = (long)tick.BidSize;
-                }
-            }
-            else if (tick.TickType == TickType.OpenInterest)
-            {
-                if (tick.Value != 0m)
-                {
-                    contract.OpenInterest = tick.Value;
-                }
-            }
-        }
-
-        private static void UpdateContract(FuturesContract contract, TradeBar tradeBar)
-        {
-            if (tradeBar.Close == 0m) return;
-            contract.LastPrice = tradeBar.Close;
-            contract.Volume = (long)tradeBar.Volume;
         }
     }
 }

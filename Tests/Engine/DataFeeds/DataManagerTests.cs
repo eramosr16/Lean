@@ -48,7 +48,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 SymbolPropertiesDatabase.FromDataFolder(),
                 _algorithm,
                 new RegisteredSecurityDataTypesProvider(),
-                new SecurityCacheProvider(_algorithm.Portfolio));
+                new SecurityCacheProvider(_algorithm.Portfolio),
+                algorithm: _algorithm);
         }
 
         [Test]
@@ -59,7 +60,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 new UniverseSelection(_algorithm,
                     _securityService,
                     dataPermissionManager,
-                    new DefaultDataProvider()),
+                    TestGlobals.DataProvider),
                 _algorithm,
                 _algorithm.TimeKeeper,
                 MarketHoursDatabase.AlwaysOpen,
@@ -105,7 +106,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 new UniverseSelection(_algorithm,
                     _securityService,
                     dataPermissionManager,
-                    new DefaultDataProvider()),
+                    TestGlobals.DataProvider),
                 _algorithm,
                 _algorithm.TimeKeeper,
                 MarketHoursDatabase.AlwaysOpen,
@@ -141,8 +142,9 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 new DateTime(2019, 1, 1),
                 new DateTime(2019, 1, 1));
 
+            using var enquableEnumerator = new EnqueueableEnumerator<SubscriptionData>();
             dataFeed.Subscription = new Subscription(request,
-                new EnqueueableEnumerator<SubscriptionData>(),
+                enquableEnumerator,
                 null);
 
             Assert.IsTrue(dataManager.AddSubscription(request));
@@ -162,7 +164,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 new UniverseSelection(_algorithm,
                     _securityService,
                     dataPermissionManager,
-                    new DefaultDataProvider()),
+                    TestGlobals.DataProvider),
                 _algorithm,
                 _algorithm.TimeKeeper,
                 MarketHoursDatabase.AlwaysOpen,
@@ -195,8 +197,9 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 new DateTime(2019, 1, 1),
                 new DateTime(2019, 1, 1));
 
+            using var enquableEnumerator = new EnqueueableEnumerator<SubscriptionData>();
             dataFeed.Subscription = new Subscription(request,
-                new EnqueueableEnumerator<SubscriptionData>(),
+                enquableEnumerator,
                 null);
 
             // Universe A: adds the subscription
@@ -227,7 +230,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 new UniverseSelection(_algorithm,
                     _securityService,
                     dataPermissionManager,
-                    new DefaultDataProvider()),
+                    TestGlobals.DataProvider),
                 _algorithm,
                 _algorithm.TimeKeeper,
                 MarketHoursDatabase.AlwaysOpen,
@@ -306,8 +309,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             {
                 UniverseSettings = universeSettings;
             }
-
-            public override UniverseSettings UniverseSettings { get; }
             public override IEnumerable<Symbol> SelectSymbols(DateTime utcTime, BaseDataCollection data)
             {
                 throw new NotImplementedException();

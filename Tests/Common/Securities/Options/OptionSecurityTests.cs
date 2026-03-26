@@ -20,6 +20,7 @@ using NUnit.Framework;
 using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Tests.Common.Securities.Options
 {
@@ -86,7 +87,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters(
                 algorithmName,
                 new Dictionary<string, string> {
-                    {"Total Trades", "0"},
+                    {PerformanceMetrics.TotalOrders, "0"},
                     {"Average Win", "0%"},
                     {"Average Loss", "0%"},
                     {"Compounding Annual Return", "0%"},
@@ -117,7 +118,7 @@ namespace QuantConnect.Tests.Common.Securities.Options
                 parameter.ExpectedFinalStatus,
                 returnLogs: true);
 
-            Assert.IsTrue(result.Logs.Any(message => message.Contains("Debug: Warning: Security ") &&
+            Assert.IsTrue(result.Logs.Any(message => message.Contains("Warning: Security ") &&
                 message.EndsWith("To avoid this, consider using a security initializer to set the right models to each security type according to your algorithm's requirements.")));
         }
     }

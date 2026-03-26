@@ -195,10 +195,17 @@ namespace QuantConnect.Brokerages
             switch (brokerage)
             {
                 case BrokerageName.Default:
+                case BrokerageName.TerminalLink:
                     return new DefaultBrokerageModel(accountType);
+
+                case BrokerageName.Alpaca:
+                    return new AlpacaBrokerageModel();
 
                 case BrokerageName.InteractiveBrokersBrokerage:
                     return new InteractiveBrokersBrokerageModel(accountType);
+
+                case BrokerageName.InteractiveBrokersFix:
+                    return new InteractiveBrokersFixModel(accountType);
 
                 case BrokerageName.TradierBrokerage:
                     return new TradierBrokerageModel(accountType);
@@ -226,6 +233,9 @@ namespace QuantConnect.Brokerages
 
                 case BrokerageName.GDAX:
                     return new GDAXBrokerageModel(accountType);
+
+                case BrokerageName.Coinbase:
+                    return new CoinbaseBrokerageModel(accountType);
 
                 case BrokerageName.AlphaStreams:
                     return new AlphaStreamsBrokerageModel(accountType);
@@ -269,6 +279,18 @@ namespace QuantConnect.Brokerages
                 case BrokerageName.Eze:
                     return new EzeBrokerageModel(accountType);
 
+                case BrokerageName.TradeStation:
+                    return new TradeStationBrokerageModel(accountType);
+
+                case BrokerageName.CharlesSchwab:
+                    return new CharlesSchwabBrokerageModel(accountType);
+
+                case BrokerageName.Tastytrade:
+                    return new TastytradeBrokerageModel(accountType);
+
+                case BrokerageName.DYDX:
+                    return new dYdXBrokerageModel(accountType);
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(brokerage), brokerage, null);
             }
@@ -291,6 +313,9 @@ namespace QuantConnect.Brokerages
             // Case order matters to ensure we get the correct brokerage name from the inheritance chain
             switch (model)
             {
+                case AlpacaBrokerageModel:
+                    return BrokerageName.Alpaca;
+
                 case InteractiveBrokersBrokerageModel _:
                     return BrokerageName.InteractiveBrokersBrokerage;
 
@@ -314,6 +339,9 @@ namespace QuantConnect.Brokerages
 
                 case GDAXBrokerageModel _:
                     return BrokerageName.GDAX;
+
+                case CoinbaseBrokerageModel _:
+                    return BrokerageName.Coinbase;
 
                 case AlphaStreamsBrokerageModel _:
                     return BrokerageName.AlphaStreams;
@@ -356,6 +384,15 @@ namespace QuantConnect.Brokerages
 
                 case EzeBrokerageModel _:
                     return BrokerageName.Eze;
+
+                case TradeStationBrokerageModel _:
+                    return BrokerageName.TradeStation;
+
+                case CharlesSchwabBrokerageModel:
+                    return BrokerageName.CharlesSchwab;
+
+                case TastytradeBrokerageModel:
+                    return BrokerageName.Tastytrade;
 
                 case DefaultBrokerageModel _:
                     return BrokerageName.Default;

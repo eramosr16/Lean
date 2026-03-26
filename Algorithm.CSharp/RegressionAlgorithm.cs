@@ -29,7 +29,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void Initialize()
         {
             SetStartDate(2013, 10, 07);
-            SetEndDate(2013, 10, 11);
+            SetEndDate(2013, 10, 08);
 
             SetCash(10000000);
 
@@ -42,17 +42,17 @@ namespace QuantConnect.Algorithm.CSharp
 
         private DateTime lastTradeTradeBars;
         private TimeSpan tradeEvery = TimeSpan.FromMinutes(1);
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (Time - lastTradeTradeBars < tradeEvery) return;
             lastTradeTradeBars = Time;
 
-            foreach (var kvp in data.Bars)
+            foreach (var kvp in slice.Bars)
             {
                 var symbol = kvp.Key;
                 var bar = kvp.Value;
 
-                if (bar.Time.RoundDown(bar.Period) != bar.Time)
+                if (bar.IsFillForward)
                 {
                     // only trade on new data
                     continue;
@@ -78,12 +78,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 16896626;
+        public long DataPoints => 6879791;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -91,35 +91,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1587"},
-            {"Average Win", "0.00%"},
-            {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "-1.257%"},
-            {"Drawdown", "0.000%"},
-            {"Expectancy", "-0.989"},
-            {"Net Profit", "-0.016%"},
-            {"Sharpe Ratio", "-18.139"},
-            {"Sortino Ratio", "-18.139"},
-            {"Probabilistic Sharpe Ratio", "0.000%"},
-            {"Loss Rate", "100%"},
+            {"Total Orders", "119"},
+            {"Average Win", "0%"},
+            {"Average Loss", "0%"},
+            {"Compounding Annual Return", "0%"},
+            {"Drawdown", "0%"},
+            {"Expectancy", "0"},
+            {"Start Equity", "10000000"},
+            {"End Equity", "9999850.26"},
+            {"Net Profit", "0%"},
+            {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
+            {"Probabilistic Sharpe Ratio", "0%"},
+            {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
-            {"Profit-Loss Ratio", "1.81"},
-            {"Alpha", "-0.015"},
-            {"Beta", "-0.001"},
-            {"Annual Standard Deviation", "0.001"},
+            {"Profit-Loss Ratio", "0"},
+            {"Alpha", "0"},
+            {"Beta", "0"},
+            {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-8.944"},
-            {"Tracking Error", "0.223"},
-            {"Treynor Ratio", "27.031"},
-            {"Total Fees", "$1587.00"},
-            {"Estimated Strategy Capacity", "$64000.00"},
-            {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Portfolio Turnover", "1.86%"},
-            {"OrderListHash", "2eabc44b80b0e62ef5789586f781a6ba"}
+            {"Information Ratio", "0"},
+            {"Tracking Error", "0"},
+            {"Treynor Ratio", "0"},
+            {"Total Fees", "$119.00"},
+            {"Estimated Strategy Capacity", "$26000000.00"},
+            {"Lowest Capacity Asset", "AIG R735QTJ8XC9X"},
+            {"Portfolio Turnover", "0.08%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "8ac2506392feb9423f1a970846e70982"}
         };
     }
 }

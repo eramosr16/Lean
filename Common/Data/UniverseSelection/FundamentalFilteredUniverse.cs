@@ -28,7 +28,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <summary>
         /// The universe that will be used for fine universe selection
         /// </summary>
-        public FundamentalUniverse FundamentalUniverse { get; private set; }
+        public FundamentalUniverseFactory FundamentalUniverse { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FundamentalFilteredUniverse"/> class
@@ -38,7 +38,7 @@ namespace QuantConnect.Data.UniverseSelection
         public FundamentalFilteredUniverse(Universe universe, Func<IEnumerable<Fundamental.Fundamental>, IEnumerable<Symbol>> fundamentalSelector)
             : base(universe, universe.SelectSymbols)
         {
-            FundamentalUniverse = new FundamentalUniverse(universe.UniverseSettings, fundamentalSelector);
+            FundamentalUniverse = Fundamental.FundamentalUniverse.USA(fundamentalSelector, universe.UniverseSettings);
             FundamentalUniverse.SelectionChanged += (sender, args) => OnSelectionChanged(((SelectionEventArgs)args).CurrentSelection);
         }
 
@@ -50,8 +50,8 @@ namespace QuantConnect.Data.UniverseSelection
         public FundamentalFilteredUniverse(Universe universe, PyObject fundamentalSelector)
             : base(universe, universe.SelectSymbols)
         {
-            var func = fundamentalSelector.ConvertToDelegate<Func<IEnumerable<Fundamental.Fundamental>, object>>();
-            FundamentalUniverse = new FundamentalUniverse(universe.UniverseSettings, func.ConvertToUniverseSelectionSymbolDelegate());
+            var func = fundamentalSelector.SafeAs<Func<IEnumerable<Fundamental.Fundamental>, object>>();
+            FundamentalUniverse = Fundamental.FundamentalUniverse.USA(func.ConvertToUniverseSelectionSymbolDelegate(), universe.UniverseSettings);
             FundamentalUniverse.SelectionChanged += (sender, args) => OnSelectionChanged(((SelectionEventArgs)args).CurrentSelection);
         }
     }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -17,6 +17,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Python.Runtime;
 using QuantConnect.Interfaces;
+using QuantConnect.Python;
 using QuantConnect.Securities;
 
 namespace QuantConnect.Data.UniverseSelection
@@ -26,7 +27,7 @@ namespace QuantConnect.Data.UniverseSelection
     /// </summary>
     public class UniversePythonWrapper : Universe
     {
-        private readonly dynamic _universe;
+        private readonly BasePythonWrapper<Universe> _model;
 
         /// <summary>
         /// Gets the settings used for subscriptions added for this universe
@@ -35,10 +36,11 @@ namespace QuantConnect.Data.UniverseSelection
         {
             get
             {
-                using (Py.GIL())
-                {
-                    return _universe.UniverseSettings;
-                }
+                return _model.GetProperty<UniverseSettings>(nameof(UniverseSettings));
+            }
+            set
+            {
+                _model.SetProperty(nameof(UniverseSettings), value);
             }
         }
 
@@ -49,17 +51,11 @@ namespace QuantConnect.Data.UniverseSelection
         {
             get
             {
-                using (Py.GIL())
-                {
-                    return _universe.DisposeRequested;
-                }
+                return _model.GetProperty<bool>(nameof(DisposeRequested));
             }
             protected set
             {
-                using (Py.GIL())
-                {
-                    _universe.DisposeRequested = value;
-                }
+                _model.SetProperty(nameof(DisposeRequested), value);
             }
         }
 
@@ -70,10 +66,7 @@ namespace QuantConnect.Data.UniverseSelection
         {
             get
             {
-                using (Py.GIL())
-                {
-                    return _universe.Configuration;
-                }
+                return _model.GetProperty<SubscriptionDataConfig>(nameof(Configuration));
             }
         }
 
@@ -84,10 +77,7 @@ namespace QuantConnect.Data.UniverseSelection
         {
             get
             {
-                using (Py.GIL())
-                {
-                    return _universe.Securities;
-                }
+                return _model.GetProperty<ConcurrentDictionary<Symbol, Member>>(nameof(Securities));
             }
         }
 
@@ -96,7 +86,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// </summary>
         public UniversePythonWrapper(PyObject universe) : base(null)
         {
-            _universe = universe;
+            _model = new BasePythonWrapper<Universe>(universe, false);
         }
 
         /// <summary>
@@ -107,17 +97,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <returns>The data that passes the filter</returns>
         public override IEnumerable<Symbol> SelectSymbols(DateTime utcTime, BaseDataCollection data)
         {
-            using (Py.GIL())
-            {
-                var symbols = _universe.SelectSymbols(utcTime, data) as PyObject;
-                var iterator = symbols.GetIterator();
-                foreach (PyObject symbol in iterator)
-                {
-                    yield return symbol.GetAndDispose<Symbol>();
-                }
-                iterator.Dispose();
-                symbols.Dispose();
-            }
+            return _model.InvokeMethodAndEnumerate<Symbol>(nameof(SelectSymbols), utcTime, data);
         }
 
         /// <summary>
@@ -131,17 +111,11 @@ namespace QuantConnect.Data.UniverseSelection
         public override IEnumerable<SubscriptionRequest> GetSubscriptionRequests(Security security, DateTime currentTimeUtc, DateTime maximumEndTimeUtc,
             ISubscriptionDataConfigService subscriptionService)
         {
-            using (Py.GIL())
+            var requests = _model.InvokeMethodAndEnumerate<SubscriptionRequest>(nameof(GetSubscriptionRequests), security, currentTimeUtc,
+                maximumEndTimeUtc, subscriptionService);
+            foreach (var subscriptionRequest in requests)
             {
-                var subscriptionRequests = _universe.GetSubscriptionRequests(security, currentTimeUtc, maximumEndTimeUtc, subscriptionService) as PyObject;
-                var iterator = subscriptionRequests.GetIterator();
-                foreach (PyObject request in iterator)
-                {
-                    var subscriptionRequest = request.GetAndDispose<SubscriptionRequest>();
-                    yield return new SubscriptionRequest(subscriptionRequest, universe:this);
-                }
-                iterator.Dispose();
-                subscriptionRequests.Dispose();
+                yield return new SubscriptionRequest(subscriptionRequest, universe: this);
             }
         }
     }

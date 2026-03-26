@@ -34,20 +34,32 @@ namespace QuantConnect.Python
         /// <param name="model">The model implementing the interface type</param>
         public static PyObject ValidateImplementationOf<TInterface>(this PyObject model)
         {
-            if (!typeof(TInterface).IsInterface)
-            {
-                throw new ArgumentException(
-                    $"{nameof(PythonWrapper)}.{nameof(ValidateImplementationOf)}(): {Messages.PythonWrapper.ExpectedInterfaceTypeParameter}");
-            }
-
+            var notInterface = !typeof(TInterface).IsInterface;
             var missingMembers = new List<string>();
             var members = typeof(TInterface).GetMembers(BindingFlags.Public | BindingFlags.Instance);
             using (Py.GIL())
             {
                 foreach (var member in members)
                 {
-                    if (!model.HasAttr(member.Name))
+                    var method = member as MethodInfo;
+                    if ((method == null || !method.IsSpecialName) &&
+                        !model.HasAttr(member.Name) && !model.HasAttr(member.Name.ToSnakeCase()))
                     {
+                        if (notInterface)
+                        {
+                            if (method != null && !method.IsAbstract && (method.IsFinal || !method.IsVirtual || method.DeclaringType != typeof(TInterface)))
+                            {
+                                continue;
+                            }
+                            else if (member is ConstructorInfo)
+                            {
+                                continue;
+                            }
+                            else if (member.Name is "ToString")
+                            {
+                                continue;
+                            }
+                        }
                         missingMembers.Add(member.Name);
                     }
                 }
@@ -60,6 +72,65 @@ namespace QuantConnect.Python
             }
 
             return model;
+        }
+
+        /// <summary>
+        /// Invokes the specified method on the provided <see cref="PyObject"/> instance with the specified arguments
+        /// </summary>
+        /// <param name="model">The <see cref="PyObject"/> instance</param>
+        /// <param name="methodName">The name of the method to invoke</param>
+        /// <param name="args">The arguments to call the method with</param>
+        /// <returns>The return value of the called method converted into the <typeparamref name="T"/> type</returns>
+        public static T InvokeMethod<T>(this PyObject model, string methodName, params object[] args)
+        {
+            using var _ = Py.GIL();
+            return InvokeMethodImpl(model, methodName, args).GetAndDispose<T>();
+        }
+
+        /// <summary>
+        /// Invokes the specified method on the provided <see cref="PyObject"/> instance with the specified arguments
+        /// </summary>
+        /// <param name="model">The <see cref="PyObject"/> instance</param>
+        /// <param name="methodName">The name of the method to invoke</param>
+        /// <param name="args">The arguments to call the method with</param>
+        public static void InvokeMethod(this PyObject model, string methodName, params object[] args)
+        {
+            InvokeMethodImpl(model, methodName, args);
+        }
+
+        /// <summary>
+        /// Invokes the given <see cref="PyObject"/> method with the specified arguments
+        /// </summary>
+        /// <param name="method">The method to invoke</param>
+        /// <param name="args">The arguments to call the method with</param>
+        /// <returns>The return value of the called method converted into the <typeparamref name="T"/> type</returns>
+        public static T Invoke<T>(this PyObject method, params object[] args)
+        {
+            using var _ = Py.GIL();
+            return InvokeMethodImpl(method, args).GetAndDispose<T>();
+        }
+
+        /// <summary>
+        /// Invokes the given <see cref="PyObject"/> method with the specified arguments
+        /// </summary>
+        /// <param name="method">The method to invoke</param>
+        /// <param name="args">The arguments to call the method with</param>
+        public static PyObject Invoke(this PyObject method, params object[] args)
+        {
+            return InvokeMethodImpl(method, args);
+        }
+
+        private static PyObject InvokeMethodImpl(PyObject model, string methodName, params object[] args)
+        {
+            using var _ = Py.GIL();
+            PyObject method = model.GetMethod(methodName);
+            return InvokeMethodImpl(method, args);
+        }
+
+        private static PyObject InvokeMethodImpl(PyObject method, params object[] args)
+        {
+            using var _ = Py.GIL();
+            return method.Invoke(args.Select(arg => arg.ToPython()).ToArray());
         }
     }
 }

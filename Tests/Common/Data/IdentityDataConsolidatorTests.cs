@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  * 
@@ -17,11 +17,12 @@ using System;
 using NUnit.Framework;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
+using QuantConnect.Indicators;
 
 namespace QuantConnect.Tests.Common.Data
 {
     [TestFixture]
-    public class IdentityDataConsolidatorTests
+    public class IdentityDataConsolidatorTests: BaseConsolidatorTests
     {
         [Test]
         public void ThrowsOnDataOfWrongType()
@@ -36,7 +37,7 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void ReturnsTheSameObjectReference()
         {
-            var identity = new IdentityDataConsolidator<Tick>();
+            using var identity = new IdentityDataConsolidator<Tick>();
 
             var tick = new Tick();
 
@@ -55,7 +56,7 @@ namespace QuantConnect.Tests.Common.Data
         public void IgnoresNonTickDataWithSameTimestamps()
         {
             var reference = new DateTime(2015, 09, 23);
-            var identity = new IdentityDataConsolidator<TradeBar>();
+            using var identity = new IdentityDataConsolidator<TradeBar>();
 
             int count = 0;
             identity.DataConsolidated += (sender, data) =>
@@ -76,7 +77,7 @@ namespace QuantConnect.Tests.Common.Data
         public void AcceptsTickDataWithSameTimestamps()
         {
             var reference = new DateTime(2015, 09, 23);
-            var identity = new IdentityDataConsolidator<Tick>();
+            using var identity = new IdentityDataConsolidator<Tick>();
 
             int count = 0;
             identity.DataConsolidated += (sender, data) =>
@@ -91,6 +92,11 @@ namespace QuantConnect.Tests.Common.Data
             identity.Update(tradeBar);
 
             Assert.AreEqual(2, count);
+        }
+
+        protected override IDataConsolidator CreateConsolidator()
+        {
+            return new IdentityDataConsolidator<IndicatorDataPoint>();
         }
     }
 }

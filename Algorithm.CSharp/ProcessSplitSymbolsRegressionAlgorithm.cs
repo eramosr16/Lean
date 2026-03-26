@@ -47,9 +47,9 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
-            if (data.Time == new DateTime(2014, 06, 06))
+            if (slice.Time == new DateTime(2014, 06, 06))
             {
                 RemoveSecurity(_aapl.Symbol);
             }
@@ -68,12 +68,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 36;
+        public long DataPoints => 35;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -81,35 +81,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "808.402%"},
-            {"Drawdown", "0%"},
+            {"Compounding Annual Return", "76.334%"},
+            {"Drawdown", "0.300%"},
             {"Expectancy", "0"},
-            {"Net Profit", "3.069%"},
-            {"Sharpe Ratio", "19.483"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100727.83"},
+            {"Net Profit", "0.728%"},
+            {"Sharpe Ratio", "6.14"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "100.000%"},
+            {"Probabilistic Sharpe Ratio", "71.723%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "1.289"},
-            {"Beta", "0.537"},
-            {"Annual Standard Deviation", "0.078"},
-            {"Annual Variance", "0.006"},
-            {"Information Ratio", "14.15"},
-            {"Tracking Error", "0.077"},
-            {"Treynor Ratio", "2.823"},
+            {"Alpha", "1.02"},
+            {"Beta", "-1.043"},
+            {"Annual Standard Deviation", "0.094"},
+            {"Annual Variance", "0.009"},
+            {"Information Ratio", "1.332"},
+            {"Tracking Error", "0.114"},
+            {"Treynor Ratio", "-0.553"},
             {"Total Fees", "$1.00"},
-            {"Estimated Strategy Capacity", "$37000000.00"},
+            {"Estimated Strategy Capacity", "$46000000.00"},
             {"Lowest Capacity Asset", "GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "19.60%"},
-            {"OrderListHash", "0d4b94fffb1b79ae570550b2b302c52a"}
+            {"Portfolio Turnover", "20.10%"},
+            {"Drawdown Recovery", "3"},
+            {"OrderListHash", "fd92ba2e36a1e755593fcc9791e97928"}
         };
     }
 }

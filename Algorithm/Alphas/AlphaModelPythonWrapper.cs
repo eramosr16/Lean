@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -27,8 +27,6 @@ namespace QuantConnect.Algorithm.Framework.Alphas
     /// </summary>
     public class AlphaModelPythonWrapper : AlphaModel
     {
-        private readonly dynamic _model;
-
         /// <summary>
         /// Defines a name for a framework model
         /// </summary>
@@ -39,13 +37,13 @@ namespace QuantConnect.Algorithm.Framework.Alphas
                 using (Py.GIL())
                 {
                     // if the model defines a Name property then use that
-                    if (_model.HasAttr("Name"))
+                    if (HasAttr(nameof(Name)))
                     {
-                        return (_model.Name as PyObject).GetAndDispose<string>();
+                        return GetProperty<string>(nameof(Name));
                     }
 
                     // if the model does not define a name property, use the python type name
-                    return (_model.__class__.__name__ as PyObject).GetAndDispose<string>();
+                    return GetProperty(" __class__").GetAttr("__name__").GetAndDispose<string>();
                 }
             }
         }
@@ -56,17 +54,20 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         /// <param name="model">>Model that generates alpha</param>
         public AlphaModelPythonWrapper(PyObject model)
         {
-            using (Py.GIL())
+            SetPythonInstance(model, false);
+            foreach (var attributeName in new[] { "Update", "OnSecuritiesChanged" })
             {
-                foreach (var attributeName in new[] { "Update", "OnSecuritiesChanged" })
+                if (!HasAttr(attributeName))
                 {
-                    if (!model.HasAttr(attributeName))
-                    {
-                        throw new NotImplementedException($"IAlphaModel.{attributeName} must be implemented. Please implement this missing method on {model.GetPythonType()}");
-                    }
+                    throw new NotImplementedException($"IAlphaModel.{attributeName} must be implemented. Please implement this missing method on {model.GetPythonType()}");
                 }
             }
-            _model = model;
+
+            var methodName = nameof(SetPythonInstance);
+            if (HasAttr(methodName))
+            {
+                InvokeMethod(methodName, model);
+            }
         }
 
         /// <summary>
@@ -78,17 +79,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         /// <returns>The new insights generated</returns>
         public override IEnumerable<Insight> Update(QCAlgorithm algorithm, Slice data)
         {
-            using (Py.GIL())
-            {
-                var insights = _model.Update(algorithm, new PythonSlice(data)) as PyObject;
-                var iterator = insights.GetIterator();
-                foreach (PyObject insight in iterator)
-                {
-                    yield return insight.GetAndDispose<Insight>();
-                }
-                iterator.Dispose();
-                insights.Dispose();
-            }
+            return InvokeMethodAndEnumerate<Insight>(nameof(Update), algorithm, data);
         }
 
         /// <summary>
@@ -98,10 +89,7 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         /// <param name="changes">The security additions and removals from the algorithm</param>
         public override void OnSecuritiesChanged(QCAlgorithm algorithm, SecurityChanges changes)
         {
-            using (Py.GIL())
-            {
-                _model.OnSecuritiesChanged(algorithm, changes);
-            }
+            InvokeVoidMethod(nameof(OnSecuritiesChanged), algorithm, changes);
         }
     }
 }

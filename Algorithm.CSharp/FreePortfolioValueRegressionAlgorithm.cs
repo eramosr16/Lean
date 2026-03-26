@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp
             var freePortfolioValue = Portfolio.TotalPortfolioValue - Portfolio.TotalPortfolioValueLessFreeBuffer;
             if (freePortfolioValue != Portfolio.TotalPortfolioValue * Settings.FreePortfolioValuePercentage)
             {
-                throw new Exception($"Unexpected FreePortfolioValue value: {freePortfolioValue}");
+                throw new RegressionTestException($"Unexpected FreePortfolioValue value: {freePortfolioValue}");
             }
         }
 
@@ -73,7 +73,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -86,16 +86,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
+            {"Total Orders", "4"},
             {"Average Win", "0.06%"},
             {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "8.173%"},
+            {"Compounding Annual Return", "8.174%"},
             {"Drawdown", "55.100%"},
             {"Expectancy", "2.639"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "2254609.41"},
             {"Net Profit", "125.461%"},
             {"Sharpe Ratio", "0.36"},
             {"Sortino Ratio", "0.365"},
@@ -111,10 +118,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.001"},
             {"Treynor Ratio", "0.059"},
             {"Total Fees", "$45.46"},
-            {"Estimated Strategy Capacity", "$190000000.00"},
+            {"Estimated Strategy Capacity", "$480000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.03%"},
-            {"OrderListHash", "451b7f24d3bce193c118d51087935a53"}
+            {"Drawdown Recovery", "1772"},
+            {"OrderListHash", "bc1c4bb38b3c1c39eb3d1aba5a671bba"}
         };
     }
 }

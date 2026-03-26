@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,6 +16,8 @@
 using Python.Runtime;
 using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Orders;
+using QuantConnect.Python;
 using System;
 
 namespace QuantConnect.Algorithm.Framework.Execution
@@ -25,7 +27,7 @@ namespace QuantConnect.Algorithm.Framework.Execution
     /// </summary>
     public class ExecutionModelPythonWrapper : ExecutionModel
     {
-        private readonly dynamic _model;
+        private readonly bool _onOrderEventsDefined;
 
         /// <summary>
         /// Constructor for initialising the <see cref="IExecutionModel"/> class with wrapped <see cref="PyObject"/> object
@@ -33,17 +35,22 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// <param name="model">Model defining how to execute trades to reach a portfolio target</param>
         public ExecutionModelPythonWrapper(PyObject model)
         {
-            using (Py.GIL())
+            SetPythonInstance(model, false);
+            foreach (var attributeName in new[] { "Execute", "OnSecuritiesChanged" })
             {
-                foreach (var attributeName in new[] { "Execute", "OnSecuritiesChanged" })
+                if (!HasAttr(attributeName))
                 {
-                    if (!model.HasAttr(attributeName))
-                    {
-                        throw new NotImplementedException($"IExecutionModel.{attributeName} must be implemented. Please implement this missing method on {model.GetPythonType()}");
-                    }
+                    throw new NotImplementedException($"IExecutionModel.{attributeName} must be implemented. Please implement this missing method on {model.GetPythonType()}");
                 }
             }
-            _model = model;
+
+            _onOrderEventsDefined = HasAttr("OnOrderEvent");
+
+            var methodName = nameof(SetPythonInstance);
+            if (HasAttr(methodName))
+            {
+                InvokeMethod(methodName, model);
+            }
         }
 
         /// <summary>
@@ -54,10 +61,7 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// <param name="targets">The portfolio targets to be ordered</param>
         public override void Execute(QCAlgorithm algorithm, IPortfolioTarget[] targets)
         {
-            using (Py.GIL())
-            {
-                _model.Execute(algorithm, targets);
-            }
+            InvokeMethod(nameof(Execute), algorithm, targets).Dispose();
         }
 
         /// <summary>
@@ -67,9 +71,19 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// <param name="changes">The security additions and removals from the algorithm</param>
         public override void OnSecuritiesChanged(QCAlgorithm algorithm, SecurityChanges changes)
         {
-            using (Py.GIL())
+            InvokeMethod(nameof(OnSecuritiesChanged), algorithm, changes).Dispose();
+        }
+
+        /// <summary>
+        /// New order event handler
+        /// </summary>
+        /// <param name="algorithm">The algorithm instance</param>
+        /// <param name="orderEvent">Order event to process</param>
+        public override void OnOrderEvent(QCAlgorithm algorithm, OrderEvent orderEvent)
+        {
+            if (_onOrderEventsDefined)
             {
-                _model.OnSecuritiesChanged(algorithm, changes);
+                InvokeMethod(nameof(OnOrderEvent), algorithm, orderEvent).Dispose();
             }
         }
     }

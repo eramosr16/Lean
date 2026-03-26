@@ -65,23 +65,23 @@ namespace QuantConnect.Algorithm.CSharp
                             var history = History<OpenInterest>(contract.Symbol, TimeSpan.FromDays(1)).ToList();
                             if (history.Count == 0)
                             {
-                                throw new Exception("Regression test failed: open interest history request is empty");
+                                throw new RegressionTestException("Regression test failed: open interest history request is empty");
                             }
 
                             var security = Securities[contract.Symbol];
                             var openInterestCache = security.Cache.GetData<OpenInterest>();
                             if (openInterestCache == null)
                             {
-                                throw new Exception("Regression test failed: current open interest isn't in the security cache");
+                                throw new RegressionTestException("Regression test failed: current open interest isn't in the security cache");
                             }
 
                             if (slice.Time.Date == new DateTime(2014, 06, 05) && (contract.OpenInterest != 50 || security.OpenInterest != 50))
                             {
-                                throw new Exception("Regression test failed: current open interest was not correctly loaded and is not equal to 50");
+                                throw new RegressionTestException("Regression test failed: current open interest was not correctly loaded and is not equal to 50");
                             }
                             if (slice.Time.Date == new DateTime(2014, 06, 06) && (contract.OpenInterest != 70 || security.OpenInterest != 70))
                             {
-                                throw new Exception("Regression test failed: current open interest was not correctly loaded and is not equal to 70");
+                                throw new RegressionTestException("Regression test failed: current open interest was not correctly loaded and is not equal to 70");
                             }
                             if (slice.Time.Date == new DateTime(2014, 06, 06))
                             {
@@ -89,6 +89,12 @@ namespace QuantConnect.Algorithm.CSharp
                                 MarketOnCloseOrder(contract.Symbol, -1);
                             }
                         }
+                    }
+
+                    // We should be able to access the open interest of the contract
+                    if (chain.Value.All(contract => contract.OpenInterest == 0))
+                    {
+                        throw new RegressionTestException("Regression test failed: open interest is zero for all contracts");
                     }
                 }
             }
@@ -112,29 +118,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 399332;
+        public long DataPoints => 256364;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 146806;
+        public int AlgorithmHistoryDataPoints => 77028;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "4"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999898"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -151,9 +164,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$2.00"},
             {"Estimated Strategy Capacity", "$0"},
-            {"Lowest Capacity Asset", "AOL W78ZERDZK1QE|AOL R735QTJ8XC9X"},
+            {"Lowest Capacity Asset", "AOL W78ZERDZOC1Y|AOL R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.07%"},
-            {"OrderListHash", "53447ec43228e367646eb1481aeff844"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "020bab5fcb635e1378f404364e9495a2"}
         };
     }
 }

@@ -93,7 +93,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cash = new Cash("JPY", quantity, conversionRate);
             var cashBook = new CashBook();
             cashBook.Add("JPY", cash);
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var abcConfig = subscriptions.Add(Symbols.SPY, Resolution.Minute, TimeZone, TimeZone);
@@ -123,7 +123,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cash = new Cash("JPY", quantity, conversionRate);
             var cashBook = new CashBook();
             cashBook.Add("JPY", cash);
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var abcConfig = subscriptions.Add(Symbols.SPY, Resolution.Minute, TimeZone, TimeZone);
@@ -159,7 +159,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cashBook = new CashBook();
             cashBook.Add("JPY", cash);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -201,7 +201,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cashBook = new CashBook();
             cashBook.Add("JPY", cash);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -232,7 +232,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cashBook = new CashBook();
             cashBook.Add("JPY", cash);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -282,7 +282,7 @@ namespace QuantConnect.Tests.Common.Securities
             var symbol = Symbol.Create(baseCurrency + quoteCurrency,
                 securityType,
                 market);
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper)
@@ -337,7 +337,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             var symbol = Symbol.Create("GBPJPY", SecurityType.Forex, Market.FXCM);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -377,7 +377,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             var symbol = Symbol.Create("GBPJPY", SecurityType.Forex, Market.FXCM);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -429,7 +429,7 @@ namespace QuantConnect.Tests.Common.Securities
                 {"XAU", new Cash("XAU", 100, 17) }
             };
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -454,6 +454,37 @@ namespace QuantConnect.Tests.Common.Securities
         }
 
         [Test]
+        public void EnsureCurrencyDataFeedForCryptoCurrency_CryptoFuturesFirst_When_dYdX()
+        {
+            var book = new CashBook
+            {
+                {Currencies.USD, new Cash(Currencies.USD, 100, 1) },
+                {"BTC", new Cash("BTC", 100, 6000) },
+                {"ETH", new Cash("ETH", 100, 290) }
+            };
+
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
+            var dataManager = new DataManagerStub(TimeKeeper);
+            subscriptions.SetDataManager(dataManager);
+            var securities = new SecurityManager(TimeKeeper);
+
+            var marketMapWithdYdX = MarketMap.ToDictionary();
+            marketMapWithdYdX[SecurityType.CryptoFuture] = Market.DYDX;
+
+            book.EnsureCurrencyDataFeeds(securities, subscriptions, marketMapWithdYdX, SecurityChanges.None, dataManager.SecurityService);
+
+            var symbols = dataManager.SubscriptionManagerSubscriptions.Select(sdc => sdc.Symbol).ToHashSet();
+
+            Assert.IsTrue(symbols.Contains(Symbol.Create("BTCUSD", SecurityType.CryptoFuture, Market.DYDX)));
+            Assert.IsTrue(symbols.Contains(Symbol.Create("ETHUSD", SecurityType.CryptoFuture, Market.DYDX)));
+
+            foreach (var subscription in subscriptions.Subscriptions)
+            {
+                Assert.AreEqual(subscription.Symbol.SecurityType, SecurityType.CryptoFuture);
+            }
+        }
+
+        [Test]
         public void UpdateModifiesConversionRateAsInvertedValue()
         {
             const int quantity = 100;
@@ -462,7 +493,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cashBook = new CashBook();
             cashBook.Add("JPY", cash);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -497,7 +528,7 @@ namespace QuantConnect.Tests.Common.Securities
             var cashBook = new CashBook();
             cashBook.Add("GBP", cash);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -567,7 +598,7 @@ namespace QuantConnect.Tests.Common.Securities
                 {Currencies.USD, new Cash(Currencies.USD, 100, 1) },
                 {"EUR", new Cash("EUR", 100, 1.2m) }
             };
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -585,7 +616,7 @@ namespace QuantConnect.Tests.Common.Securities
                 {Currencies.USD, new Cash(Currencies.USD, 100, 1) },
                 {"ILS", new Cash("ILS", 0, 0.3m) }
             };
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -598,10 +629,10 @@ namespace QuantConnect.Tests.Common.Securities
         public void CryptoStableCoinMappingIsCorrect(IBrokerageModel brokerageModel, string accountCurrency, string stableCoin, bool shouldThrow, Symbol[] expectedConversionSymbols)
         {
             var cashBook = new CashBook() {AccountCurrency = accountCurrency};
-            var cash = new Cash(stableCoin, 10m, 1m);
+            var cash = new Cash(stableCoin, 10m, 0);
             cashBook.Add(cash.Symbol, cash);
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
@@ -634,7 +665,6 @@ namespace QuantConnect.Tests.Common.Securities
             else
             {
                 Assert.IsInstanceOf(typeof(SecurityCurrencyConversion), cash.CurrencyConversion);
-
                 var actualConversionSymbols = cash.CurrencyConversion
                     .ConversionRateSecurities
                     .Select(x => x.Symbol)
@@ -677,22 +707,25 @@ namespace QuantConnect.Tests.Common.Securities
             new object[] { new BitfinexBrokerageModel(), Currencies.EUR, "XCHF", false, new[] { Symbol.Create("BTCXCHF", SecurityType.Crypto, Market.Bitfinex), Symbol.Create("BTCEUR", SecurityType.Crypto, Market.Bitfinex) } }, // No XCHFEUR, but indirect conversion exists
             new object[] { new BitfinexBrokerageModel(), Currencies.GBP, "XCHF", false, new[] { Symbol.Create("BTCXCHF", SecurityType.Crypto, Market.Bitfinex), Symbol.Create("BTCGBP", SecurityType.Crypto, Market.Bitfinex) } }, // No XCHFGBP, but indirect conversion exists
 
-            // *** GDAX ***
+            // *** Coinbase ***
             // Trades USDC and USDT* (*Not yet trading live, but expected soon)
             // USDC Cases
-            new object[] { new GDAXBrokerageModel(), Currencies.USD, "USDC", false, null }, // No USDCUSD, but does not throw! Conversion 1-1
-            new object[] { new GDAXBrokerageModel(), Currencies.EUR, "USDC", false, new[] { Symbol.Create("USDCEUR", SecurityType.Crypto, Market.GDAX) } },
-            new object[] { new GDAXBrokerageModel(), Currencies.GBP, "USDC", false, new[] { Symbol.Create("USDCGBP", SecurityType.Crypto, Market.GDAX) } },
+            new object[] { new CoinbaseBrokerageModel(), Currencies.USD, "USDC", false, null }, // No USDCUSD, but does not throw! Conversion 1-1
+            new object[] { new CoinbaseBrokerageModel(), Currencies.EUR, "USDC", false, new[] { Symbol.Create("USDCEUR", SecurityType.Crypto, Market.Coinbase) } },
+            new object[] { new CoinbaseBrokerageModel(), Currencies.GBP, "USDC", false, new[] { Symbol.Create("USDCGBP", SecurityType.Crypto, Market.Coinbase) } },
 
             // *** Binance ***
             // USDC Cases
+            new object[] { new BinanceBrokerageModel(), "USDT", "BNFCR", false, null },
+            new object[] { new BinanceBrokerageModel(), "USDC", "BNFCR", false, null },
+            new object[] { new BinanceBrokerageModel(), Currencies.USD, "BNFCR", false, null },
             new object[] { new BinanceBrokerageModel(), Currencies.USD, "USDC", false, null }, // No USDCUSD, but does not throw! Conversion 1-1
-            new object[] { new BinanceBrokerageModel(), Currencies.EUR, "USDC", false, new[] { Symbol.Create("ADAUSDC", SecurityType.Crypto, Market.Binance), Symbol.Create("ADAEUR", SecurityType.Crypto, Market.Binance) } }, // No USDCEUR, but indirect conversion exists
+            new object[] { new BinanceBrokerageModel(), Currencies.EUR, "USDC", false, new[] { Symbol.Create("EURUSDC", SecurityType.Crypto, Market.Binance) } },
             new object[] { new BinanceBrokerageModel(), Currencies.GBP, "USDC", false, new[] { Symbol.Create("ADAUSDC", SecurityType.Crypto, Market.Binance), Symbol.Create("ADAGBP", SecurityType.Crypto, Market.Binance) } }, // No USDCGBP, but indirect conversion exists
 
             // USDT Cases
             new object[] { new BinanceBrokerageModel(), Currencies.USD, "USDT", false, null }, // No USDTUSD, but does not throw! Conversion 1-1
-            new object[] { new BinanceBrokerageModel(), "VAI", "USDT", false, new[] { Symbol.Create("BTCUSDT", SecurityType.Crypto, Market.Binance), Symbol.Create("BTCVAI", SecurityType.Crypto, Market.Binance) } }, // No USDTVAI, but indirect conversion exists
+            new object[] { new BinanceBrokerageModel(), "VIA", "USDT", false, new[] { Symbol.Create("BNBUSDT", SecurityType.Crypto, Market.Binance), Symbol.Create("VIABNB", SecurityType.Crypto, Market.Binance) } }, // No USDTVIA, but indirect conversion exists
 
             // USDP Cases
             new object[] { new BinanceBrokerageModel(), Currencies.USD, "USDP", false, null }, // No USDPUSD, but does not throw! Conversion 1-1
@@ -727,6 +760,10 @@ namespace QuantConnect.Tests.Common.Securities
             new object[] { new BinanceBrokerageModel(), Currencies.GBP, "IDRT", false, new[] { Symbol.Create("BNBIDRT", SecurityType.Crypto, Market.Binance), Symbol.Create("BNBGBP", SecurityType.Crypto, Market.Binance) } }, // No IDRTGBP, but indirect conversion exists
 
             new object[] { new OandaBrokerageModel(), Currencies.EUR, "INR", false, new[] { Symbol.Create("USDINR", SecurityType.Forex, Market.Oanda), Symbol.Create("EURUSD", SecurityType.Forex, Market.Oanda) } }, // No INREUR, but indirect conversion exists
+
+            // FDUSD Cases
+            new object[] { new BinanceBrokerageModel(), Currencies.USD, "FDUSD", false, null }, // No FDUSDUSD, but does not throw! Conversion 1-1
+            new object[] { new BinanceBrokerageModel(), "VAI", "FDUSD", false, new[] { Symbol.Create("BTCFDUSD", SecurityType.Crypto, Market.Binance), Symbol.Create("BTCVAI", SecurityType.Crypto, Market.Binance) } }, // No FDUSDVAI, but indirect conversion exists
         };
     }
 }

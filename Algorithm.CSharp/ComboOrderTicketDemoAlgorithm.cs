@@ -47,16 +47,16 @@ namespace QuantConnect.Algorithm.CSharp
             var option = AddOption(equity.Symbol, fillForward: true);
             _optionSymbol = option.Symbol;
 
-            option.SetFilter(u => u.Strikes(-2, +2)
+            option.SetFilter(u => u.StandardsOnly().Strikes(-2, +2)
                   .Expiration(0, 180));
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (_orderLegs == null)
             {
                 OptionChain chain;
-                if (IsMarketOpen(_optionSymbol) && data.OptionChains.TryGetValue(_optionSymbol, out chain))
+                if (IsMarketOpen(_optionSymbol) && slice.OptionChains.TryGetValue(_optionSymbol, out chain))
                 {
                     var callContracts = chain.Where(contract => contract.Right == OptionRight.Call)
                         .GroupBy(x => x.Expiry)
@@ -115,7 +115,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var response = ticket.Cancel("Attempt to cancel combo market order");
                 if (response.IsSuccess)
                 {
-                    throw new Exception("Combo market orders should fill instantly, they should not be cancelable in backtest mode: " + response.OrderId);
+                    throw new RegressionTestException("Combo market orders should fill instantly, they should not be cancelable in backtest mode: " + response.OrderId);
                 }
             }
         }
@@ -239,16 +239,15 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (orderEvent.Quantity == 0)
             {
-                throw new Exception("OrderEvent quantity is Not expected to be 0, it should hold the current order Quantity");
+                throw new RegressionTestException("OrderEvent quantity is Not expected to be 0, it should hold the current order Quantity");
             }
             if (orderEvent.Quantity != order.Quantity)
             {
-                throw new Exception($@"OrderEvent quantity should hold the current order Quantity. Got {orderEvent.Quantity
-                    }, expected {order.Quantity}");
+                throw new RegressionTestException($@"OrderEvent quantity should hold the current order Quantity. Got {orderEvent.Quantity}, expected {order.Quantity}");
             }
             if (order is ComboLegLimitOrder && orderEvent.LimitPrice == 0)
             {
-                throw new Exception("OrderEvent.LimitPrice is not expected to be 0 for ComboLegLimitOrder");
+                throw new RegressionTestException("OrderEvent.LimitPrice is not expected to be 0 for ComboLegLimitOrder");
             }
         }
 
@@ -293,7 +292,7 @@ namespace QuantConnect.Algorithm.CSharp
             var expectedFillsCount = 15;
             if (filledOrders.Count != expectedFillsCount || orderTickets.Count != expectedOrdersCount)
             {
-                throw new Exception($"There were expected {expectedFillsCount} filled orders and {expectedOrdersCount} order tickets, but there were {filledOrders.Count} filled orders and {orderTickets.Count} order tickets");
+                throw new RegressionTestException($"There were expected {expectedFillsCount} filled orders and {expectedOrdersCount} order tickets, but there were {filledOrders.Count} filled orders and {orderTickets.Count} order tickets");
             }
 
             var filledComboMarketOrders = filledOrders.Where(x => x.Type == OrderType.ComboMarket).ToList();
@@ -301,20 +300,19 @@ namespace QuantConnect.Algorithm.CSharp
             var filledComboLegLimitOrders = filledOrders.Where(x => x.Type == OrderType.ComboLegLimit).ToList();
             if (filledComboMarketOrders.Count != 6 || filledComboLimitOrders.Count != 3 || filledComboLegLimitOrders.Count != 6)
             {
-                throw new Exception(
+                throw new RegressionTestException(
                     "There were expected 6 filled market orders, 3 filled combo limit orders and 6 filled combo leg limit orders, " +
-                    $@"but there were {filledComboMarketOrders.Count} filled market orders, {filledComboLimitOrders.Count
-                    } filled combo limit orders and {filledComboLegLimitOrders.Count} filled combo leg limit orders");
+                    $@"but there were {filledComboMarketOrders.Count} filled market orders, {filledComboLimitOrders.Count} filled combo limit orders and {filledComboLegLimitOrders.Count} filled combo leg limit orders");
             }
 
             if (openOrders.Count != 0 || openOrderTickets.Count != 0)
             {
-                throw new Exception($"No open orders or tickets were expected");
+                throw new RegressionTestException($"No open orders or tickets were expected");
             }
 
             if (remainingOpenOrders != 0m)
             {
-                throw new Exception($"No remaining quantity to be filled from open orders was expected");
+                throw new RegressionTestException($"No remaining quantity to be filled from open orders was expected");
             }
         }
 
@@ -326,12 +324,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 471135;
+        public long DataPoints => 15023;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -339,16 +337,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "15"},
+            {"Total Orders", "18"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98838"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -365,9 +370,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$26.00"},
             {"Estimated Strategy Capacity", "$2000.00"},
-            {"Lowest Capacity Asset", "GOOCV W78ZERHAOVVQ|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV W78ZERHAT67A|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "58.98%"},
-            {"OrderListHash", "c455fd803ce5f4b7902a97d84c14629a"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "bec09c16bbc4d87a4e5122f29dd5a38b"}
         };
     }
 }

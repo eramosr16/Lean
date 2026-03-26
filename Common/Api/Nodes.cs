@@ -45,6 +45,12 @@ namespace QuantConnect.Api
         public int CpuCount { get; set; }
 
         /// <summary>
+        /// Indicate if the node has GPU (1) or not (0)
+        /// </summary>
+        [JsonProperty(PropertyName = "hasGpu")]
+        public int HasGPU { get; set; }
+
+        /// <summary>
         /// Size of RAM in Gigabytes.
         /// </summary>
         [JsonProperty(PropertyName = "ram")]
@@ -63,7 +69,7 @@ namespace QuantConnect.Api
         public string SKU { get; set; }
 
         /// <summary>
-        /// String description of the node.
+        /// Description of the node.
         /// </summary>
         [JsonProperty(PropertyName = "description")]
         public string Description { get; set; }
@@ -73,6 +79,12 @@ namespace QuantConnect.Api
         /// </summary>
         [JsonProperty(PropertyName = "usedBy")]
         public string UsedBy { get; set; }
+
+        /// <summary>
+        /// URL of the user using the node
+        /// </summary>
+        [JsonProperty(PropertyName = "userProfile")]
+        public string UserProfile { get; set; }
 
         /// <summary>
         /// Project the node is being used for.
@@ -87,7 +99,7 @@ namespace QuantConnect.Api
         public int? ProjectId { get; set; }
 
         /// <summary>
-        /// Boolean if the node is currently busy.
+        /// Indicates if the node is currently busy.
         /// </summary>
         [JsonProperty(PropertyName = "busy")]
         public bool Busy { get; set; }
@@ -231,12 +243,20 @@ namespace QuantConnect.Api
     /// </summary>
     public enum NodeType
     {
-        /// A node for running backtests
-        Backtest,   //0
-        /// A node for running research
-        Research,   //1
-        /// A node for live trading
-        Live        //2
+        /// <summary>
+        /// A node for running backtests (0)
+        /// </summary>
+        Backtest,
+
+        /// <summary>
+        /// A node for running research (1)
+        /// </summary>
+        Research,
+
+        /// <summary>
+        /// A node for live trading (2)
+        /// </summary>
+        Live
     }
 
     /// <summary>

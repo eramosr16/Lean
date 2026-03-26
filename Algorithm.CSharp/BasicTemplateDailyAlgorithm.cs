@@ -43,8 +43,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        /// <param name="slice">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -61,12 +61,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 73;
+        public long DataPoints => 72;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -74,35 +74,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "246.546%"},
-            {"Drawdown", "1.200%"},
+            {"Compounding Annual Return", "424.375%"},
+            {"Drawdown", "0.800%"},
             {"Expectancy", "0"},
-            {"Net Profit", "3.464%"},
-            {"Sharpe Ratio", "19.094"},
-            {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "97.754%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "104486.22"},
+            {"Net Profit", "4.486%"},
+            {"Sharpe Ratio", "17.304"},
+            {"Sortino Ratio", "35.217"},
+            {"Probabilistic Sharpe Ratio", "96.835%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.005"},
-            {"Beta", "0.998"},
-            {"Annual Standard Deviation", "0.138"},
-            {"Annual Variance", "0.019"},
-            {"Information Ratio", "-34.028"},
-            {"Tracking Error", "0"},
-            {"Treynor Ratio", "2.644"},
-            {"Total Fees", "$3.45"},
-            {"Estimated Strategy Capacity", "$970000000.00"},
+            {"Alpha", "-0.249"},
+            {"Beta", "1.015"},
+            {"Annual Standard Deviation", "0.141"},
+            {"Annual Variance", "0.02"},
+            {"Information Ratio", "-19"},
+            {"Tracking Error", "0.011"},
+            {"Treynor Ratio", "2.403"},
+            {"Total Fees", "$3.49"},
+            {"Estimated Strategy Capacity", "$1200000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Portfolio Turnover", "10.09%"},
-            {"OrderListHash", "418c8ec9920ec61bdefa2d02a8557048"}
+            {"Portfolio Turnover", "10.01%"},
+            {"Drawdown Recovery", "1"},
+            {"OrderListHash", "70f21e930175a2ec9d465b21edc1b6d9"}
         };
     }
 }

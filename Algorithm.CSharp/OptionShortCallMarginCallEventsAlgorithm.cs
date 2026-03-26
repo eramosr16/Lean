@@ -42,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp
             var option = AddOption(equitySymbol);
             _optionSymbol = option.Symbol;
 
-            option.SetFilter(u => u.Strikes(-2, +2)
+            option.SetFilter(u => u.StandardsOnly().Strikes(-2, +2)
                 .Expiration(0, 180));
 
             Portfolio.MarginCallModel = new CustomMarginCallModel(Portfolio, DefaultOrderProperties);
@@ -74,12 +74,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp };
+        public override List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 2940643;
+        public override long DataPoints => 46957;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -87,16 +87,23 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public override AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.07%"},
-            {"Compounding Annual Return", "10.388%"},
+            {"Compounding Annual Return", "9.935%"},
             {"Drawdown", "1.400%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "160000"},
+            {"End Equity", "160332.5"},
             {"Net Profit", "0.208%"},
             {"Sharpe Ratio", "5.427"},
             {"Sortino Ratio", "0"},
@@ -113,9 +120,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "-2.981"},
             {"Total Fees", "$7.50"},
             {"Estimated Strategy Capacity", "$66000.00"},
-            {"Lowest Capacity Asset", "GOOCV W78ZFMML01JA|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV W78ZFMML4BUU|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "1.01%"},
-            {"OrderListHash", "aba013c99397fee83d331a7eee5cd843"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "039fb1adfb5366ea629e3f5e0646ab8b"}
         };
     }
 }

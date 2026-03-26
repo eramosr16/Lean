@@ -27,7 +27,7 @@ namespace QuantConnect.Tests
     [TestFixture, Category("TravisExclude"), Category("RegressionTests")]
     public class RegressionTests
     {
-        [Test, TestCaseSource(nameof(GetRegressionTestParameters))]
+        [Test, TestCaseSource(nameof(GetLocalRegressionTestParameters))]
         public void AlgorithmStatisticsRegression(AlgorithmStatisticsTestParameters parameters)
         {
             // ensure we start with a fresh config every time when running multiple tests
@@ -78,23 +78,22 @@ namespace QuantConnect.Tests
             }
         }
 
-        private static TestCaseData[] GetRegressionTestParameters()
+        public static TestCaseData[] GetLocalRegressionTestParameters()
+        {
+            return GetRegressionTestParameters<IRegressionAlgorithmDefinition, AlgorithmStatisticsTestParameters, BasicTemplateAlgorithm>(canRunLocally: true,
+                (instance, language) => new AlgorithmStatisticsTestParameters(instance.GetType().Name, instance.ExpectedStatistics, language,
+                instance.AlgorithmStatus, instance.DataPoints, instance.AlgorithmHistoryDataPoints));
+        }
+
+        public static TestCaseData[] GetRegressionTestParameters<T, K, J>(bool canRunLocally, Func<T, Language, K> factory)
+            where T : IRegressionAlgorithmDefinition
+            where K : AlgorithmStatisticsTestParameters
+            where J : class
         {
             TestGlobals.Initialize();
 
             // since these are static test cases, they are executed before test setup
             AssemblyInitialize.AdjustCurrentDirectory();
-
-            var nonDefaultStatuses = new Dictionary<string, AlgorithmStatus>
-            {
-                { "TrainingInitializeRegressionAlgorithm", AlgorithmStatus.RuntimeError },
-                { "OnOrderEventExceptionRegression", AlgorithmStatus.RuntimeError },
-                { "WarmUpAfterInitializeRegression", AlgorithmStatus.RuntimeError },
-                { "CoarseFineAsyncUniverseRegressionAlgorithm", AlgorithmStatus.Running },
-                { "BasicTemplateIndexDailyAlgorithm", AlgorithmStatus.Running },
-                { "BasicTemplateIndexOptionsDailyAlgorithm", AlgorithmStatus.Running },
-                { "ScaledRawDataNormalizationModeNotAllowedSecuritiesAlgorithm", AlgorithmStatus.Running }
-            };
 
             var languages = Config.GetValue("regression-test-languages", JArray.FromObject(new[] { "CSharp", "Python" }))
                 .Select(str => Parse.Enum<Language>(str.Value<string>()))
@@ -102,15 +101,14 @@ namespace QuantConnect.Tests
 
             // find all regression algorithms in Algorithm.CSharp
             return (
-                from type in typeof(BasicTemplateAlgorithm).Assembly.GetTypes()
-                where typeof(IRegressionAlgorithmDefinition).IsAssignableFrom(type)
+                from type in typeof(J).Assembly.GetTypes()
+                where typeof(T).IsAssignableFrom(type)
                 where !type.IsAbstract                          // non-abstract
                 where type.GetConstructor(Array.Empty<Type>()) != null  // has default ctor
-                let instance = (IRegressionAlgorithmDefinition)Activator.CreateInstance(type)
-                let status = nonDefaultStatuses.GetValueOrDefault(type.Name, AlgorithmStatus.Completed)
-                where instance.CanRunLocally                   // open source has data to run this algorithm
+                let instance = (T)Activator.CreateInstance(type)
+                where instance.CanRunLocally == canRunLocally                 // open source has data to run this algorithm
                 from language in instance.Languages.Where(languages.Contains)
-                select new AlgorithmStatisticsTestParameters(type.Name, instance.ExpectedStatistics, language, status, instance.DataPoints, instance.AlgorithmHistoryDataPoints)
+                select factory(instance, language)
             )
             .OrderBy(x => x.Language).ThenBy(x => x.Algorithm)
             // generate test cases from test parameters
@@ -120,12 +118,12 @@ namespace QuantConnect.Tests
 
         public class AlgorithmStatisticsTestParameters
         {
-            public readonly string Algorithm;
-            public readonly Dictionary<string, string> Statistics;
-            public readonly Language Language;
-            public readonly AlgorithmStatus ExpectedFinalStatus;
-            public readonly long DataPoints;
-            public readonly int AlgorithmHistoryDataPoints;
+            public string Algorithm { get; init; }
+            public Dictionary<string, string> Statistics { get; init; }
+            public Language Language { get; init; }
+            public AlgorithmStatus ExpectedFinalStatus { get; init; }
+            public long DataPoints { get; init; }
+            public int AlgorithmHistoryDataPoints { get; init; }
 
             public AlgorithmStatisticsTestParameters(
                 string algorithm,

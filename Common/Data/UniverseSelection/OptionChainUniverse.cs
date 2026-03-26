@@ -29,10 +29,8 @@ namespace QuantConnect.Data.UniverseSelection
     public class OptionChainUniverse : Universe
     {
         private readonly OptionFilterUniverse _optionFilterUniverse;
-        private readonly UniverseSettings _universeSettings;
         // as an array to make it easy to prepend to selected symbols
         private readonly Symbol[] _underlyingSymbol;
-        private DateTime _cacheDate;
 
         /// <summary>
         /// True if this universe filter can run async in the data stack
@@ -59,9 +57,9 @@ namespace QuantConnect.Data.UniverseSelection
             : base(option.SubscriptionDataConfig)
         {
             Option = option;
+            UniverseSettings = universeSettings;
             _underlyingSymbol = new[] { Option.Symbol.Underlying };
-            _universeSettings = new UniverseSettings(universeSettings) { DataNormalizationMode = DataNormalizationMode.Raw };
-            _optionFilterUniverse = new OptionFilterUniverse();
+            _optionFilterUniverse = new OptionFilterUniverse(Option);
         }
 
         /// <summary>
@@ -74,7 +72,14 @@ namespace QuantConnect.Data.UniverseSelection
         /// </summary>
         public override UniverseSettings UniverseSettings
         {
-            get { return _universeSettings; }
+            set
+            {
+                if (value != null)
+                {
+                    // make sure data mode is raw
+                    base.UniverseSettings = new UniverseSettings(value) { DataNormalizationMode = DataNormalizationMode.Raw };
+                }
+            }
         }
 
         /// <summary>
@@ -85,23 +90,14 @@ namespace QuantConnect.Data.UniverseSelection
         /// <returns>The data that passes the filter</returns>
         public override IEnumerable<Symbol> SelectSymbols(DateTime utcTime, BaseDataCollection data)
         {
-            // date change detection needs to be done in exchange time zone
             var localEndTime = utcTime.ConvertFromUtc(Option.Exchange.TimeZone);
-            var exchangeDate = localEndTime.Date;
-            if (_cacheDate == exchangeDate)
-            {
-                return Unchanged;
-            }
-
-            var availableContracts = data.Data.Select(x => x.Symbol);
             // we will only update unique strikes when there is an exchange date change
-            _optionFilterUniverse.Refresh(availableContracts, data.Underlying, localEndTime);
+            _optionFilterUniverse.Refresh(data.Data.Cast<OptionUniverse>().ToList(), data.Underlying, localEndTime);
 
             var results = Option.ContractFilter.Filter(_optionFilterUniverse);
-            _cacheDate = exchangeDate;
 
             // always prepend the underlying symbol
-            return _underlyingSymbol.Concat(results);
+            return _underlyingSymbol.Concat(results.Select(x => x.Symbol));
         }
 
         /// <summary>

@@ -34,7 +34,9 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// Initializes a new instance of the <see cref="SpreadExecutionModel"/> class
         /// </summary>
         /// <param name="acceptingSpreadPercent">Maximum spread accepted comparing to current price in percentage.</param>
-        public SpreadExecutionModel(decimal acceptingSpreadPercent = 0.005m)
+        /// <param name="asynchronous">If true, orders will be submitted asynchronously</param>
+        public SpreadExecutionModel(decimal acceptingSpreadPercent = 0.005m, bool asynchronous = true)
+            : base(asynchronous)
         {
             _acceptingSpreadPercent = Math.Abs(acceptingSpreadPercent);
             _targetsCollection = new PortfolioTargetCollection();
@@ -67,7 +69,7 @@ namespace QuantConnect.Algorithm.Framework.Execution
                         // check order entry conditions
                         if (PriceIsFavorable(security))
                         {
-                            algorithm.MarketOrder(symbol, unorderedQuantity);
+                            algorithm.MarketOrder(symbol, unorderedQuantity, Asynchronous, target.Tag);
                         }
                     }
                 }
@@ -81,6 +83,12 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// </summary>
         protected virtual bool PriceIsFavorable(Security security)
         {
+            // Check if this method was overridden in Python
+            if (TryInvokePythonOverride(nameof(PriceIsFavorable), out bool result, security))
+            {
+                return result;
+            }
+
             // Has to be in opening hours of exchange to avoid extreme spread in OTC period
             // Price has to be larger than zero to avoid zero division error, or negative price causing the spread percentage lower than preset value by accident
             return security.Exchange.ExchangeOpen

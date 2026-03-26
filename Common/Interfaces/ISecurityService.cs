@@ -34,7 +34,8 @@ namespace QuantConnect.Interfaces
             List<SubscriptionDataConfig> subscriptionDataConfigList,
             decimal leverage = 0,
             bool addToSymbolCache = true,
-            Security underlying = null);
+            Security underlying = null,
+            bool seedSecurity = true);
 
         /// <summary>
         /// Creates a new security
@@ -45,6 +46,12 @@ namespace QuantConnect.Interfaces
             SubscriptionDataConfig subscriptionDataConfig,
             decimal leverage = 0,
             bool addToSymbolCache = true,
-            Security underlying = null);
+            Security underlying = null,
+            bool seedSecurity = true);
+
+        /// <summary>
+        /// Creates a new benchmark security
+        /// </summary>
+        Security CreateBenchmarkSecurity(Symbol symbol);
     }
 }

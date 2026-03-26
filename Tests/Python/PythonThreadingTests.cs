@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,10 +14,10 @@
  *
 */
 
-using System.Threading.Tasks;
-using NUnit.Framework;
 using Python.Runtime;
+using NUnit.Framework;
 using QuantConnect.Python;
+using System.Threading.Tasks;
 
 namespace QuantConnect.Tests.Python
 {

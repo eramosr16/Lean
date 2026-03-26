@@ -20,11 +20,13 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using QuantConnect.AlgorithmFactory.Python.Wrappers;
 using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.Exceptions;
+using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
@@ -49,6 +51,7 @@ namespace QuantConnect.Lean.Engine
         private bool _historyStartDateLimitedWarningEmitted;
         private bool _historyNumericalPrecisionLimitedWarningEmitted;
         private readonly bool _liveMode;
+        private readonly Task<MarketHoursDatabase> _marketHoursDatabaseTask;
 
         /// <summary>
         /// Gets the configured system handlers for this engine instance
@@ -71,6 +74,7 @@ namespace QuantConnect.Lean.Engine
             _liveMode = liveMode;
             SystemHandlers = systemHandlers;
             AlgorithmHandlers = algorithmHandlers;
+            _marketHoursDatabaseTask = Task.Run(StaticInitializations);
         }
 
         /// <summary>
@@ -82,8 +86,6 @@ namespace QuantConnect.Lean.Engine
         /// <param name="workerThread">The worker thread instance</param>
         public void Run(AlgorithmNodePacket job, AlgorithmManager manager, string assemblyPath, WorkerThread workerThread)
         {
-            var marketHoursDatabaseTask = Task.Run(() => StaticInitializations());
-
             var algorithm = default(IAlgorithm);
             var algorithmManager = manager;
 
@@ -99,16 +101,17 @@ namespace QuantConnect.Lean.Engine
                 SystemHandlers.Notify.SetAuthentication(job);
 
                 //-> Set the result handler type for this algorithm job, and launch the associated result thread.
-                AlgorithmHandlers.Results.Initialize(job, SystemHandlers.Notify, SystemHandlers.Api, AlgorithmHandlers.Transactions);
+                AlgorithmHandlers.Results.Initialize(new (job, SystemHandlers.Notify, SystemHandlers.Api, AlgorithmHandlers.Transactions, AlgorithmHandlers.MapFileProvider));
 
                 IBrokerage brokerage = null;
                 DataManager dataManager = null;
+                var performanceTrackingTool = new PerformanceTrackingTool();
                 var synchronizer = _liveMode ? new LiveSynchronizer() : new Synchronizer();
                 try
                 {
                     // we get the mhdb before creating the algorithm instance,
                     // since the algorithm constructor will use it
-                    var marketHoursDatabase = marketHoursDatabaseTask.Result;
+                    var marketHoursDatabase = _marketHoursDatabaseTask.Result;
 
                     AlgorithmHandlers.Setup.WorkerThread = workerThread;
 
@@ -121,7 +124,7 @@ namespace QuantConnect.Lean.Engine
                     SystemHandlers.LeanManager.SetAlgorithm(algorithm);
 
                     // initialize the object store
-                    AlgorithmHandlers.ObjectStore.Initialize(job.UserId, job.ProjectId, job.UserToken, job.Controls);
+                    AlgorithmHandlers.ObjectStore.Initialize(job.UserId, job.ProjectId, job.UserToken, job.Controls, algorithm.AlgorithmMode);
 
                     // initialize the data permission manager
                     AlgorithmHandlers.DataPermissionsManager.Initialize(job);
@@ -149,7 +152,8 @@ namespace QuantConnect.Lean.Engine
                         registeredTypesProvider,
                         new SecurityCacheProvider(algorithm.Portfolio),
                         mapFilePrimaryExchangeProvider,
-                        algorithm);
+                        algorithm,
+                        new IndicatorBasedOptionPriceModelProvider(algorithm.Securities));
 
                     algorithm.Securities.SetSecurityService(securityService);
 
@@ -168,7 +172,7 @@ namespace QuantConnect.Lean.Engine
 
                     algorithm.SubscriptionManager.SetDataManager(dataManager);
 
-                    synchronizer.Initialize(algorithm, dataManager);
+                    synchronizer.Initialize(algorithm, dataManager, performanceTrackingTool);
 
                     // Set the algorithm's object store before initializing the data feed, which might use it
                     algorithm.SetObjectStore(AlgorithmHandlers.ObjectStore);
@@ -208,7 +212,8 @@ namespace QuantConnect.Lean.Engine
                             // disable parallel history requests for live trading
                             parallelHistoryRequestsEnabled: !_liveMode,
                             dataPermissionManager: AlgorithmHandlers.DataPermissionsManager,
-                            objectStore: algorithm.ObjectStore
+                            objectStore: algorithm.ObjectStore,
+                            algorithmSettings: algorithm.Settings
                         )
                     );
 
@@ -216,10 +221,39 @@ namespace QuantConnect.Lean.Engine
                     historyProvider.DownloadFailed += (sender, args) => { AlgorithmHandlers.Results.ErrorMessage(args.Message, args.StackTrace); };
                     historyProvider.ReaderErrorDetected += (sender, args) => { AlgorithmHandlers.Results.RuntimeError(args.Message, args.StackTrace); };
 
+                    Composer.Instance.AddPart(historyProvider);
                     algorithm.HistoryProvider = historyProvider;
 
                     // initialize the default brokerage message handler
                     algorithm.BrokerageMessageHandler = factory.CreateBrokerageMessageHandler(algorithm, job, SystemHandlers.Api);
+
+                    var brokerageDataQueueHandlers = Composer.Instance.GetParts<IDataQueueHandler>().OfType<IBrokerage>()
+                        // In backtesting, brokerages can be used as data downloaders (BrokerageDataDownloader)
+                        // and are added to the composer as IBrokerage
+                        .Concat(Composer.Instance.GetParts<IBrokerage>())
+                        .Where(x => !ReferenceEquals(brokerage, x));
+                    foreach (var x in new[] { brokerage }.Concat(brokerageDataQueueHandlers))
+                    {
+                        x.Message += (sender, message) =>
+                        {
+                            algorithm.BrokerageMessageHandler.HandleMessage(message);
+
+                            if (algorithm.GetLocked())
+                            {
+                                // fire brokerage message events
+                                algorithm.OnBrokerageMessage(message);
+                                switch (message.Type)
+                                {
+                                    case BrokerageMessageType.Disconnect:
+                                        algorithm.OnBrokerageDisconnect();
+                                        break;
+                                    case BrokerageMessageType.Reconnect:
+                                        algorithm.OnBrokerageReconnect();
+                                        break;
+                                }
+                            }
+                        };
+                    }
 
                     //Initialize the internal state of algorithm and job: executes the algorithm.Initialize() method.
                     initializeComplete = AlgorithmHandlers.Setup.Setup(new SetupHandlerParameters(dataManager.UniverseSelection, algorithm,
@@ -283,6 +317,7 @@ namespace QuantConnect.Lean.Engine
                 //-> Using the job + initialization: load the designated handlers:
                 if (initializeComplete)
                 {
+                    performanceTrackingTool.Initialize(algorithm);
                     // notify the LEAN manager that the algorithm is initialized and starting
                     SystemHandlers.LeanManager.OnAlgorithmStart();
 
@@ -295,32 +330,14 @@ namespace QuantConnect.Lean.Engine
 
                     //Load the associated handlers for transaction and realtime events:
                     AlgorithmHandlers.Transactions.Initialize(algorithm, brokerage, AlgorithmHandlers.Results);
-                    AlgorithmHandlers.RealTime.Setup(algorithm, job, AlgorithmHandlers.Results, SystemHandlers.Api, algorithmManager.TimeLimit);
-
-                    // wire up the brokerage message handler
-                    brokerage.Message += (sender, message) =>
-                    {
-                        algorithm.BrokerageMessageHandler.Handle(message);
-
-                        // fire brokerage message events
-                        algorithm.OnBrokerageMessage(message);
-                        switch (message.Type)
-                        {
-                            case BrokerageMessageType.Disconnect:
-                                algorithm.OnBrokerageDisconnect();
-                                break;
-                            case BrokerageMessageType.Reconnect:
-                                algorithm.OnBrokerageReconnect();
-                                break;
-                        }
-                    };
-
-                    // Result manager scanning message queue: (started earlier)
-                    AlgorithmHandlers.Results.DebugMessage(
-                        $"Launching analysis for {job.AlgorithmId} with LEAN Engine v{Globals.Version}");
-
                     try
                     {
+                        AlgorithmHandlers.RealTime.Setup(algorithm, job, AlgorithmHandlers.Results, SystemHandlers.Api, algorithmManager.TimeLimit);
+
+                        // Result manager scanning message queue: (started earlier)
+                        AlgorithmHandlers.Results.DebugMessage(
+                            $"Launching analysis for {job.AlgorithmId} with LEAN Engine v{Globals.Version}");
+
                         //Create a new engine isolator class
                         var isolator = new Isolator();
 
@@ -333,7 +350,7 @@ namespace QuantConnect.Lean.Engine
                                 // -> Using this Data Feed,
                                 // -> Send Orders to this TransactionHandler,
                                 // -> Send Results to ResultHandler.
-                                algorithmManager.Run(job, algorithm, synchronizer, AlgorithmHandlers.Transactions, AlgorithmHandlers.Results, AlgorithmHandlers.RealTime, SystemHandlers.LeanManager, isolator.CancellationToken);
+                                algorithmManager.Run(job, algorithm, synchronizer, AlgorithmHandlers.Transactions, AlgorithmHandlers.Results, AlgorithmHandlers.RealTime, SystemHandlers.LeanManager, isolator.CancellationTokenSource, performanceTrackingTool);
                             }
                             catch (Exception err)
                             {
@@ -448,6 +465,7 @@ namespace QuantConnect.Lean.Engine
                 AlgorithmHandlers.Transactions.Exit();
                 AlgorithmHandlers.RealTime.Exit();
                 AlgorithmHandlers.DataMonitor.Exit();
+                (algorithm as AlgorithmPythonWrapper)?.DisposeSafely();
             }
         }
 
@@ -533,6 +551,7 @@ namespace QuantConnect.Lean.Engine
         [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
         private static MarketHoursDatabase StaticInitializations()
         {
+            SymbolPropertiesDatabase.FromDataFolder();
             // This is slow because it create all static timezones
             var nyTime = TimeZones.NewYork;
             // slow because if goes to disk and parses json

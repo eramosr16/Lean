@@ -23,7 +23,6 @@ using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
-using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine;
 using QuantConnect.Lean.Engine.DataFeeds;
@@ -55,7 +54,8 @@ namespace QuantConnect.Tests
             string setupHandler = "RegressionSetupHandlerWrapper",
             decimal? initialCash = null,
             string algorithmLocation = null,
-            bool returnLogs = false)
+            bool returnLogs = false,
+            Dictionary<string, string> customConfigurations = null)
         {
             AlgorithmManager algorithmManager = null;
             var statistics = new Dictionary<string, string>();
@@ -67,9 +67,10 @@ namespace QuantConnect.Tests
             MarketOnCloseOrder.SubmissionTimeBuffer = MarketOnCloseOrder.DefaultSubmissionTimeBuffer;
 
             // clean up object storage
-            if (Directory.Exists(LocalObjectStore.DefaultObjectStore))
+            var objectStorePath = LocalObjectStore.DefaultObjectStore;
+            if (Directory.Exists(objectStorePath))
             {
-                Directory.Delete(LocalObjectStore.DefaultObjectStore, true);
+                Directory.Delete(objectStorePath, true);
             }
 
             var ordersLogFile = string.Empty;
@@ -83,7 +84,6 @@ namespace QuantConnect.Tests
 
             try
             {
-                // set the configuration up
                 Config.Set("algorithm-type-name", algorithm);
                 Config.Set("live-mode", "false");
                 Config.Set("environment", "");
@@ -95,6 +95,7 @@ namespace QuantConnect.Tests
                 Config.Set("result-handler", "QuantConnect.Lean.Engine.Results.RegressionResultHandler");
                 Config.Set("fundamental-data-provider", "QuantConnect.Tests.Common.Data.Fundamental.TestFundamentalDataProvider");
                 Config.Set("algorithm-language", language.ToString());
+                Config.Set("data-monitor", typeof(NullDataMonitor).Name);
                 if (string.IsNullOrEmpty(algorithmLocation))
                 {
                     Config.Set("algorithm-location",
@@ -106,12 +107,24 @@ namespace QuantConnect.Tests
                 {
                     Config.Set("algorithm-location", algorithmLocation);
                 }
+                // set the custom configuration
+                if (customConfigurations != null)
+                {
+                    foreach (var (key, value) in customConfigurations)
+                    {
+                        Config.Set(key, value);
+                    }
+                }
 
                 // Store initial log variables
                 var initialLogHandler = Log.LogHandler;
                 var initialDebugEnabled = Log.DebuggingEnabled;
 
-                var newLogHandlers = new List<ILogHandler>() { MaintainLogHandlerAttribute.LogHandler };
+                var newLogHandlers = new List<ILogHandler>();
+                if (MaintainLogHandlerAttribute.LogHandler != null)
+                {
+                    newLogHandlers.Add(MaintainLogHandlerAttribute.LogHandler);
+                }
                 // Use our current test LogHandler and a FileLogHandler
                 if (!reducedDiskSize)
                 {
@@ -124,8 +137,8 @@ namespace QuantConnect.Tests
                 }
 
                 using (Log.LogHandler = new CompositeLogHandler(newLogHandlers.ToArray()))
-                using (var algorithmHandlers = LeanEngineAlgorithmHandlers.FromConfiguration(Composer.Instance))
-                using (var systemHandlers = LeanEngineSystemHandlers.FromConfiguration(Composer.Instance))
+                using (var algorithmHandlers = Initializer.GetAlgorithmHandlers())
+                using (var systemHandlers = Initializer.GetSystemHandlers())
                 using (var workerThread  = new TestWorkerThread())
                 {
                     Log.DebuggingEnabled = !reducedDiskSize;
@@ -190,30 +203,7 @@ namespace QuantConnect.Tests
                 }
             }
 
-            if (algorithmManager?.State != expectedFinalStatus)
-            {
-                Assert.Fail($"Algorithm state should be {expectedFinalStatus} and is: {algorithmManager?.State}");
-            }
-
-            foreach (var expectedStat in expectedStatistics)
-            {
-                string result;
-                Assert.IsTrue(statistics.TryGetValue(expectedStat.Key, out result), "Missing key: " + expectedStat.Key);
-
-                // normalize -0 & 0, they are the same thing
-                var expected = expectedStat.Value;
-                if (expected == "-0")
-                {
-                    expected = "0";
-                }
-
-                if (result == "-0")
-                {
-                    result = "0";
-                }
-
-                Assert.AreEqual(expected, result, "Failed on " + expectedStat.Key);
-            }
+            AssertAlgorithmState(expectedFinalStatus, algorithmManager?.State, expectedStatistics, statistics);
 
             if (!reducedDiskSize)
             {
@@ -259,10 +249,11 @@ namespace QuantConnect.Tests
             public override IEnumerable<Slice> GetHistory(IEnumerable<HistoryRequest> requests, DateTimeZone sliceTimeZone)
             {
                 requests = requests.ToList();
-                if (requests.Any(r => RegressionSetupHandlerWrapper.Algorithm.UniverseManager.ContainsKey(r.Symbol)
-                    && (r.Symbol.SecurityType != SecurityType.Future || !r.Symbol.IsCanonical())))
+                if (requests.Any(r => r.Symbol.SecurityType != SecurityType.Option && r.Symbol.SecurityType != SecurityType.IndexOption
+                        && r.Symbol.SecurityType != SecurityType.FutureOption
+                        && r.Symbol.SecurityType != SecurityType.Future && r.Symbol.IsCanonical()))
                 {
-                    throw new Exception("History requests should not be submitted for universe symbols");
+                    throw new RegressionTestException($"Invalid history request symbols: {string.Join(",", requests.Select(x => x.Symbol))}");
                 }
                 return base.GetHistory(requests, sliceTimeZone);
             }
@@ -270,6 +261,49 @@ namespace QuantConnect.Tests
 
         public class TestWorkerThread : WorkerThread
         {
+        }
+        public class NullDataMonitor : IDataMonitor
+        {
+            public void Dispose()
+            { }
+            public void Exit()
+            { }
+            public void OnNewDataRequest(object sender, DataProviderNewDataRequestEventArgs e)
+            { }
+        }
+        public static void AssertAlgorithmState(AlgorithmStatus expectedFinalStatus, AlgorithmStatus? actualState,
+            IDictionary<string, string> expectedStatistics, IDictionary<string, string> statistics)
+        {
+            if (actualState != expectedFinalStatus)
+            {
+                Assert.Fail($"Algorithm state should be {expectedFinalStatus} and is: {actualState}");
+            }
+
+            foreach (var expectedStat in expectedStatistics)
+            {
+                if (statistics == null)
+                {
+                    Assert.Fail("Algorithm statistics are null");
+                    break;
+                }
+
+                string result;
+                Assert.IsTrue(statistics.TryGetValue(expectedStat.Key, out result), "Missing key: " + expectedStat.Key);
+
+                // normalize -0 & 0, they are the same thing
+                var expected = expectedStat.Value;
+                if (expected == "-0")
+                {
+                    expected = "0";
+                }
+
+                if (result == "-0")
+                {
+                    result = "0";
+                }
+
+                Assert.AreEqual(expected, result, "Failed on " + expectedStat.Key);
+            }
         }
     }
 }

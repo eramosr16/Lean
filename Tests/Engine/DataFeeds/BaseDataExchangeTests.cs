@@ -53,7 +53,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var enqueable = new EnqueueableEnumerator<BaseData>();
             var exchange = new BaseDataExchange("test");
 
-            var cancellationToken = new CancellationTokenSource();
+            using var cancellationToken = new CancellationTokenSource();
             Task.Run(() =>
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -64,20 +64,25 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             });
 
             BaseData last = null;
-            var lastUpdated = new AutoResetEvent(false);
+            using var lastUpdated = new AutoResetEvent(false);
             exchange.AddEnumerator(Symbols.SPY, enqueable, handleData: spy =>
             {
                 last = spy;
                 lastUpdated.Set();
             });
 
-            var finishedRunning = new AutoResetEvent(false);
+            using var finishedRunning = new AutoResetEvent(false);
             Task.Run(() => { exchange.Start(); finishedRunning.Set(); } );
 
-            Assert.IsTrue(lastUpdated.WaitOne(DefaultTimeout));
-
-            exchange.Stop();
-            cancellationToken.Cancel();
+            try
+            {
+                Assert.IsTrue(lastUpdated.WaitOne(DefaultTimeout));
+            }
+            finally
+            {
+                exchange.Stop();
+                cancellationToken.Cancel();
+            }           
 
             Assert.IsTrue(finishedRunning.WaitOne(DefaultTimeout));
 
@@ -93,7 +98,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var enqueable = new EnqueueableEnumerator<BaseData>();
             var exchange = new BaseDataExchange("test");
 
-            var cancellationToken = new CancellationTokenSource();
+            using var cancellationToken = new CancellationTokenSource();
             Task.Run(() =>
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -105,13 +110,13 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
             var first = true;
             BaseData last = null;
-            var lastUpdated = new AutoResetEvent(false);
+            using var lastUpdated = new AutoResetEvent(false);
             exchange.AddEnumerator(Symbols.SPY, enqueable, handleData: spy =>
             {
                 if (first)
                 {
                     first = false;
-                    throw new Exception("This exception should be swalloed by the exchange!");
+                    throw new RegressionTestException("This exception should be swalloed by the exchange!");
                 }
                 last = spy;
                 lastUpdated.Set();
@@ -119,11 +124,16 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
             Task.Run(() => exchange.Start());
 
-            Assert.IsTrue(lastUpdated.WaitOne(DefaultTimeout));
-
-            exchange.Stop();
-            cancellationToken.Cancel();
-            enqueable.Dispose();
+            try
+            {
+                Assert.IsTrue(lastUpdated.WaitOne(DefaultTimeout));
+            }
+            finally
+            {
+                exchange.Stop();
+                cancellationToken.Cancel();
+                enqueable.Dispose();
+            }
         }
 
         [Test]
@@ -132,7 +142,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var enqueable = new EnqueueableEnumerator<BaseData>();
             var exchange = new BaseDataExchange("test");
 
-            var cancellationToken = new CancellationTokenSource();
+            using var cancellationToken = new CancellationTokenSource();
             Task.Factory.StartNew(() =>
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -143,7 +153,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             });
 
             var first = true;
-            var errorCaught = new AutoResetEvent(true);
+            using var errorCaught = new AutoResetEvent(true);
             BaseData last = null;
 
             exchange.SetErrorHandler(error =>
@@ -157,21 +167,24 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 if (first)
                 {
                     first = false;
-                    throw new Exception();
+                    throw new RegressionTestException();
                 }
                 last = spy;
             });
 
             Task.Run(() => exchange.Start());
 
-            Assert.IsTrue(errorCaught.WaitOne(DefaultTimeout));
-
-            exchange.Stop();
-
-            Assert.IsNull(last);
-
-            enqueable.Dispose();
-            cancellationToken.Cancel();
+            try
+            {
+                Assert.IsTrue(errorCaught.WaitOne(DefaultTimeout));
+                Assert.IsNull(last);
+            }
+            finally
+            {
+                exchange.Stop();
+                enqueable.Dispose();
+                cancellationToken.Cancel();
+            }
         }
 
         [Test]
@@ -181,18 +194,23 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             exchange.SetErrorHandler(exception => true);
             exchange.AddEnumerator(Symbol.Empty, new List<BaseData> {new Tick()}.GetEnumerator(), () => false);
 
-            var isFaultedEvent = new ManualResetEvent(false);
-            var isCompletedEvent = new ManualResetEvent(false);
+            using var isFaultedEvent = new ManualResetEvent(false);
+            using var isCompletedEvent = new ManualResetEvent(false);
             Task.Run(() => exchange.Start()).ContinueWith(task =>
             {
                 if (task.IsFaulted) isFaultedEvent.Set();
                 isCompletedEvent.Set();
             });
 
-            isCompletedEvent.WaitOne();
-            Assert.IsFalse(isFaultedEvent.WaitOne(0));
-
-            exchange.Stop();
+            try
+            {
+                isCompletedEvent.WaitOne();
+                Assert.IsFalse(isFaultedEvent.WaitOne(0));
+            }
+            finally
+            {
+                exchange.Stop();
+            }
         }
 
         [Test]
@@ -201,7 +219,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var exchange = new BaseDataExchange("test");
             IEnumerator<BaseData> enumerator = new List<BaseData>().GetEnumerator();
 
-            var isCompletedEvent = new ManualResetEvent(false);
+            using var isCompletedEvent = new ManualResetEvent(false);
             exchange.AddEnumerator(Symbol.Empty, enumerator, () => true, handler => isCompletedEvent.Set());
             Task.Run(() => exchange.Start());
 

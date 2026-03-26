@@ -23,7 +23,7 @@ namespace QuantConnect.Orders
     public class BrokerageOrderIdChangedEvent
     {
         /// <summary>
-        /// The order ID.
+        /// The lean order ID.
         /// </summary>
         public int OrderId { get; set; }
 
@@ -31,5 +31,17 @@ namespace QuantConnect.Orders
         /// Brokerage Id for this order
         /// </summary>
         public List<string> BrokerId { get; set; }
+
+        /// <summary>
+        /// Returns a string that represents the current <see cref="BrokerageOrderIdChangedEvent"/>.
+        /// </summary>
+        /// <returns>
+        /// A string containing the order ID and associated brokerage IDs.
+        /// </returns>
+        public override string ToString()
+        {
+            var brokerIds = BrokerId != null ? string.Join(", ", BrokerId) : "null";
+            return $"OrderId: {OrderId}, BrokerId: [{brokerIds}]";
+        }
     }
 }

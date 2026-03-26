@@ -13,7 +13,7 @@
  * limitations under the License.
 */
 
-using System;
+using QuantConnect.Util;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -24,19 +24,16 @@ namespace QuantConnect.Securities
     /// <summary>
     /// Provides access to specific properties for various symbols
     /// </summary>
-    public class SymbolPropertiesDatabase
+    public class SymbolPropertiesDatabase : BaseSecurityDatabase<SymbolPropertiesDatabase, SymbolProperties>
     {
-        private static SymbolPropertiesDatabase _dataFolderSymbolPropertiesDatabase;
-        private static readonly object DataFolderSymbolPropertiesDatabaseLock = new object();
-
-        private readonly Dictionary<SecurityDatabaseKey, SymbolProperties> _entries;
-        private readonly IReadOnlyDictionary<SecurityDatabaseKey, SecurityDatabaseKey> _keyBySecurityType;
+        private IReadOnlyDictionary<SecurityDatabaseKey, SecurityDatabaseKey> _keyBySecurityType;
 
         /// <summary>
         /// Initialize a new instance of <see cref="SymbolPropertiesDatabase"/> using the given file
         /// </summary>
         /// <param name="file">File to read from</param>
         protected SymbolPropertiesDatabase(string file)
+            : base(null, FromDataFolder, (entry, newEntry) => entry.Update(newEntry))
         {
             var allEntries = new Dictionary<SecurityDatabaseKey, SymbolProperties>();
             var entriesBySecurityType = new Dictionary<SecurityDatabaseKey, SecurityDatabaseKey>();
@@ -57,34 +54,8 @@ namespace QuantConnect.Securities
                 allEntries[keyValuePair.Key] = keyValuePair.Value;
             }
 
-            _entries = allEntries;
+            Entries = allEntries;
             _keyBySecurityType = entriesBySecurityType;
-        }
-
-        /// <summary>
-        /// Check whether symbol properties exists for the specified market/symbol/security-type
-        /// </summary>
-        /// <param name="market">The market the exchange resides in, i.e, 'usa', 'fxcm', ect...</param>
-        /// <param name="symbol">The particular symbol being traded</param>
-        /// <param name="securityType">The security type of the symbol</param>
-        public bool ContainsKey(string market, string symbol, SecurityType securityType)
-        {
-            var key = new SecurityDatabaseKey(market, symbol, securityType);
-            return _entries.ContainsKey(key);
-        }
-
-        /// <summary>
-        /// Check whether symbol properties exists for the specified market/symbol/security-type
-        /// </summary>
-        /// <param name="market">The market the exchange resides in, i.e, 'usa', 'fxcm', ect...</param>
-        /// <param name="symbol">The particular symbol being traded (Symbol class)</param>
-        /// <param name="securityType">The security type of the symbol</param>
-        public bool ContainsKey(string market, Symbol symbol, SecurityType securityType)
-        {
-            return ContainsKey(
-                market,
-                MarketHoursDatabase.GetDatabaseSymbolKey(symbol),
-                securityType);
         }
 
         /// <summary>
@@ -123,7 +94,7 @@ namespace QuantConnect.Securities
             var lookupTicker = MarketHoursDatabase.GetDatabaseSymbolKey(symbol);
             var key = new SecurityDatabaseKey(market, lookupTicker, securityType);
 
-            if (!_entries.TryGetValue(key, out symbolProperties))
+            if (!Entries.TryGetValue(key, out symbolProperties))
             {
                 if (symbol != null && symbol.SecurityType == SecurityType.FutureOption)
                 {
@@ -132,14 +103,14 @@ namespace QuantConnect.Securities
                     lookupTicker = MarketHoursDatabase.GetDatabaseSymbolKey(symbol.Underlying);
                     key = new SecurityDatabaseKey(market, lookupTicker, symbol.Underlying.SecurityType);
 
-                    if (_entries.TryGetValue(key, out symbolProperties))
+                    if (Entries.TryGetValue(key, out symbolProperties))
                     {
                         return symbolProperties;
                     }
                 }
 
                 // now check with null symbol key
-                if (!_entries.TryGetValue(new SecurityDatabaseKey(market, null, securityType), out symbolProperties))
+                if (!Entries.TryGetValue(new SecurityDatabaseKey(market, null, securityType), out symbolProperties))
                 {
                     // no properties found, return object with default property values
                     return SymbolProperties.GetDefault(defaultQuoteCurrency);
@@ -157,7 +128,7 @@ namespace QuantConnect.Securities
         /// <returns>An IEnumerable of symbol properties matching the specified market/security-type</returns>
         public IEnumerable<KeyValuePair<SecurityDatabaseKey, SymbolProperties>> GetSymbolPropertiesList(string market, SecurityType securityType)
         {
-            foreach (var entry in _entries)
+            foreach (var entry in Entries)
             {
                 var key = entry.Key;
                 var symbolProperties = entry.Value;
@@ -176,7 +147,7 @@ namespace QuantConnect.Securities
         /// <returns>An IEnumerable of symbol properties matching the specified market</returns>
         public IEnumerable<KeyValuePair<SecurityDatabaseKey, SymbolProperties>> GetSymbolPropertiesList(string market)
         {
-            foreach (var entry in _entries)
+            foreach (var entry in Entries)
             {
                 var key = entry.Key;
                 var symbolProperties = entry.Value;
@@ -199,7 +170,11 @@ namespace QuantConnect.Securities
         public bool SetEntry(string market, string symbol, SecurityType securityType, SymbolProperties properties)
         {
             var key = new SecurityDatabaseKey(market, symbol, securityType);
-            _entries[key] = properties;
+            lock (DataFolderDatabaseLock)
+            {
+                Entries[key] = properties;
+                CustomEntries.Add(key);
+            }
             return true;
         }
 
@@ -210,15 +185,18 @@ namespace QuantConnect.Securities
         /// <returns>A <see cref="SymbolPropertiesDatabase"/> class that represents the data in the symbol-properties folder</returns>
         public static SymbolPropertiesDatabase FromDataFolder()
         {
-            lock (DataFolderSymbolPropertiesDatabaseLock)
+            if (DataFolderDatabase == null)
             {
-                if (_dataFolderSymbolPropertiesDatabase == null)
+                lock (DataFolderDatabaseLock)
                 {
-                    var directory = Path.Combine(Globals.DataFolder, "symbol-properties");
-                    _dataFolderSymbolPropertiesDatabase = new SymbolPropertiesDatabase(Path.Combine(directory, "symbol-properties-database.csv"));
+                    if (DataFolderDatabase == null)
+                    {
+                        var path = Path.Combine(Globals.GetDataFolderPath("symbol-properties"), "symbol-properties-database.csv");
+                        DataFolderDatabase = new SymbolPropertiesDatabase(path);
+                    }
                 }
             }
-            return _dataFolderSymbolPropertiesDatabase;
+            return DataFolderDatabase;
         }
 
         /// <summary>
@@ -277,12 +255,19 @@ namespace QuantConnect.Securities
                 lotSize: csv[7].ToDecimal(),
                 marketTicker: HasValidValue(csv, 8) ? csv[8] : string.Empty,
                 minimumOrderSize: HasValidValue(csv, 9) ? csv[9].ToDecimal() : null,
-                priceMagnifier: HasValidValue(csv, 10) ? csv[10].ToDecimal() : 1);
+                priceMagnifier: HasValidValue(csv, 10) ? csv[10].ToDecimal() : 1,
+                strikeMultiplier: HasValidValue(csv, 11) ? csv[11].ToDecimal() : 1);
         }
 
         private static bool HasValidValue(string[] array, uint position)
         {
             return array.Length > position && !string.IsNullOrEmpty(array[position]);
+        }
+
+        internal override void Merge(SymbolPropertiesDatabase newDatabase, bool resetCustomEntries)
+        {
+            base.Merge(newDatabase, resetCustomEntries);
+            _keyBySecurityType = newDatabase._keyBySecurityType.ToReadOnlyDictionary();
         }
     }
 }

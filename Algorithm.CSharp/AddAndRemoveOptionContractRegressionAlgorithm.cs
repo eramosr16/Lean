@@ -40,10 +40,12 @@ namespace QuantConnect.Algorithm.CSharp
 
             var aapl = QuantConnect.Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
 
-            _contract = OptionChainProvider.GetOptionContractList(aapl, Time)
-                .OrderBy(symbol => symbol.ID.Symbol)
-                .FirstOrDefault(optionContract => optionContract.ID.OptionRight == OptionRight.Call
-                    && optionContract.ID.OptionStyle == OptionStyle.American);
+            _contract = OptionChain(aapl)
+                .OrderBy(symbol => symbol.ID.OptionRight)
+                .ThenBy(symbol => symbol.ID.StrikePrice)
+                .ThenBy(symbol => symbol.ID.Date)
+                .ThenBy(symbol => symbol.ID)
+                .FirstOrDefault(optionContract => optionContract.ID.OptionRight == OptionRight.Call);
             AddOptionContract(_contract);
         }
 
@@ -59,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 else
                 {
-                    throw new Exception("Expect a single call to OnData where we removed the option and underlying");
+                    throw new RegressionTestException("Expect a single call to OnData where we removed the option and underlying");
                 }
             }
         }
@@ -68,7 +70,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!_hasRemoved)
             {
-                throw new Exception("Expect a single call to OnData where we removed the option and underlying");
+                throw new RegressionTestException("Expect a single call to OnData where we removed the option and underlying");
             }
         }
 
@@ -80,29 +82,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 24;
+        public long DataPoints => 26;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 1;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -121,6 +130,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

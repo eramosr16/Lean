@@ -29,7 +29,7 @@ namespace QuantConnect.Tests.Common.Securities
     {
         private readonly ConcurrentDictionary<int, Order> _orders = new ConcurrentDictionary<int, Order>();
         private readonly ConcurrentDictionary<int, OrderTicket> _tickets = new ConcurrentDictionary<int, OrderTicket>();
-        public readonly ConcurrentDictionary<int, OrderRequest> ProcessedOrdersRequests = new ConcurrentDictionary<int, OrderRequest>();
+        public ConcurrentDictionary<int, OrderRequest> ProcessedOrdersRequests { get; init; } = new ConcurrentDictionary<int, OrderRequest>();
 
         public SecurityTransactionManager TransactionManager { get; set; }
         public void AddOrder(Order order)
@@ -105,6 +105,13 @@ namespace QuantConnect.Tests.Common.Securities
             _orders.Clear();
             _tickets.Clear();
             ProcessedOrdersRequests.Clear();
+        }
+
+        public ProjectedHoldings GetProjectedHoldings(Security security)
+        {
+            var openOrderQuantity = GetOpenOrderTickets(x => x.Symbol == security.Symbol)
+                .Aggregate(0m, (d, t) => d + t.QuantityRemaining);
+            return new ProjectedHoldings(security.Holdings.Quantity, openOrderQuantity);
         }
     }
 }

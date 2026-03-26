@@ -18,6 +18,7 @@ using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Interfaces;
+using System;
 using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp
@@ -31,6 +32,8 @@ namespace QuantConnect.Algorithm.CSharp
     /// <meta name="tag" content="ticks event" />
     public class TickDataFilteringAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
+        private DateTime _orderTime;
+
         /// <summary>
         /// Initialize the tick filtering example algorithm
         /// </summary>
@@ -48,11 +51,11 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data arriving here will now be filtered.
         /// </summary>
-        /// <param name="data">Ticks data array</param>
-        public void OnData(Ticks data)
+        /// <param name="slice">Ticks data array</param>
+        public override void OnData(Slice slice)
         {
-            if (!data.ContainsKey("SPY")) return;
-            var spyTickList = data["SPY"];
+            if (!slice.ContainsKey("SPY")) return;
+            var spyTickList = slice["SPY"];
 
             //Ticks return a list of ticks this second
             foreach (var tick in spyTickList)
@@ -63,6 +66,12 @@ namespace QuantConnect.Algorithm.CSharp
             if (!Portfolio.Invested)
             {
                 SetHoldings("SPY", 1);
+                _orderTime = Time;
+            }
+            // Let's shortcut to reduce regression test duration
+            else if (Time - _orderTime > TimeSpan.FromMinutes(5))
+            {
+                Quit();
             }
         }
 
@@ -74,12 +83,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 707410;
+        public long DataPoints => 26983;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -87,16 +96,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "25000"},
+            {"End Equity", "25009.41"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -114,8 +130,9 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Fees", "$1.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Portfolio Turnover", "99.58%"},
-            {"OrderListHash", "f6e0886e13e96d3154550e1a234bc6d8"}
+            {"Portfolio Turnover", "99.55%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "96e039d2b3ee8fccf0e161367ee78629"}
         };
     }
 
@@ -138,9 +155,9 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Filter out a tick from this vehicle, with this new data:
         /// </summary>
-        /// <param name="data">New data packet:</param>
+        /// <param name="vehicle">New data packet:</param>
         /// <param name="asset">Vehicle of this filter.</param>
-        public bool Filter(Security asset, BaseData data)
+        public bool Filter(Security vehicle, BaseData data)
         {
             // TRUE -->  Accept Tick
             // FALSE --> Reject Tick

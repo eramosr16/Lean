@@ -85,7 +85,7 @@ namespace QuantConnect.Algorithm.CSharp
                 || changes.AddedSecurities.All(security => security.Symbol != QuantConnect.Symbol.Create("IBM", SecurityType.Equity, Market.USA))
                 || changes.AddedSecurities.All(security => security.Symbol != QuantConnect.Symbol.Create("AAPL", SecurityType.Equity, Market.USA)))
             {
-                throw new Exception("Unexpected security changes");
+                throw new RegressionTestException("Unexpected security changes");
             }
             Log($"OnSecuritiesChanged({Time:o}):: {changes}");
         }
@@ -98,12 +98,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 63893;
+        public long DataPoints => 63891;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -111,35 +111,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "8"},
-            {"Average Win", "0.01%"},
-            {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "-5.161%"},
-            {"Drawdown", "2.100%"},
-            {"Expectancy", "2.059"},
-            {"Net Profit", "-0.203%"},
-            {"Sharpe Ratio", "-3.683"},
-            {"Sortino Ratio", "-5.057"},
-            {"Probabilistic Sharpe Ratio", "11.993%"},
-            {"Loss Rate", "33%"},
-            {"Win Rate", "67%"},
-            {"Profit-Loss Ratio", "3.59"},
-            {"Alpha", "-0.214"},
-            {"Beta", "0.678"},
-            {"Annual Standard Deviation", "0.093"},
+            {"Total Orders", "8"},
+            {"Average Win", "0%"},
+            {"Average Loss", "-0.01%"},
+            {"Compounding Annual Return", "-45.405%"},
+            {"Drawdown", "2.300%"},
+            {"Expectancy", "-1"},
+            {"Start Equity", "100000"},
+            {"End Equity", "97705.34"},
+            {"Net Profit", "-2.295%"},
+            {"Sharpe Ratio", "-3.77"},
+            {"Sortino Ratio", "-4.881"},
+            {"Probabilistic Sharpe Ratio", "10.598%"},
+            {"Loss Rate", "100%"},
+            {"Win Rate", "0%"},
+            {"Profit-Loss Ratio", "0"},
+            {"Alpha", "-0.233"},
+            {"Beta", "0.705"},
+            {"Annual Standard Deviation", "0.097"},
             {"Annual Variance", "0.009"},
-            {"Information Ratio", "-2.107"},
-            {"Tracking Error", "0.073"},
-            {"Treynor Ratio", "-0.506"},
-            {"Total Fees", "$22.21"},
-            {"Estimated Strategy Capacity", "$75000000.00"},
+            {"Information Ratio", "-2.374"},
+            {"Tracking Error", "0.075"},
+            {"Treynor Ratio", "-0.52"},
+            {"Total Fees", "$19.98"},
+            {"Estimated Strategy Capacity", "$100000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Portfolio Turnover", "7.20%"},
-            {"OrderListHash", "dcb0652e844cc5eef1721413f81d7aae"}
+            {"Portfolio Turnover", "7.33%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "62cae7349a5294699d7d71ac4ec42b09"}
         };
     }
 }

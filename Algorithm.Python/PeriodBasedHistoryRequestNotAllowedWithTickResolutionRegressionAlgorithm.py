@@ -17,34 +17,38 @@ from AlgorithmImports import *
 ### Regression algorithm for testing that period-based history requests are not allowed with tick resolution
 ### </summary>
 class PeriodBasedHistoryRequestNotAllowedWithTickResolutionRegressionAlgorithm(QCAlgorithm):
-    def Initialize(self):
-        self.SetStartDate(2013, 10, 8)
-        self.SetEndDate(2013, 10, 9)
+    def initialize(self):
+        self.set_start_date(2013, 10, 8)
+        self.set_end_date(2013, 10, 9)
 
-        spy = self.AddEquity("SPY", Resolution.Tick).Symbol
+        spy = self.add_equity("SPY", Resolution.TICK).symbol
 
         # Tick resolution is not allowed for period-based history requests
-        self.AssertThatHistoryThrowsForTickResolution(lambda: self.History[Tick](spy, 1),
+        self.assert_that_history_throws_for_tick_resolution(lambda: self.history[Tick](spy, 1),
             "Tick history call with implicit tick resolution")
-        self.AssertThatHistoryThrowsForTickResolution(lambda: self.History[Tick](spy, 1, Resolution.Tick),
+        self.assert_that_history_throws_for_tick_resolution(lambda: self.history[Tick](spy, 1, Resolution.TICK),
             "Tick history call with explicit tick resolution")
-        self.AssertThatHistoryThrowsForTickResolution(lambda: self.History[Tick]([spy], 1),
+        self.assert_that_history_throws_for_tick_resolution(lambda: self.history[Tick]([spy], 1),
             "Tick history call with symbol array with implicit tick resolution")
-        self.AssertThatHistoryThrowsForTickResolution(lambda: self.History[Tick]([spy], 1, Resolution.Tick),
+        self.assert_that_history_throws_for_tick_resolution(lambda: self.history[Tick]([spy], 1, Resolution.TICK),
             "Tick history call with symbol array with explicit tick resolution")
 
-        history = self.History[Tick](spy, TimeSpan.FromHours(12))
-        if len(list(history)) == 0:
-            raise Exception("On history call with implicit tick resolution: history returned no results")
+        history = self.history[Tick](spy, TimeSpan.from_hours(12))
+        # Check whether history has data without enumerating the whole list
+        if not any(x for x in history):
+            raise AssertionError("On history call with implicit tick resolution: history returned no results")
 
-        history = self.History[Tick](spy, TimeSpan.FromHours(12), Resolution.Tick)
-        if len(list(history)) == 0:
-            raise Exception("On history call with explicit tick resolution: history returned no results")
+        history = self.history[Tick](spy, TimeSpan.from_hours(12), Resolution.TICK)
+        if not any(x for x in history):
+            raise AssertionError("On history call with explicit tick resolution: history returned no results")
 
-    def AssertThatHistoryThrowsForTickResolution(self, historyCall, historyCallDescription):
+        # We already tested what we wanted to test, we can quit now
+        self.quit()
+
+    def assert_that_history_throws_for_tick_resolution(self, history_call, history_call_description):
         try:
-            historyCall()
-            raise Exception(f"{historyCallDescription}: expected an exception to be thrown")
+            history_call()
+            raise AssertionError(f"{history_call_description}: expected an exception to be thrown")
         except InvalidOperationException:
             # expected
             pass

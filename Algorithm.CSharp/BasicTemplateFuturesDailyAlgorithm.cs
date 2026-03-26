@@ -18,8 +18,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Data;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
-using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Future;
 
@@ -83,7 +83,7 @@ namespace QuantConnect.Algorithm.CSharp
                     // if found, trade it.
                     // Also check if exchange is open for regular or extended hours. Since daily data comes at 8PM, this allows us prevent the
                     // algorithm from trading on friday when there is not after-market.
-                    if (contract != null && Securities[contract.Symbol].Exchange.Hours.IsOpen(Time, true))
+                    if (contract != null)
                     {
                         MarketOrder(contract.Symbol, 1);
                     }
@@ -99,8 +99,18 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (Time.TimeOfDay != TimeSpan.Zero)
                 {
-                    throw new Exception($"{Time} unexpected symbol changed event {changedEvent}!");
+                    throw new RegressionTestException($"{Time} unexpected symbol changed event {changedEvent}!");
                 }
+            }
+        }
+
+        public override void OnSecuritiesChanged(SecurityChanges changes)
+        {
+            if (changes.RemovedSecurities.Count > 0 &&
+                Portfolio.Invested &&
+                Securities.Values.Where(x => x.Invested).All(x => x.Exchange.Hours.IsOpen(Time, true)))
+            {
+                Liquidate();
             }
         }
 
@@ -112,12 +122,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 14036;
+        public virtual long DataPoints => 5867;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -125,35 +135,43 @@ namespace QuantConnect.Algorithm.CSharp
         public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "128"},
-            {"Average Win", "0.26%"},
-            {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "-0.071%"},
-            {"Drawdown", "0.400%"},
-            {"Expectancy", "-0.116"},
-            {"Net Profit", "-0.071%"},
-            {"Sharpe Ratio", "-1.999"},
-            {"Sortino Ratio", "-1.806"},
-            {"Probabilistic Sharpe Ratio", "10.091%"},
-            {"Loss Rate", "97%"},
-            {"Win Rate", "3%"},
-            {"Profit-Loss Ratio", "27.29"},
-            {"Alpha", "-0.008"},
-            {"Beta", "0.001"},
+            {"Total Orders", "38"},
+            {"Average Win", "0.33%"},
+            {"Average Loss", "-0.03%"},
+            {"Compounding Annual Return", "0.098%"},
+            {"Drawdown", "0.300%"},
+            {"Expectancy", "0.165"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "1000991.96"},
+            {"Net Profit", "0.099%"},
+            {"Sharpe Ratio", "-1.708"},
+            {"Sortino Ratio", "-0.84"},
+            {"Probabilistic Sharpe Ratio", "14.542%"},
+            {"Loss Rate", "89%"},
+            {"Win Rate", "11%"},
+            {"Profit-Loss Ratio", "10.07"},
+            {"Alpha", "-0.007"},
+            {"Beta", "0.002"},
             {"Annual Standard Deviation", "0.004"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-1.367"},
+            {"Information Ratio", "-1.354"},
             {"Tracking Error", "0.089"},
-            {"Treynor Ratio", "-5.445"},
-            {"Total Fees", "$285.44"},
-            {"Estimated Strategy Capacity", "$1000.00"},
+            {"Treynor Ratio", "-4.054"},
+            {"Total Fees", "$85.54"},
+            {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "ES VRJST036ZY0X"},
-            {"Portfolio Turnover", "3.41%"},
-            {"OrderListHash", "1666cd6c277c6ea8b1b46d5dfa6bac9f"}
+            {"Portfolio Turnover", "1.04%"},
+            {"Drawdown Recovery", "69"},
+            {"OrderListHash", "eafc33ea4dcb219f7aacdbdd0973d5bc"}
         };
     }
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,20 +14,22 @@
 */
 
 using System;
+using System.Collections.Generic;
 using NUnit.Framework;
+using QuantConnect.Data;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 
 namespace QuantConnect.Tests.Common.Data
 {
     [TestFixture]
-    public class TickConsolidatorTests
+    public class TickConsolidatorTests: BaseConsolidatorTests
     {
         [Test]
         public void AggregatesNewTradeBarsProperly()
         {
             TradeBar newTradeBar = null;
-            var consolidator = new TickConsolidator(4);
+            using var consolidator = new TickConsolidator(4);
             consolidator.DataConsolidated += (sender, tradeBar) =>
             {
                 newTradeBar = tradeBar;
@@ -85,7 +87,7 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void DoesNotConsolidateDifferentSymbols()
         {
-            var consolidator = new TickConsolidator(2);
+            using var consolidator = new TickConsolidator(2);
 
             var reference = DateTime.Today;
 
@@ -117,7 +119,7 @@ namespace QuantConnect.Tests.Common.Data
         public void AggregatesPeriodInCountModeWithDailyData()
         {
             TradeBar consolidated = null;
-            var consolidator = new TickConsolidator(2);
+            using var consolidator = new TickConsolidator(2);
             consolidator.DataConsolidated += (sender, bar) =>
             {
                 consolidated = bar;
@@ -130,7 +132,8 @@ namespace QuantConnect.Tests.Common.Data
             consolidator.Update(new Tick { Time = reference.AddMilliseconds(1)});
             Assert.IsNotNull(consolidated);
 
-            // sadly the first emit will be off by the data resolution since we 'swallow' a point, so to
+            // The EndTime of the consolidated bar should match the EndTime of the last data point
+            Assert.AreEqual(reference.AddMilliseconds(1), consolidated.EndTime);
             Assert.AreEqual(TimeSpan.FromMilliseconds(1), consolidated.Period);
             consolidated = null;
 
@@ -140,14 +143,15 @@ namespace QuantConnect.Tests.Common.Data
             consolidator.Update(new Tick { Time = reference.AddMilliseconds(3)});
             Assert.IsNotNull(consolidated);
 
-            Assert.AreEqual(TimeSpan.FromMilliseconds(2), consolidated.Period);
+            Assert.AreEqual(reference.AddMilliseconds(3), consolidated.EndTime);
+            Assert.AreEqual(TimeSpan.FromMilliseconds(1), consolidated.Period);
         }
 
         [Test]
         public void AggregatesPeriodInPeriodModeWithDailyData()
         {
             TradeBar consolidated = null;
-            var consolidator = new TickConsolidator(TimeSpan.FromDays(1));
+            using var consolidator = new TickConsolidator(TimeSpan.FromDays(1));
             consolidator.DataConsolidated += (sender, bar) =>
             {
                 consolidated = bar;
@@ -176,7 +180,7 @@ namespace QuantConnect.Tests.Common.Data
         public void AggregatesPeriodInPeriodModeWithDailyDataAndRoundedTime()
         {
             TradeBar consolidated = null;
-            var consolidator = new TickConsolidator(TimeSpan.FromDays(1));
+            using var consolidator = new TickConsolidator(TimeSpan.FromDays(1));
             consolidator.DataConsolidated += (sender, bar) =>
             {
                 consolidated = bar;
@@ -208,7 +212,7 @@ namespace QuantConnect.Tests.Common.Data
         public void AggregatesNewTicksInPeriodWithRoundedTime()
         {
             TradeBar consolidated = null;
-            var consolidator = new TickConsolidator(TimeSpan.FromMinutes(1));
+            using var consolidator = new TickConsolidator(TimeSpan.FromMinutes(1));
             consolidator.DataConsolidated += (sender, bar) =>
             {
                 consolidated = bar;
@@ -282,7 +286,7 @@ namespace QuantConnect.Tests.Common.Data
         public void ProcessesTradeTicksOnly()
         {
             TradeBar consolidated = null;
-            var consolidator = new TickConsolidator(TimeSpan.FromMinutes(1));
+            using var consolidator = new TickConsolidator(TimeSpan.FromMinutes(1));
             consolidator.DataConsolidated += (sender, bar) =>
             {
                 consolidated = bar;
@@ -332,5 +336,28 @@ namespace QuantConnect.Tests.Common.Data
             Assert.AreEqual(consolidated.Close, tick1.Value);
         }
 
+        protected override IDataConsolidator CreateConsolidator()
+        {
+            return new TickConsolidator(2);
+        }
+
+        protected override IEnumerable<IBaseData> GetTestValues()
+        {
+            var time = DateTime.Today;
+            return new List<Tick>()
+            {
+                new Tick(){Symbol = Symbols.SPY, Time = time, Value = 10 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(1), Value = 2 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(2), Value = 8 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(3), Value = 5 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(4), Value = 13 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(5), Value = 15 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(6), Value = 10 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(7), Value = 11 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(8), Value = 11 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(9), Value = 4 },
+                new Tick(){Symbol = Symbols.SPY, Time = time.AddSeconds(10), Value = 7 },
+            };
+        }
     }
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -62,16 +62,6 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CompositeAlphaModel"/> class
-        /// </summary>
-        /// <param name="alphaModel">The individual alpha model defining this composite model</param>
-        public CompositeAlphaModel(PyObject alphaModel)
-            : this(new[] { alphaModel} )
-        {
-
-        }
-
-        /// <summary>
         /// Updates this alpha model with the latest data from the algorithm.
         /// This is called each time the algorithm receives data for subscribed securities.
         /// This method patches this call through the each of the wrapped models.
@@ -126,11 +116,10 @@ namespace QuantConnect.Algorithm.Framework.Alphas
         /// <param name="pyAlphaModel">The alpha model to add</param>
         public void AddAlpha(PyObject pyAlphaModel)
         {
-            IAlphaModel alphaModel;
-            if (!pyAlphaModel.TryConvert(out alphaModel))
-            {
-                alphaModel = new AlphaModelPythonWrapper(pyAlphaModel);
-            }
+            var alphaModel = PythonUtil.CreateInstanceOrWrapper<IAlphaModel>(
+                pyAlphaModel,
+                py => new AlphaModelPythonWrapper(py)
+            );
             _alphaModels.Add(alphaModel);
         }
     }

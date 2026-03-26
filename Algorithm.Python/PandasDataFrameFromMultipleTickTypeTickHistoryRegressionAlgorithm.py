@@ -19,26 +19,26 @@ from AlgorithmImports import *
 ### duplicated timestamps.
 ### </summary>
 class PandasDataFrameFromMultipleTickTypeTickHistoryRegressionAlgorithm(QCAlgorithm):
-    def Initialize(self):
-        self.SetStartDate(2013, 10, 8)
-        self.SetEndDate(2013, 10, 8)
+    def initialize(self):
+        self.set_start_date(2013, 10, 8)
+        self.set_end_date(2013, 10, 8)
 
-        spy = self.AddEquity("SPY", Resolution.Minute).Symbol
+        spy = self.add_equity("SPY", Resolution.MINUTE).symbol
 
-        subscriptions = [x for x in self.SubscriptionManager.Subscriptions if x.Symbol == spy]
+        subscriptions = [x for x in self.subscription_manager.subscriptions if x.symbol == spy]
         if len(subscriptions) != 2:
-            raise Exception(f"Expected 2 subscriptions, but found {len(subscriptions)}")
+            raise AssertionError(f"Expected 2 subscriptions, but found {len(subscriptions)}")
 
         history = pd.DataFrame()
         try:
-            history = self.History(Tick, spy, timedelta(days=1), Resolution.Tick)
+            history = self.history(Tick, spy, timedelta(days=1), Resolution.TICK)
         except Exception as e:
-            raise Exception(f"History call failed: {e}")
+            raise AssertionError(f"History call failed: {e}")
 
         if history.shape[0] == 0:
-            raise Exception("SPY tick history is empty")
+            raise AssertionError("SPY tick history is empty")
 
         if not np.array_equal(history.columns.to_numpy(), ['askprice', 'asksize', 'bidprice', 'bidsize', 'exchange', 'lastprice', 'quantity']):
-            raise Exception("Unexpected columns in SPY tick history")
+            raise AssertionError("Unexpected columns in SPY tick history")
 
-        self.Quit()
+        self.quit()

@@ -19,12 +19,12 @@ from RangeConsolidatorAlgorithm import RangeConsolidatorAlgorithm
 ### Example algorithm of how to use ClassicRangeConsolidator
 ### </summary>
 class ClassicRangeConsolidatorAlgorithm(RangeConsolidatorAlgorithm):
-    def CreateRangeConsolidator(self):
-        return ClassicRangeConsolidator(self.GetRange())
+    def create_range_consolidator(self) -> ClassicRangeConsolidator:
+        return ClassicRangeConsolidator(self.get_range())
     
-    def OnDataConsolidated(self, sender, rangeBar):
-        super().OnDataConsolidated(sender, rangeBar)
+    def on_data_consolidated(self, sender: object, range_bar: RangeBar):
+        super().on_data_consolidated(sender, range_bar)
 
-        if rangeBar.Volume == 0:
-            raise Exception("All RangeBar's should have non-zero volume, but this doesn't")
+        if range_bar.volume == 0:
+            raise AssertionError("All RangeBar's should have non-zero volume, but this doesn't")
 

@@ -14,8 +14,6 @@
 */
 
 using System;
-using QuantConnect.Orders;
-using QuantConnect.Orders.Fees;
 using QuantConnect.Algorithm.Framework.Portfolio;
 
 namespace QuantConnect.Securities
@@ -121,7 +119,9 @@ namespace QuantConnect.Securities
             }
             protected set
             {
-                _invested = value != 0;
+                // avoid any small values, due to differences in lot size, to return invested true but lean not allowing us to trade sice it will be rounded down to 0
+                // specially useful to crypto assets which take fees from the base or quote currency
+                _invested = Math.Abs(value) >= _security.SymbolProperties.LotSize;
                 _quantity = value;
             }
         }
@@ -476,24 +476,26 @@ namespace QuantConnect.Securities
         /// <remarks>Does not use the transaction model for market fills but should.</remarks>
         public virtual decimal TotalCloseProfit(bool includeFees = true, decimal? exitPrice = null, decimal? entryPrice = null, decimal? quantity = null)
         {
-            var quantityToUse = quantity ?? Quantity;
-            if (quantityToUse == 0)
+            var quantityToUse = Quantity;
+            if (quantity.HasValue)
+            {
+                quantityToUse = quantity.Value;
+            }
+            else if (!_invested)
             {
                 return 0;
             }
 
-            // this is in the account currency
-            var marketOrder = new MarketOrder(_security.Symbol, -quantityToUse, _security.LocalTime.ConvertToUtc(_security.Exchange.TimeZone));
-
             var feesInAccountCurrency = 0m;
             if (includeFees)
             {
-                var orderFee = _security.FeeModel.GetOrderFee(
-                    new OrderFeeParameters(_security, marketOrder)).Value;
-                feesInAccountCurrency = _currencyConverter.ConvertToAccountCurrency(orderFee).Amount;
+                // this is in the account currency
+                var liquidationFees = Extensions.GetMarketOrderFees(_security, -quantityToUse, _security.LocalTime.ConvertToUtc(_security.Exchange.TimeZone));
+                feesInAccountCurrency = _currencyConverter.ConvertToAccountCurrency(liquidationFees).Amount;
             }
 
-            var price = marketOrder.Direction == OrderDirection.Sell ? _security.BidPrice : _security.AskPrice;
+            // if we are long, we would need to sell against the bid
+            var price = IsLong ? _security.BidPrice : _security.AskPrice;
             if (price == 0)
             {
                 // Bid/Ask prices can both be equal to 0. This usually happens when we request our holdings from

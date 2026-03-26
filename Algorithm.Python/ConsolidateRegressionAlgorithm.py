@@ -20,100 +20,112 @@ from CustomDataRegressionAlgorithm import Bitcoin
 class ConsolidateRegressionAlgorithm(QCAlgorithm):
 
     # Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
-    def Initialize(self):
-        self.SetStartDate(2013, 10, 8)
-        self.SetEndDate(2013, 10, 20)
+    def initialize(self):
+        self.set_start_date(2020, 1, 5)
+        self.set_end_date(2020, 1, 20)
 
-        SP500 = Symbol.Create(Futures.Indices.SP500EMini, SecurityType.Future, Market.CME)
-        self._symbol = _symbol = self.FutureChainProvider.GetFutureContractList(SP500, self.StartDate)[0]
-        self.AddFutureContract(_symbol)
+        SP500 = Symbol.create(Futures.Indices.SP_500_E_MINI, SecurityType.FUTURE, Market.CME)
+        symbol = list(sorted(self.futures_chain(SP500).contracts.keys(), key=lambda symbol: symbol.id.date))[0]
+        self._future = self.add_future_contract(symbol)
 
-        self._consolidationCounts = [0] * 6
-        self._smas = [SimpleMovingAverage(10) for x in self._consolidationCounts]
-        self._lastSmaUpdates = [datetime.min for x in self._consolidationCounts]
-        self._monthlyConsolidatorSma = SimpleMovingAverage(10)
-        self._monthlyConsolidationCount = 0
-        self._weeklyConsolidatorSma = SimpleMovingAverage(10)
-        self._weeklyConsolidationCount = 0
-        self._lastWeeklySmaUpdate = datetime.min
+        tradable_dates_count = len(list(Time.each_tradeable_day_in_time_zone(self._future.exchange.hours,
+                                                                             self.start_date,
+                                                                             self.end_date,
+                                                                             self._future.exchange.time_zone,
+                                                                             False)))
+        self._expected_consolidation_counts = []
 
-        self.Consolidate(_symbol, Calendar.Monthly, lambda bar: self.UpdateMonthlyConsolidator(bar, -1)) # shouldn't consolidate
+        self.consolidate(symbol, Calendar.MONTHLY, lambda bar: self.update_monthly_consolidator(bar)) # shouldn't consolidate
 
-        self.Consolidate(_symbol, Calendar.Weekly, TickType.Trade, lambda bar: self.UpdateWeeklyConsolidator(bar))
+        self.consolidate(symbol, Calendar.WEEKLY, TickType.TRADE, lambda bar: self.update_weekly_consolidator(bar))
 
-        self.Consolidate(_symbol, Resolution.Daily, lambda bar: self.UpdateTradeBar(bar, 0))
+        self.consolidate(symbol, Resolution.DAILY, lambda bar: self.update_trade_bar(bar, 0))
+        self._expected_consolidation_counts.append(tradable_dates_count)
 
-        self.Consolidate(_symbol, Resolution.Daily, TickType.Quote, lambda bar: self.UpdateQuoteBar(bar, 1))
+        self.consolidate(symbol, Resolution.DAILY, TickType.QUOTE, lambda bar: self.update_quote_bar(bar, 1))
+        self._expected_consolidation_counts.append(tradable_dates_count)
 
-        self.Consolidate(_symbol, timedelta(1), lambda bar: self.UpdateTradeBar(bar, 2))
+        self.consolidate(symbol, timedelta(1), lambda bar: self.update_trade_bar(bar, 2))
+        self._expected_consolidation_counts.append(tradable_dates_count - 1)
 
-        self.Consolidate(_symbol, timedelta(1), TickType.Quote, lambda bar: self.UpdateQuoteBar(bar, 3))
+        self.consolidate(symbol, timedelta(1), TickType.QUOTE, lambda bar: self.update_quote_bar(bar, 3))
+        self._expected_consolidation_counts.append(tradable_dates_count - 1)
 
         # sending None tick type
-        self.Consolidate(_symbol, timedelta(1), None, lambda bar: self.UpdateTradeBar(bar, 4))
+        self.consolidate(symbol, timedelta(1), None, lambda bar: self.update_trade_bar(bar, 4))
+        self._expected_consolidation_counts.append(tradable_dates_count - 1)
 
-        self.Consolidate(_symbol, Resolution.Daily, None, lambda bar: self.UpdateTradeBar(bar, 5))
+        self.consolidate(symbol, Resolution.DAILY, None, lambda bar: self.update_trade_bar(bar, 5))
+        self._expected_consolidation_counts.append(tradable_dates_count)
+
+        self._consolidation_counts = [0] * len(self._expected_consolidation_counts)
+        self._smas = [SimpleMovingAverage(10) for x in self._consolidation_counts]
+        self._last_sma_updates = [datetime.min for x in self._consolidation_counts]
+        self._monthly_consolidator_sma = SimpleMovingAverage(10)
+        self._monthly_consolidation_count = 0
+        self._weekly_consolidator_sma = SimpleMovingAverage(10)
+        self._weekly_consolidation_count = 0
+        self._last_weekly_sma_update = datetime.min
 
         # custom data
-        self._customDataConsolidator = 0
-        customSymbol = self.AddData(Bitcoin, "BTC", Resolution.Minute).Symbol
-        self.Consolidate(customSymbol, timedelta(1), lambda bar: self.IncrementCounter(1))
+        self._custom_data_consolidator = 0
+        custom_symbol = self.add_data(Bitcoin, "BTC", Resolution.MINUTE).symbol
+        self.consolidate(custom_symbol, timedelta(1), lambda bar: self.increment_counter(1))
 
-        self._customDataConsolidator2 = 0
-        self.Consolidate(customSymbol, Resolution.Daily, lambda bar: self.IncrementCounter(2))
-
-    def IncrementCounter(self, id):
+    def increment_counter(self, id):
         if id == 1:
-            self._customDataConsolidator += 1
-        if id == 2:
-            self._customDataConsolidator2 += 1
+            self._custom_data_consolidator += 1
 
-    def UpdateTradeBar(self, bar, position):
-        self._smas[position].Update(bar.EndTime, bar.Volume)
-        self._lastSmaUpdates[position] = bar.EndTime
-        self._consolidationCounts[position] += 1
+    def update_trade_bar(self, bar, position):
+        self._smas[position].update(bar.end_time, bar.volume)
+        self._last_sma_updates[position] = bar.end_time
+        self._consolidation_counts[position] += 1
 
-    def UpdateQuoteBar(self, bar, position):
-        self._smas[position].Update(bar.EndTime, bar.Ask.High)
-        self._lastSmaUpdates[position] = bar.EndTime
-        self._consolidationCounts[position] += 1
+    def update_quote_bar(self, bar, position):
+        self._smas[position].update(bar.end_time, bar.ask.high)
+        self._last_sma_updates[position] = bar.end_time
+        self._consolidation_counts[position] += 1
 
-    def UpdateMonthlyConsolidator(self, bar):
-        self._monthlyConsolidatorSma.Update(bar.EndTime, bar.Volume)
-        self._monthlyConsolidationCount += 1
+    def update_monthly_consolidator(self, bar):
+        self._monthly_consolidator_sma.update(bar.end_time, bar.volume)
+        self._monthly_consolidation_count += 1
 
-    def UpdateWeeklyConsolidator(self, bar):
-        self._weeklyConsolidatorSma.Update(bar.EndTime, bar.Volume)
-        self._lastWeeklySmaUpdate = bar.EndTime
-        self._weeklyConsolidationCount += 1
+    def update_weekly_consolidator(self, bar):
+        self._weekly_consolidator_sma.update(bar.end_time, bar.volume)
+        self._last_weekly_sma_update = bar.end_time
+        self._weekly_consolidation_count += 1
 
-    def  OnEndOfAlgorithm(self):
-        expectedConsolidations = 8
-        expectedWeeklyConsolidations = 1
-        if (any(i != expectedConsolidations for i in self._consolidationCounts) or
-            self._weeklyConsolidationCount != expectedWeeklyConsolidations or
-            self._customDataConsolidator == 0 or
-            self._customDataConsolidator2 == 0):
-            raise ValueError("Unexpected consolidation count")
+    def on_end_of_algorithm(self):
+        for i, expected_consolidation_count in enumerate(self._expected_consolidation_counts):
+            consolidation_count = self._consolidation_counts[i]
+            if consolidation_count != expected_consolidation_count:
+                raise ValueError(f"Unexpected consolidation count for index {i}: expected {expected_consolidation_count} but was {consolidation_count}")
+
+        expected_weekly_consolidations = (self.end_date - self.start_date).days // 7
+        if self._weekly_consolidation_count != expected_weekly_consolidations:
+            raise ValueError(f"Expected {expected_weekly_consolidations} weekly consolidations but found {self._weekly_consolidation_count}")
+
+        if self._custom_data_consolidator == 0:
+            raise ValueError("Custom data consolidator did not consolidate any data")
 
         for i, sma in enumerate(self._smas):
-            if sma.Samples != expectedConsolidations:
-                raise Exception(f"Expected {expectedConsolidations} samples in each SMA but found {sma.Samples} in SMA in index {i}")
+            if sma.samples != self._expected_consolidation_counts[i]:
+                raise AssertionError(f"Expected {self._expected_consolidation_counts[i]} samples in each SMA but found {sma.samples} in SMA in index {i}")
 
-            lastUpdate = self._lastSmaUpdates[i]
-            if sma.Current.Time != lastUpdate:
-                raise Exception(f"Expected SMA in index {i} to have been last updated at {lastUpdate} but was {sma.Current.Time}")
+            last_update = self._last_sma_updates[i]
+            if sma.current.time != last_update:
+                raise AssertionError(f"Expected SMA in index {i} to have been last updated at {last_update} but was {sma.current.time}")
 
-        if self._monthlyConsolidationCount != 0 or self._monthlyConsolidatorSma.Samples != 0:
-            raise Exception("Expected monthly consolidator to not have consolidated any data")
+        if self._monthly_consolidation_count != 0 or self._monthly_consolidator_sma.samples != 0:
+            raise AssertionError("Expected monthly consolidator to not have consolidated any data")
 
-        if self._weeklyConsolidatorSma.Samples != expectedWeeklyConsolidations:
-            raise Exception(f"Expected {expectedWeeklyConsolidations} samples in the weekly consolidator SMA but found {self._weeklyConsolidatorSma.Samples}")
+        if self._weekly_consolidator_sma.samples != expected_weekly_consolidations:
+            raise AssertionError(f"Expected {expected_weekly_consolidations} samples in the weekly consolidator SMA but found {self._weekly_consolidator_sma.samples}")
 
-        if self._weeklyConsolidatorSma.Current.Time != self._lastWeeklySmaUpdate:
-            raise Exception(f"Expected weekly consolidator SMA to have been last updated at {self._lastWeeklySmaUpdate} but was {self._weeklyConsolidatorSma.Current.Time}")
+        if self._weekly_consolidator_sma.current.time != self._last_weekly_sma_update:
+            raise AssertionError(f"Expected weekly consolidator SMA to have been last updated at {self._last_weekly_sma_update} but was {self._weekly_consolidator_sma.current.time}")
 
-    # OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
-    def OnData(self, data):
-        if not self.Portfolio.Invested:
-           self.SetHoldings(self._symbol, 0.5)
+    # on_data event is the primary entry point for your algorithm. Each new data point will be pumped in here.
+    def on_data(self, data):
+        if not self.portfolio.invested and self._future.has_data:
+           self.set_holdings(self._future.symbol, 0.5)

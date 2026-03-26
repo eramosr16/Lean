@@ -33,11 +33,6 @@ namespace QuantConnect.Data.UniverseSelection
         private readonly Func<DateTime, IEnumerable<Symbol>> _selector;
 
         /// <summary>
-        /// Gets the settings used for subscriptons added for this universe
-        /// </summary>
-        public override UniverseSettings UniverseSettings { get; }
-
-        /// <summary>
         /// Initializes a new instance of the <see cref="ScheduledUniverse"/> class
         /// </summary>
         /// <param name="timeZone">The time zone the date/time rules are in</param>
@@ -62,7 +57,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <param name="selector">Selector function accepting the date time firing time and returning the universe selected symbols</param>
         /// <param name="settings">Universe settings for subscriptions added via this universe, null will default to algorithm's universe settings</param>
         public ScheduledUniverse(IDateRule dateRule, ITimeRule timeRule, Func<DateTime, IEnumerable<Symbol>> selector, UniverseSettings settings = null)
-            : this(TimeZones.NewYork, dateRule, timeRule, selector, settings)
+            : this(TimeZones.Utc, dateRule, timeRule, selector, settings)
         {
         }
 
@@ -77,11 +72,10 @@ namespace QuantConnect.Data.UniverseSelection
         public ScheduledUniverse(DateTimeZone timeZone, IDateRule dateRule, ITimeRule timeRule, PyObject selector, UniverseSettings settings = null)
             : base(CreateConfiguration(timeZone, dateRule, timeRule))
         {
-            Func<DateTime, object> func;
-            selector.TryConvertToDelegate(out func);
+            selector.TrySafeAs<Func<DateTime, object>>(out var func);
             _dateRule = dateRule;
             _timeRule = timeRule;
-            _selector = func.ConvertToUniverseSelectionSymbolDelegate();
+            _selector = func.ConvertSelectionSymbolDelegate();
             UniverseSettings = settings;
         }
 
@@ -93,7 +87,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <param name="selector">Selector function accepting the date time firing time and returning the universe selected symbols</param>
         /// <param name="settings">Universe settings for subscriptions added via this universe, null will default to algorithm's universe settings</param>
         public ScheduledUniverse(IDateRule dateRule, ITimeRule timeRule, PyObject selector, UniverseSettings settings = null)
-            : this(TimeZones.NewYork, dateRule, timeRule, selector, settings)
+            : this(TimeZones.Utc, dateRule, timeRule, selector, settings)
         {
         }
 
@@ -105,7 +99,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <returns>The data that passes the filter</returns>
         public override IEnumerable<Symbol> SelectSymbols(DateTime utcTime, BaseDataCollection data)
         {
-            return _selector(utcTime);
+            return _selector(DateTime.SpecifyKind(utcTime, DateTimeKind.Unspecified));
         }
 
         /// <summary>

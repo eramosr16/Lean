@@ -55,7 +55,7 @@ namespace QuantConnect.Algorithm.CSharp
                 Resolution.Minute).Symbol;
 
             // Select a future option expiring ITM, and adds it to the algorithm.
-            _esOption = AddFutureOptionContract(OptionChainProvider.GetOptionContractList(_es19m20, Time)
+            _esOption = AddFutureOptionContract(OptionChain(_es19m20)
                 .Where(x => x.ID.StrikePrice >= 3400m && x.ID.OptionRight == OptionRight.Call)
                 .OrderBy(x => x.ID.StrikePrice)
                 .Take(1)
@@ -64,7 +64,7 @@ namespace QuantConnect.Algorithm.CSharp
             _expectedContract = QuantConnect.Symbol.CreateOption(_es19m20, Market.CME, OptionStyle.American, OptionRight.Call, 3400m, new DateTime(2020, 6, 19));
             if (_esOption != _expectedContract)
             {
-                throw new Exception($"Contract {_expectedContract} was not found in the chain");
+                throw new RegressionTestException($"Contract {_expectedContract} was not found in the chain");
             }
 
             Schedule.On(DateRules.Tomorrow, TimeRules.AfterMarketOpen(_es19m20, 1), () =>
@@ -73,24 +73,24 @@ namespace QuantConnect.Algorithm.CSharp
             });
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             // Assert delistings, so that we can make sure that we receive the delisting warnings at
             // the expected time. These assertions detect bug #4872
-            foreach (var delisting in data.Delistings.Values)
+            foreach (var delisting in slice.Delistings.Values)
             {
                 if (delisting.Type == DelistingType.Warning)
                 {
                     if (delisting.Time != new DateTime(2020, 6, 19))
                     {
-                        throw new Exception($"Delisting warning issued at unexpected date: {delisting.Time}");
+                        throw new RegressionTestException($"Delisting warning issued at unexpected date: {delisting.Time}");
                     }
                 }
                 if (delisting.Type == DelistingType.Delisted)
                 {
                     if (delisting.Time != new DateTime(2020, 6, 20))
                     {
-                        throw new Exception($"Delisting happened at unexpected date: {delisting.Time}");
+                        throw new RegressionTestException($"Delisting happened at unexpected date: {delisting.Time}");
                     }
                 }
             }
@@ -106,13 +106,13 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (!Securities.ContainsKey(orderEvent.Symbol))
             {
-                throw new Exception($"Order event Symbol not found in Securities collection: {orderEvent.Symbol}");
+                throw new RegressionTestException($"Order event Symbol not found in Securities collection: {orderEvent.Symbol}");
             }
 
             var security = Securities[orderEvent.Symbol];
             if (security.Symbol == _es19m20)
             {
-                throw new Exception($"Expected no order events for underlying Symbol {security.Symbol}");
+                throw new RegressionTestException($"Expected no order events for underlying Symbol {security.Symbol}");
             }
 
             if (security.Symbol == _expectedContract)
@@ -121,7 +121,7 @@ namespace QuantConnect.Algorithm.CSharp
             }
             else
             {
-                throw new Exception($"Received order event for unknown Symbol: {orderEvent.Symbol}");
+                throw new RegressionTestException($"Received order event for unknown Symbol: {orderEvent.Symbol}");
             }
 
             Log($"{orderEvent}");
@@ -131,27 +131,27 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (orderEvent.Direction == OrderDirection.Sell && optionContract.Holdings.Quantity != -1)
             {
-                throw new Exception($"No holdings were created for option contract {optionContract.Symbol}");
+                throw new RegressionTestException($"No holdings were created for option contract {optionContract.Symbol}");
             }
             if (orderEvent.Direction == OrderDirection.Buy && optionContract.Holdings.Quantity != 0)
             {
-                throw new Exception("Expected no options holdings after closing position");
+                throw new RegressionTestException("Expected no options holdings after closing position");
             }
             if (orderEvent.IsAssignment)
             {
-                throw new Exception($"Assignment was not expected for {orderEvent.Symbol}");
+                throw new RegressionTestException($"Assignment was not expected for {orderEvent.Symbol}");
             }
         }
 
         /// <summary>
         /// Ran at the end of the algorithm to ensure the algorithm has no holdings
         /// </summary>
-        /// <exception cref="Exception">The algorithm has holdings</exception>
+        /// <exception cref="RegressionTestException">The algorithm has holdings</exception>
         public override void OnEndOfAlgorithm()
         {
             if (Portfolio.Invested)
             {
-                throw new Exception($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
+                throw new RegressionTestException($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
             }
         }
 
@@ -163,31 +163,38 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 212195;
+        public long DataPoints => 212198;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 1;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "1.74%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "3.600%"},
             {"Drawdown", "0.300%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "101736.08"},
             {"Net Profit", "1.736%"},
-            {"Sharpe Ratio", "0.597"},
+            {"Sharpe Ratio", "0.596"},
             {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "49.736%"},
             {"Loss Rate", "0%"},
@@ -199,12 +206,13 @@ namespace QuantConnect.Algorithm.CSharp
             {"Annual Variance", "0.001"},
             {"Information Ratio", "0.009"},
             {"Tracking Error", "0.375"},
-            {"Treynor Ratio", "-11.057"},
+            {"Treynor Ratio", "-11.048"},
             {"Total Fees", "$1.42"},
             {"Estimated Strategy Capacity", "$100000000.00"},
-            {"Lowest Capacity Asset", "ES XFH59UPNF7B8|ES XFH59UK0MYO1"},
+            {"Lowest Capacity Asset", "ES XFH59UPNJHMS|ES XFH59UK0MYO1"},
             {"Portfolio Turnover", "0.01%"},
-            {"OrderListHash", "a379fcf592a5533f6a66b446c5e76301"}
+            {"Drawdown Recovery", "165"},
+            {"OrderListHash", "3e39f8bdb373b371999835fbf680eef8"}
         };
     }
 }

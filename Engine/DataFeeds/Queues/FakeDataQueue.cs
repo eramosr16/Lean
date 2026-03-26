@@ -23,7 +23,6 @@ using QuantConnect.Securities;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
-using QuantConnect.Configuration;
 using Timer = System.Timers.Timer;
 using QuantConnect.Lean.Engine.HistoricalData;
 
@@ -39,7 +38,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         private int _dataPointsPerSecondPerSymbol;
 
         private readonly Timer _timer;
-        private readonly IDataCacheProvider _dataCacheProvider;
         private readonly IOptionChainProvider _optionChainProvider;
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
         private readonly IDataAggregator _aggregator;
@@ -56,7 +54,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         /// Initializes a new instance of the <see cref="FakeDataQueue"/> class to randomly emit data for each symbol
         /// </summary>
         public FakeDataQueue()
-            : this(new AggregationManager())
+            : this(Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(nameof(AggregationManager)))
         {
 
         }
@@ -68,9 +66,17 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         {
             _aggregator = dataAggregator;
             _dataPointsPerSecondPerSymbol = dataPointsPerSecondPerSymbol;
-            _dataCacheProvider = new ZipDataCacheProvider(new DefaultDataProvider(), true);
-            var mapFileProvider = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(Config.Get("map-file-provider", "LocalDiskMapFileProvider"), false);
-            _optionChainProvider = new LiveOptionChainProvider(_dataCacheProvider, mapFileProvider);
+
+            var mapFileProvider = Composer.Instance.GetPart<IMapFileProvider>();
+            var historyManager = (IHistoryProvider)Composer.Instance.GetPart<HistoryProviderManager>();
+            if (historyManager == null)
+            {
+                historyManager = Composer.Instance.GetPart<IHistoryProvider>();
+            }
+            var optionChainProvider = new LiveOptionChainProvider();
+            optionChainProvider.Initialize(new(mapFileProvider, historyManager));
+            _optionChainProvider = optionChainProvider;
+
             _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
             _symbolExchangeTimeZones = new Dictionary<Symbol, TimeZoneOffsetProvider>();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
@@ -150,7 +156,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         {
             _timer.Stop();
             _timer.DisposeSafely();
-            _dataCacheProvider.DisposeSafely();
         }
 
         /// <summary>
@@ -159,7 +164,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
         private void PopulateQueue()
         {
             var symbols = _subscriptionManager.GetSubscribedSymbols();
-            
+
 
             foreach (var symbol in symbols)
             {
@@ -239,6 +244,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Queues
             }
         }
 
+        /// <summary>
+        /// Checks if the FakeDataQueue can perform selection
+        /// </summary>
         public bool CanPerformSelection()
         {
             return true;

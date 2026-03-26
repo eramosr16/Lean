@@ -14,6 +14,7 @@
 */
 
 using System;
+using Newtonsoft.Json;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 
@@ -27,6 +28,7 @@ namespace QuantConnect.Orders
         /// <summary>
         /// Limit price for this order.
         /// </summary>
+        [JsonProperty(PropertyName = "limitPrice")]
         public decimal LimitPrice { get; internal set; }
 
         /// <summary>
@@ -57,12 +59,15 @@ namespace QuantConnect.Orders
             : base(symbol, quantity, time, tag, properties)
         {
             LimitPrice = limitPrice;
+        }
 
-            if (string.IsNullOrEmpty(tag))
-            {
-                //Default tag values to display limit price in GUI.
-                Tag = Messages.LimitOrder.Tag(this);
-            }
+        /// <summary>
+        /// Gets the default tag for this order
+        /// </summary>
+        /// <returns>The default tag</returns>
+        public override string GetDefaultTag()
+        {
+            return Messages.LimitOrder.Tag(this);
         }
 
         /// <summary>
@@ -105,7 +110,7 @@ namespace QuantConnect.Orders
         /// <returns>A copy of this order</returns>
         public override Order Clone()
         {
-            var order = new LimitOrder {LimitPrice = LimitPrice};
+            var order = new LimitOrder { LimitPrice = LimitPrice };
             CopyTo(order);
             return order;
         }

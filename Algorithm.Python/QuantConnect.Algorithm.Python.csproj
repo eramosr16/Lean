@@ -4,13 +4,11 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <RootNamespace>QuantConnect.Algorithm.Python</RootNamespace>
     <AssemblyName>QuantConnect.Algorithm.Python</AssemblyName>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <Description>QuantConnect LEAN Engine: Algorithm.Python Project - A collection of Py algorithm demonstrations for how to use the API</Description>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -39,9 +37,18 @@
     <Compile Include="..\Common\Properties\SharedAssemblyInfo.cs" Link="Properties\SharedAssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.26" />
+    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.53" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="OptionUniverseFilterGreeksShortcutsRegressionAlgorithm.py" />
+    <Content Include="OptionUniverseFilterOptionsDataRegressionAlgorithm.py" />
+    <Content Include="OptionUniverseFilterGreeksRegressionAlgorithm.py" />
+    <Content Include="FutureUniverseHistoryRegressionAlgorithm.py" />
+    <Content Include="FutureOptionChainFullDataRegressionAlgorithm.py" />
+    <Content Include="FutureOptionChainsMultipleFullDataRegressionAlgorithm.py" />
+    <Content Include="FuturesChainFullDataRegressionAlgorithm.py" />
+    <Content Include="FuturesChainsMultipleFullDataRegressionAlgorithm.py" />
+    <Content Include="OptionUniverseHistoryRegressionAlgorithm.py" />
     <Content Include="FundamentalUniverseSelectionAlgorithm.py" />
     <Content Include="AccumulativeInsightPortfolioRegressionAlgorithm.py" />
     <Content Include="CustomDataTypeHistoryAlgorithm.py" />
@@ -240,7 +247,6 @@
     <None Include="StandardDeviationExecutionModelRegressionAlgorithm.py" />
     <None Include="TimeInForceAlgorithm.py" />
     <None Include="TrailingStopRiskFrameworkRegressionAlgorithm.py" />
-    <None Include="UncorrelatedUniverseSelectionFrameworkAlgorithm.py" />
     <None Include="UniverseSelectionRegressionAlgorithm.py" />
     <None Include="UpdateOrderRegressionAlgorithm.py" />
     <None Include="UserDefinedUniverseAlgorithm.py" />

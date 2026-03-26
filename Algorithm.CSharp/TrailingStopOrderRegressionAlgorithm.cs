@@ -37,6 +37,7 @@ namespace QuantConnect.Algorithm.CSharp
         private OrderTicket _buyOrderTicket;
         private OrderTicket _sellOrderTicket;
         private Slice _previousSlice;
+        protected virtual bool AsynchronousOrders => false;
 
         public override void Initialize()
         {
@@ -56,7 +57,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (_buyOrderTicket == null)
             {
-                _buyOrderTicket = TrailingStopOrder(_symbol, 100, trailingAmount: BuyTrailingAmount, trailingAsPercentage: false);
+                _buyOrderTicket = TrailingStopOrder(_symbol, 100, trailingAmount: BuyTrailingAmount, trailingAsPercentage: false, asynchronous: AsynchronousOrders);
             }
             else if (_buyOrderTicket.Status != OrderStatus.Filled)
             {
@@ -71,7 +72,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var stopPriceToMarketPriceDistance = stopPrice - low;
                 if (stopPriceToMarketPriceDistance > BuyTrailingAmount)
                 {
-                    throw new Exception($"StopPrice {stopPrice} should be within {BuyTrailingAmount} of the previous low price {low} at all times.");
+                    throw new RegressionTestException($"StopPrice {stopPrice} should be within {BuyTrailingAmount} of the previous low price {low} at all times.");
                 }
             }
 
@@ -79,7 +80,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (Portfolio.Invested)
                 {
-                    _sellOrderTicket = TrailingStopOrder(_symbol, -100, trailingAmount: SellTrailingAmount, trailingAsPercentage: false);
+                    _sellOrderTicket = TrailingStopOrder(_symbol, -100, trailingAmount: SellTrailingAmount, trailingAsPercentage: false, asynchronous: AsynchronousOrders);
                 }
             }
             else if (_sellOrderTicket.Status != OrderStatus.Filled)
@@ -95,7 +96,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var stopPriceToMarketPriceDistance = high - stopPrice;
                 if (stopPriceToMarketPriceDistance > SellTrailingAmount)
                 {
-                    throw new Exception($"StopPrice {stopPrice} should be within {SellTrailingAmount} of the previous high price {high} at all times.");
+                    throw new RegressionTestException($"StopPrice {stopPrice} should be within {SellTrailingAmount} of the previous high price {high} at all times.");
                 }
             }
 
@@ -111,7 +112,7 @@ namespace QuantConnect.Algorithm.CSharp
                     var stopPrice = _buyOrderTicket.Get(OrderField.StopPrice);
                     if (orderEvent.FillPrice < stopPrice)
                     {
-                        throw new Exception($@"Buy trailing stop order should have filled with price greater than or equal to the stop price {
+                        throw new RegressionTestException($@"Buy trailing stop order should have filled with price greater than or equal to the stop price {
                             stopPrice}. Fill price: {orderEvent.FillPrice}");
                     }
                 }
@@ -120,9 +121,20 @@ namespace QuantConnect.Algorithm.CSharp
                     var stopPrice = _sellOrderTicket.Get(OrderField.StopPrice);
                     if (orderEvent.FillPrice > stopPrice)
                     {
-                        throw new Exception($@"Sell trailing stop order should have filled with price less than or equal to the stop price {
+                        throw new RegressionTestException($@"Sell trailing stop order should have filled with price less than or equal to the stop price {
                             stopPrice}. Fill price: {orderEvent.FillPrice}");
                     }
+                }
+            }
+        }
+
+        public override void OnEndOfAlgorithm()
+        {
+            foreach (var ticket in Transactions.GetOrderTickets())
+            {
+                if (ticket.SubmitRequest.Asynchronous != AsynchronousOrders)
+                {
+                    throw new RegressionTestException("Expected all orders to have the same asynchronous flag as the algorithm.");
                 }
             }
         }
@@ -135,7 +147,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages => new[] { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -148,16 +160,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0.02%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "1.833%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100023.22"},
             {"Net Profit", "0.023%"},
             {"Sharpe Ratio", "3.926"},
             {"Sortino Ratio", "0"},
@@ -176,7 +195,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$36000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "5.79%"},
-            {"OrderListHash", "52f67285c3f5ecdc66f89cb1c0d08421"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "d56bac89a568c3a45cac595e69a35875"}
         };
     }
 }

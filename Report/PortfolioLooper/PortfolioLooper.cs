@@ -77,7 +77,7 @@ namespace QuantConnect.Report
 
             Algorithm = new PortfolioLooperAlgorithm((decimal)startingCash, orders, algorithmConfiguration);
             var dataPermissionManager = new DataPermissionManager();
-            historyProvider.Initialize(new HistoryProviderInitializeParameters(null, null, null, _cacheProvider, mapFileProvider, factorFileProvider, (_) => { }, false, dataPermissionManager, Algorithm.ObjectStore));
+            historyProvider.Initialize(new HistoryProviderInitializeParameters(null, null, null, _cacheProvider, mapFileProvider, factorFileProvider, (_) => { }, false, dataPermissionManager, Algorithm.ObjectStore, Algorithm.Settings));
             Algorithm.SetHistoryProvider(historyProvider);
 
             // Dummy LEAN datafeed classes and initializations that essentially do nothing
@@ -130,7 +130,7 @@ namespace QuantConnect.Report
             Algorithm.FromOrders(orders);
 
             // More initialization, this time with Algorithm and other misc. classes
-            _resultHandler.Initialize(job, new Messaging.Messaging(), new Api.Api(), transactions);
+            _resultHandler.Initialize(new (job, new Messaging.Messaging(), new Api.Api(), transactions, mapFileProvider));
             _resultHandler.SetAlgorithm(Algorithm, Algorithm.Portfolio.TotalPortfolioValue);
 
             Algorithm.Transactions.SetOrderProcessor(transactions);
@@ -191,7 +191,8 @@ namespace QuantConnect.Report
                     1,
                     resolution,
                     security.Exchange.Hours,
-                    configToUse.DataTimeZone);
+                    configToUse.DataTimeZone,
+                    configToUse.Type);
                 var endTime = algorithm.EndDate;
 
                 historyRequests.Add(historyRequestFactory.CreateHistoryRequest(
@@ -402,7 +403,8 @@ namespace QuantConnect.Report
                 // calculate on stale data.
                 Algorithm.Portfolio.InvalidateTotalPortfolioValue();
 
-                var orderEvent = new OrderEvent(order, order.Time, Orders.Fees.OrderFee.Zero) { FillPrice = order.Price, FillQuantity = order.Quantity };
+                var ticket = order.ToOrderTicket(Algorithm.Transactions);
+                var orderEvent = new OrderEvent(order, order.Time, Orders.Fees.OrderFee.Zero) { FillPrice = order.Price, FillQuantity = order.Quantity, Ticket = ticket };
 
                 // Process the order
                 Algorithm.Portfolio.ProcessFills(new List<OrderEvent> { orderEvent });

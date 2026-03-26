@@ -16,6 +16,7 @@
 using Python.Runtime;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
@@ -24,6 +25,7 @@ using QuantConnect.Orders.OptionExercise;
 using QuantConnect.Orders.Slippage;
 using QuantConnect.Python;
 using QuantConnect.Securities.Interfaces;
+using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
 
@@ -38,12 +40,12 @@ namespace QuantConnect.Securities.Option
         /// <summary>
         /// The default number of days required to settle an equity sale
         /// </summary>
-        public const int DefaultSettlementDays = 1;
+        public static int DefaultSettlementDays { get; set; } = 1;
 
         /// <summary>
         /// The default time of day for settlement
         /// </summary>
-        public static readonly TimeSpan DefaultSettlementTime = new (8, 0, 0);
+        public static readonly TimeSpan DefaultSettlementTime = new(6, 0, 0);
 
         /// <summary>
         /// Constructor for the option security
@@ -55,13 +57,15 @@ namespace QuantConnect.Securities.Option
         /// <param name="currencyConverter">Currency converter used to convert <see cref="CashAmount"/>
         /// instances into units of the account currency</param>
         /// <param name="registeredTypes">Provides all data types registered in the algorithm</param>
+        /// <param name="priceModelProvider">The option price model provider</param>
         /// <remarks>Used in testing</remarks>
         public Option(SecurityExchangeHours exchangeHours,
             SubscriptionDataConfig config,
             Cash quoteCurrency,
             OptionSymbolProperties symbolProperties,
             ICurrencyConverter currencyConverter,
-            IRegisteredSecurityDataTypesProvider registeredTypes)
+            IRegisteredSecurityDataTypesProvider registeredTypes,
+            IOptionPriceModelProvider priceModelProvider = null)
             : this(config.Symbol,
                 quoteCurrency,
                 symbolProperties,
@@ -78,7 +82,8 @@ namespace QuantConnect.Securities.Option
                 new SecurityPriceVariationModel(),
                 currencyConverter,
                 registeredTypes,
-                null)
+                null,
+                priceModelProvider)
         {
             AddData(config);
             SetDataNormalizationMode(DataNormalizationMode.Raw);
@@ -96,6 +101,7 @@ namespace QuantConnect.Securities.Option
         /// <param name="registeredTypes">Provides all data types registered in the algorithm</param>
         /// <param name="securityCache">Cache to store security information</param>
         /// <param name="underlying">Future underlying security</param>
+        /// <param name="priceModelProvider">The option price model provider</param>
         public Option(Symbol symbol,
             SecurityExchangeHours exchangeHours,
             Cash quoteCurrency,
@@ -103,8 +109,9 @@ namespace QuantConnect.Securities.Option
             ICurrencyConverter currencyConverter,
             IRegisteredSecurityDataTypesProvider registeredTypes,
             SecurityCache securityCache,
-            Security underlying)
-           : this(symbol,
+            Security underlying,            
+            IOptionPriceModelProvider priceModelProvider = null)
+           : this (symbol,
                quoteCurrency,
                symbolProperties,
                new OptionExchange(exchangeHours),
@@ -120,7 +127,8 @@ namespace QuantConnect.Securities.Option
                new SecurityPriceVariationModel(),
                currencyConverter,
                registeredTypes,
-               underlying)
+               underlying,
+               priceModelProvider)
         {
         }
 
@@ -147,7 +155,8 @@ namespace QuantConnect.Securities.Option
             IPriceVariationModel priceVariationModel,
             ICurrencyConverter currencyConverter,
             IRegisteredSecurityDataTypesProvider registeredTypesProvider,
-            Security underlying
+            Security underlying,
+            IOptionPriceModelProvider priceModelProvider
         ) : base(
             symbol,
             quoteCurrency,
@@ -171,23 +180,13 @@ namespace QuantConnect.Securities.Option
             ExerciseSettlement = SettlementType.PhysicalDelivery;
             SetDataNormalizationMode(DataNormalizationMode.Raw);
             OptionExerciseModel = new DefaultExerciseModel();
-            PriceModel = symbol.ID.OptionStyle switch
-            {
-                // CRR model has the best accuracy and speed suggested by
-                // Branka, Zdravka & Tea (2014). Numerical Methods versus Bjerksund and Stensland Approximations for American Options Pricing.
-                // International Journal of Economics and Management Engineering. 8:4.
-                // Available via: https://downloads.dxfeed.com/specifications/dxLibOptions/Numerical-Methods-versus-Bjerksund-and-Stensland-Approximations-for-American-Options-Pricing-.pdf
-                // Also refer to OptionPriceModelTests.MatchesIBGreeksBulk() test,
-                // we select the most accurate and computational efficient model
-                OptionStyle.American => OptionPriceModels.BinomialCoxRossRubinstein(),
-                OptionStyle.European => OptionPriceModels.BlackScholes(),
-                _ => throw new ArgumentException("Invalid OptionStyle")
-            };
+            PriceModel = (priceModelProvider ?? QLOptionPriceModelProvider.Instance).GetOptionPriceModel(symbol);
             Holdings = new OptionHolding(this, currencyConverter);
             _symbolProperties = (OptionSymbolProperties)symbolProperties;
             SetFilter(-1, 1, TimeSpan.Zero, TimeSpan.FromDays(35));
             Underlying = underlying;
             OptionAssignmentModel = new DefaultOptionAssignmentModel();
+            ScaledStrikePrice = StrikePrice * SymbolProperties.StrikeMultiplier;
         }
 
         // save off a strongly typed version of symbol properties
@@ -207,6 +206,15 @@ namespace QuantConnect.Securities.Option
         /// Gets the strike price
         /// </summary>
         public decimal StrikePrice => Symbol.ID.StrikePrice;
+
+        /// <summary>
+        /// Gets the strike price multiplied by the strike multiplier
+        /// </summary>
+        public decimal ScaledStrikePrice
+        {
+            get;
+            private set;
+        }
 
         /// <summary>
         /// Gets the expiration date
@@ -328,7 +336,7 @@ namespace QuantConnect.Securities.Option
         /// </summary>
         public decimal GetIntrinsicValue(decimal underlyingPrice)
         {
-            return Math.Max(0.0m, GetPayOff(underlyingPrice));
+            return OptionPayoff.GetIntrinsicValue(underlyingPrice, ScaledStrikePrice, Right);
         }
 
         /// <summary>
@@ -338,7 +346,7 @@ namespace QuantConnect.Securities.Option
         /// <returns></returns>
         public decimal GetPayOff(decimal underlyingPrice)
         {
-            return Right == OptionRight.Call ? underlyingPrice - StrikePrice : StrikePrice - underlyingPrice;
+            return OptionPayoff.GetPayOff(underlyingPrice, ScaledStrikePrice, Right);
         }
 
         /// <summary>
@@ -348,7 +356,7 @@ namespace QuantConnect.Securities.Option
         /// <returns></returns>
         public decimal OutOfTheMoneyAmount(decimal underlyingPrice)
         {
-            return Math.Max(0, Right == OptionRight.Call ? StrikePrice - underlyingPrice : underlyingPrice - StrikePrice);
+            return Math.Max(0, Right == OptionRight.Call ? ScaledStrikePrice - underlyingPrice : underlyingPrice - ScaledStrikePrice);
         }
 
         /// <summary>
@@ -383,7 +391,7 @@ namespace QuantConnect.Securities.Option
         /// price of the specified option contract</returns>
         public OptionPriceModelResult EvaluatePriceModel(Slice slice, OptionContract contract)
         {
-            return PriceModel.Evaluate(this, slice, contract);
+            return PriceModel.Evaluate(new OptionPriceModelParameters(this, slice, contract));
         }
 
         /// <summary>
@@ -431,7 +439,7 @@ namespace QuantConnect.Securities.Option
                 var model = PriceModel as QLOptionPriceModel;
                 if (model != null)
                 {
-                   model.EnableGreekApproximation = value;
+                    model.EnableGreekApproximation = value;
                 }
             }
         }
@@ -439,7 +447,7 @@ namespace QuantConnect.Securities.Option
         /// <summary>
         /// Gets or sets the contract filter
         /// </summary>
-        public IDerivativeSecurityFilter ContractFilter
+        public IDerivativeSecurityFilter<OptionUniverse> ContractFilter
         {
             get; set;
         }
@@ -450,22 +458,10 @@ namespace QuantConnect.Securities.Option
         /// <param name="pyObject">The option assignment model to use</param>
         public void SetOptionAssignmentModel(PyObject pyObject)
         {
-            if (pyObject.TryConvert<IOptionAssignmentModel>(out var optionAssignmentModel))
-            {
-                // pure C# implementation
-                SetOptionAssignmentModel(optionAssignmentModel);
-            }
-            else if (Extensions.TryConvert<IOptionAssignmentModel>(pyObject, out _, allowPythonDerivative: true))
-            {
-                SetOptionAssignmentModel(new OptionAssignmentModelPythonWrapper(pyObject));
-            }
-            else
-            {
-                using(Py.GIL())
-                {
-                    throw new ArgumentException($"SetOptionAssignmentModel: {pyObject.Repr()} is not a valid argument.");
-                }
-            }
+            OptionAssignmentModel = PythonUtil.CreateInstanceOrWrapper<IOptionAssignmentModel>(
+                pyObject,
+                py => new OptionAssignmentModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -483,22 +479,10 @@ namespace QuantConnect.Securities.Option
         /// <param name="pyObject">The option exercise model to use</param>
         public void SetOptionExerciseModel(PyObject pyObject)
         {
-            if (pyObject.TryConvert<IOptionExerciseModel>(out var optionExerciseModel))
-            {
-                // pure C# implementation
-                SetOptionExerciseModel(optionExerciseModel);
-            }
-            else if (Extensions.TryConvert<IOptionExerciseModel>(pyObject, out _, allowPythonDerivative: true))
-            {
-                SetOptionExerciseModel(new OptionExerciseModelPythonWrapper(pyObject));
-            }
-            else
-            {
-                using (Py.GIL())
-                {
-                    throw new ArgumentException($"SetOptionExerciseModel: {pyObject.Repr()} is not a valid argument.");
-                }
-            }
+            OptionExerciseModel = PythonUtil.CreateInstanceOrWrapper<IOptionExerciseModel>(
+                pyObject,
+                py => new OptionExerciseModelPythonWrapper(py)
+            );
         }
 
         /// <summary>
@@ -587,7 +571,7 @@ namespace QuantConnect.Securities.Option
         /// <param name="universeFunc">new universe selection function</param>
         public void SetFilter(Func<OptionFilterUniverse, OptionFilterUniverse> universeFunc)
         {
-            ContractFilter = new FuncSecurityDerivativeFilter(universe =>
+            ContractFilter = new FuncSecurityDerivativeFilter<OptionUniverse>(universe =>
             {
                 var optionUniverse = universe as OptionFilterUniverse;
                 var result = universeFunc(optionUniverse);
@@ -602,7 +586,7 @@ namespace QuantConnect.Securities.Option
         /// <param name="universeFunc">new universe selection function</param>
         public void SetFilter(PyObject universeFunc)
         {
-            ContractFilter = new FuncSecurityDerivativeFilter(universe =>
+            ContractFilter = new FuncSecurityDerivativeFilter<OptionUniverse>(universe =>
             {
                 var optionUniverse = universe as OptionFilterUniverse;
                 using (Py.GIL())
@@ -650,12 +634,49 @@ namespace QuantConnect.Securities.Option
 
         private void SetFilterImp(Func<OptionFilterUniverse, OptionFilterUniverse> universeFunc)
         {
-            ContractFilter = new FuncSecurityDerivativeFilter(universe =>
+            ContractFilter = new FuncSecurityDerivativeFilter<OptionUniverse>(universe =>
             {
                 var optionUniverse = universe as OptionFilterUniverse;
                 var result = universeFunc(optionUniverse);
                 return result.ApplyTypesFilter();
             });
         }
+
+        /// <summary>
+        /// Sets the option price model
+        /// </summary>
+        /// <param name="pyObject">The option price model to use</param>
+        public void SetPriceModel(PyObject pyObject)
+        {
+            PriceModel = PythonUtil.CreateInstanceOrWrapper<IOptionPriceModel>(
+                pyObject,
+                py => new OptionPriceModelPythonWrapper(py)
+            );
+        }
+
+        /// <summary>
+        /// Sets the option price model
+        /// </summary>
+        /// <param name="priceModel">The option price model to use</param>
+        public void SetPriceModel(IOptionPriceModel priceModel)
+        {
+            PriceModel = priceModel;
+        }
+
+        /// <summary>
+        /// Updates the symbol properties of this security
+        /// </summary>
+        internal override void UpdateSymbolProperties(SymbolProperties symbolProperties)
+        {
+            if (symbolProperties != null)
+            {
+                SymbolProperties = new OptionSymbolProperties(symbolProperties);
+            }
+        }
+
+        /// <summary>
+        /// Returns the securities symbol
+        /// </summary>
+        public static implicit operator Symbol(Option security) => security.Symbol;
     }
 }

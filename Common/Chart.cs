@@ -14,29 +14,45 @@
 */
 
 using System;
-using System.Collections.Generic;
+using System.Linq;
 using System.Data;
 using System.Drawing;
 using Newtonsoft.Json;
 using QuantConnect.Logging;
+using System.Collections.Generic;
+using Newtonsoft.Json.Serialization;
 
 namespace QuantConnect
 {
     /// <summary>
     /// Single Parent Chart Object for Custom Charting
     /// </summary>
-    [JsonObject]
     public class Chart
     {
-        /// Name of the Chart:
-        public string Name = "";
+        /// <summary>
+        /// Name of the Chart
+        /// </summary>
+        public string Name { get; set; } = string.Empty;
 
         /// Type of the Chart, Overlayed or Stacked.
         [Obsolete("ChartType is now obsolete. Please use Series indexes instead by setting index in the series constructor.")]
-        public ChartType ChartType = ChartType.Overlay;
+        public ChartType ChartType { get; set; } = ChartType.Overlay;
 
         /// List of Series Objects for this Chart:
-        public Dictionary<string, BaseSeries> Series = new Dictionary<string, BaseSeries>();
+        [JsonConverter(typeof(ChartSeriesJsonConverter))]
+        public Dictionary<string, BaseSeries> Series { get; set; } = new();
+
+        /// <summary>
+        /// Associated symbol if any, making this an asset plot
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public Symbol Symbol { get; set; }
+
+        /// <summary>
+        /// True to hide this series legend from the chart
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool LegendDisabled { get; set; }
 
         /// <summary>
         /// Default constructor for chart:
@@ -60,9 +76,19 @@ namespace QuantConnect
         /// Constructor for a chart
         /// </summary>
         /// <param name="name">String name of the chart</param>
-        public Chart(string name)
+        public Chart(string name) : this(name, null)
+        {
+        }
+
+        /// <summary>
+        /// Constructor for a chart
+        /// </summary>
+        /// <param name="name">String name of the chart</param>
+        /// <param name="symbol">Associated symbol if any</param>
+        public Chart(string name, Symbol symbol)
         {
             Name = name;
+            Symbol = symbol;
             Series = new Dictionary<string, BaseSeries>();
         }
 
@@ -73,11 +99,7 @@ namespace QuantConnect
         public void AddSeries(BaseSeries series)
         {
             //If we dont already have this series, add to the chrt:
-            if (!Series.ContainsKey(series.Name))
-            {
-                Series.Add(series.Name, series);
-            }
-            else
+            if (!Series.TryAdd(series.Name, series))
             {
                 throw new DuplicateNameException($"Chart.AddSeries(): ${Messages.Chart.ChartSeriesAlreadyExists}");
             }
@@ -134,7 +156,7 @@ namespace QuantConnect
         /// <returns></returns>
         public Chart GetUpdates()
         {
-            var copy = new Chart(Name);
+            var copy = CloneEmpty();
             try
             {
                 foreach (var series in Series.Values)
@@ -153,9 +175,9 @@ namespace QuantConnect
         /// Return a new instance clone of this object
         /// </summary>
         /// <returns></returns>
-        public Chart Clone()
+        public virtual Chart Clone()
         {
-            var chart = new Chart(Name);
+            var chart = CloneEmpty();
 
             foreach (var kvp in Series)
             {
@@ -163,6 +185,44 @@ namespace QuantConnect
             }
 
             return chart;
+        }
+
+        /// <summary>
+        /// Return a new empty instance clone of this object
+        /// </summary>
+        public virtual Chart CloneEmpty()
+        {
+            return new Chart(Name) { LegendDisabled = LegendDisabled, Symbol = Symbol };
+        }
+
+        /// <summary>
+        /// Helper method to consolidate a chart into a single series chart by summing all values
+        /// </summary>
+        public virtual Chart Aggregate(SeriesType seriesType = SeriesType.Line)
+        {
+            var newChart = CloneEmpty();
+            if (Series == null || Series.Count == 0)
+            {
+                return newChart;
+            }
+
+            var referenceSeries = Series.Values.First();
+            var aggregatedSeries = new Series("TOTAL", seriesType, referenceSeries.Unit);
+            newChart.AddSeries(aggregatedSeries);
+            var aggregatedPoints = new Dictionary<long, decimal>(referenceSeries.Values.Count * Series.Count);
+            foreach (var point in Series.Values.SelectMany(x => x.Values.OfType<ChartPoint>()))
+            {
+                if (point.Y.HasValue)
+                {
+                    aggregatedPoints[point.X] = point.Y.Value + aggregatedPoints.GetValueOrDefault(point.X);
+                }
+            }
+
+            foreach (var kvp in aggregatedPoints.OrderBy(x => x.Key))
+            {
+                aggregatedSeries.Values.Add(new ChartPoint(kvp.Key, kvp.Value));
+            }
+            return newChart;
         }
     }
 

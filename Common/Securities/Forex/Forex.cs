@@ -18,6 +18,7 @@ using QuantConnect.Data;
 using QuantConnect.Orders.Fees;
 using QuantConnect.Orders.Fills;
 using QuantConnect.Orders.Slippage;
+using QuantConnect.Util;
 
 namespace QuantConnect.Securities.Forex
 {
@@ -128,7 +129,7 @@ namespace QuantConnect.Securities.Forex
         /// <param name="quoteCurrency">The output quote currency</param>
         public static void DecomposeCurrencyPair(string currencyPair, out string baseCurrency, out string quoteCurrency)
         {
-            if (currencyPair == null || currencyPair.Length != 6)
+            if (!CurrencyPairUtil.IsForexDecomposable(currencyPair))
             {
                 throw new ArgumentException($"Currency pairs must be exactly 6 characters: {currencyPair}");
             }
@@ -136,5 +137,10 @@ namespace QuantConnect.Securities.Forex
             baseCurrency = currencyPair.Substring(0, 3);
             quoteCurrency = currencyPair.Substring(3);
         }
+
+        /// <summary>
+        /// Returns the securities symbol
+        /// </summary>
+        public static implicit operator Symbol(Forex security) => security.Symbol;
     }
 }

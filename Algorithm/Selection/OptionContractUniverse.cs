@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -35,7 +35,7 @@ namespace QuantConnect.Algorithm.Selection
         /// <param name="configuration">The universe configuration to use</param>
         /// <param name="universeSettings">The universe settings to use</param>
         public OptionContractUniverse(SubscriptionDataConfig configuration, UniverseSettings universeSettings)
-            : base(configuration, universeSettings, Time.EndOfTimeTimeSpan,
+            : base(AdjustUniverseConfiguration(configuration), universeSettings, Time.EndOfTimeTimeSpan,
                 // Argument isn't used since we override 'SelectSymbols'
                 Enumerable.Empty<Symbol>())
         {
@@ -56,12 +56,12 @@ namespace QuantConnect.Algorithm.Selection
         /// <summary>
         /// Event invocator for the <see cref="UserDefinedUniverse.CollectionChanged"/> event
         /// </summary>
-        /// <param name="args">The notify collection changed event arguments</param>
-        protected override void OnCollectionChanged(NotifyCollectionChangedEventArgs args)
+        /// <param name="e">The notify collection changed event arguments</param>
+        protected override void OnCollectionChanged(NotifyCollectionChangedEventArgs e)
         {
-            if (args.Action == NotifyCollectionChangedAction.Remove)
+            if (e.Action == NotifyCollectionChangedAction.Remove)
             {
-                var removedSymbol = (Symbol)args.OldItems[0];
+                var removedSymbol = (Symbol)e.OldItems[0];
                 _symbols.Remove(removedSymbol);
 
                 // the option has been removed! This can happen when the user manually removed the option contract we remove the underlying
@@ -72,13 +72,13 @@ namespace QuantConnect.Algorithm.Selection
                     Remove(removedSymbol.Underlying);
                 }
             }
-            else if (args.Action == NotifyCollectionChangedAction.Add)
+            else if (e.Action == NotifyCollectionChangedAction.Add)
             {
                 // QCAlgorithm.AddOptionContract will add both underlying and option contract
-                _symbols.Add((Symbol)args.NewItems[0]);
+                _symbols.Add((Symbol)e.NewItems[0]);
             }
 
-            base.OnCollectionChanged(args);
+            base.OnCollectionChanged(e);
         }
 
         /// <summary>
@@ -94,6 +94,14 @@ namespace QuantConnect.Algorithm.Selection
             var sid = SecurityIdentifier.GenerateOption(SecurityIdentifier.DefaultDate, underlying.ID, market, 0, 0, 0);
 
             return new Symbol(sid, ticker);
+        }
+
+        /// <summary>
+        /// Make sure the configuration of the universe is what we want
+        /// </summary>
+        private static SubscriptionDataConfig AdjustUniverseConfiguration(SubscriptionDataConfig input)
+        {
+            return new SubscriptionDataConfig(input, fillForward: false);
         }
     }
 }

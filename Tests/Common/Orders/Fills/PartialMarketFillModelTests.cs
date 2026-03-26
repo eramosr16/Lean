@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -32,6 +32,14 @@ namespace QuantConnect.Tests.Common.Orders.Fills
     [TestFixture, Ignore("TODO: fix me")]
     public class PartialMarketFillModelTests
     {
+        private static BacktestingTransactionHandler _transactionHandler;
+
+        [TearDown]
+        public void TearDown()
+        {
+            _transactionHandler?.Exit();
+        }
+
         [Test]
         public void CreatesSpecificNumberOfFills()
         {
@@ -92,10 +100,13 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             algorithm = new BasicTemplateAlgorithm();
             algorithm.SetDateTime(referenceTimeUtc);
 
-            var transactionHandler = new BacktestingTransactionHandler();
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), new TestResultHandler(Console.WriteLine));
+            _transactionHandler = new BacktestingTransactionHandler();
+            # pragma warning disable CA2000
+            var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            #pragma warning restore CA2000
+            _transactionHandler.Initialize(algorithm, backtestingBrokerage, new TestResultHandler(Console.WriteLine));
 
-            algorithm.Transactions.SetOrderProcessor(transactionHandler);
+            algorithm.Transactions.SetOrderProcessor(_transactionHandler);
 
             var config = new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Second, TimeZones.NewYork, TimeZones.NewYork, false, false, false);
             security = new Security(

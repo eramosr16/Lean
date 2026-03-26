@@ -131,16 +131,11 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("fxcm-password", CommandOptionType.SingleValue),
                 new CommandLineOption("fxcm-account-id", CommandOptionType.SingleValue),
 
-                // iqfeed configuration
-                new CommandLineOption("iqfeed-username", CommandOptionType.SingleValue),
-                new CommandLineOption("iqfeed-password", CommandOptionType.SingleValue),
-                new CommandLineOption("iqfeed-productName", CommandOptionType.SingleValue),
-                new CommandLineOption("iqfeed-version", CommandOptionType.SingleValue),
-
-                // gdax configuration
-                new CommandLineOption("gdax-api-secret", CommandOptionType.SingleValue),
-                new CommandLineOption("gdax-api-key", CommandOptionType.SingleValue),
-                new CommandLineOption("gdax-passphrase", CommandOptionType.SingleValue),
+                // coinbase configuration
+                new CommandLineOption("coinbase-rest-api", CommandOptionType.SingleValue),
+                new CommandLineOption("coinbase-url", CommandOptionType.SingleValue),
+                new CommandLineOption("coinbase-api-key", CommandOptionType.SingleValue),
+                new CommandLineOption("coinbase-api-secret", CommandOptionType.SingleValue),
 
                 // Required to access data from Quandl
                 // To get your access token go to https://www.quandl.com/account/api

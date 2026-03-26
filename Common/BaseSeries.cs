@@ -47,9 +47,27 @@ namespace QuantConnect
         public int Index { get; set; }
 
         /// <summary>
+        /// Axis name for the chart series.
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string IndexName { get; set; }
+
+        /// <summary>
+        /// Defines the visual Z index of the series on the chart.
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public int? ZIndex { get; set; }
+
+        /// <summary>
         /// Chart type for the series:
         /// </summary>
         public SeriesType SeriesType { get; set; }
+
+        /// <summary>
+        /// An optional tooltip template
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string Tooltip { get; set; }
 
         /// <summary>
         /// The series list of values.
@@ -190,7 +208,7 @@ namespace QuantConnect
         /// <returns></returns>
         protected List<ISeriesPoint> CloneValues()
         {
-            var clone = new List<ISeriesPoint>();
+            var clone = new List<ISeriesPoint>(Values.Count);
             foreach (var point in Values)
             {
                 clone.Add(point.Clone());
@@ -240,27 +258,45 @@ namespace QuantConnect
     /// </summary>
     public enum SeriesType
     {
+        /// <summary>
         /// Line Plot for Value Types (0)
+        /// </summary>
         Line,
+        /// <summary>
         /// Scatter Plot for Chart Distinct Types (1)
+        /// </summary>
         Scatter,
+        /// <summary>
         /// Charts (2)
+        /// </summary>
         Candle,
+        /// <summary>
         /// Bar chart (3)
+        /// </summary>
         Bar,
+        /// <summary>
         /// Flag indicators (4)
+        /// </summary>
         Flag,
+        /// <summary>
         /// 100% area chart showing relative proportions of series values at each time index (5)
+        /// </summary>
         StackedArea,
+        /// <summary>
         /// Pie chart (6)
+        /// </summary>
         Pie,
+        /// <summary>
         /// Treemap Plot (7)
+        /// </summary>
         Treemap,
+        /// <summary>
         /// Heatmap Plot (9) -- NOTE: 8 is reserved
+        /// </summary>
         Heatmap = 9,
+        /// <summary>
         /// Scatter 3D Plot (10)
-        Scatter3d,
-        /// A stock plot
-        StockPlot
+        /// </summary>
+        Scatter3d
     }
 }

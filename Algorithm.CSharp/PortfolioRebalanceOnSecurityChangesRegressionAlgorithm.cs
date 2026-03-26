@@ -76,7 +76,7 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     if (UtcTime - lastOrderFilled < TimeSpan.FromDays(30))
                     {
-                        throw new Exception($"{UtcTime} {orderEvent.Symbol} {UtcTime - lastOrderFilled}");
+                        throw new RegressionTestException($"{UtcTime} {orderEvent.Symbol} {UtcTime - lastOrderFilled}");
                     }
                 }
                 _lastOrderFilled[orderEvent.Symbol] = UtcTime;
@@ -91,7 +91,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 // The number of insights is modified by the Portfolio Construction Model,
                 // since it removes expired insights and insights from removed securities 
-                throw new Exception($"The number of insights in the insight manager should be different of the number of all insights generated ({_generatedInsightsCount})");
+                throw new RegressionTestException($"The number of insights in the insight manager should be different of the number of all insights generated ({_generatedInsightsCount})");
             }
         }
 
@@ -103,12 +103,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 5500;
+        public long DataPoints => 5485;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -116,35 +116,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "74"},
-            {"Average Win", "2.37%"},
-            {"Average Loss", "-2.26%"},
-            {"Compounding Annual Return", "-4.837%"},
-            {"Drawdown", "29.800%"},
-            {"Expectancy", "-0.089"},
-            {"Net Profit", "-9.439%"},
-            {"Sharpe Ratio", "-0.24"},
-            {"Sortino Ratio", "-0.234"},
-            {"Probabilistic Sharpe Ratio", "2.227%"},
-            {"Loss Rate", "56%"},
-            {"Win Rate", "44%"},
-            {"Profit-Loss Ratio", "1.05"},
-            {"Alpha", "-0.066"},
-            {"Beta", "0.768"},
-            {"Annual Standard Deviation", "0.139"},
-            {"Annual Variance", "0.019"},
-            {"Information Ratio", "-0.709"},
-            {"Tracking Error", "0.108"},
-            {"Treynor Ratio", "-0.043"},
-            {"Total Fees", "$262.72"},
-            {"Estimated Strategy Capacity", "$54000000.00"},
+            {"Total Orders", "64"},
+            {"Average Win", "2.71%"},
+            {"Average Loss", "-2.34%"},
+            {"Compounding Annual Return", "2.256%"},
+            {"Drawdown", "25.500%"},
+            {"Expectancy", "0.079"},
+            {"Start Equity", "100000"},
+            {"End Equity", "104560.59"},
+            {"Net Profit", "4.561%"},
+            {"Sharpe Ratio", "0.117"},
+            {"Sortino Ratio", "0.106"},
+            {"Probabilistic Sharpe Ratio", "8.398%"},
+            {"Loss Rate", "50%"},
+            {"Win Rate", "50%"},
+            {"Profit-Loss Ratio", "1.16"},
+            {"Alpha", "-0.01"},
+            {"Beta", "0.569"},
+            {"Annual Standard Deviation", "0.125"},
+            {"Annual Variance", "0.016"},
+            {"Information Ratio", "-0.243"},
+            {"Tracking Error", "0.117"},
+            {"Treynor Ratio", "0.026"},
+            {"Total Fees", "$271.25"},
+            {"Estimated Strategy Capacity", "$44000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Portfolio Turnover", "5.05%"},
-            {"OrderListHash", "53a93b60b26c7d5d4c48123707cd761f"}
+            {"Portfolio Turnover", "4.37%"},
+            {"Drawdown Recovery", "57"},
+            {"OrderListHash", "d6286db83c9d034251491fae4c937d76"}
         };
     }
 }

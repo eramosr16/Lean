@@ -29,9 +29,9 @@ namespace QuantConnect.Tests.Engine.DataFeeds
     /// </summary>
     public class AlgorithmStub : QCAlgorithm
     {
-        public List<SecurityChanges> SecurityChangesRecord = new List<SecurityChanges>();
-        public DataManager DataManager;
-        public IDataFeed DataFeed;
+        public List<SecurityChanges> SecurityChangesRecord { get; set; } = new List<SecurityChanges>();
+        public DataManager DataManager { get; set; }
+        public IDataFeed DataFeed { get; set; }
 
         /// <summary>
         /// Lanzy PandasConverter only if used
@@ -88,6 +88,12 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 var symbol = SymbolCache.GetSymbol(ticker);
                 Securities[symbol].Exchange = new SecurityExchange(SecurityExchangeHours.AlwaysOpen(TimeZones.Utc));
             }
+        }
+
+        public void AddCryptoEntry(string ticker, string market)
+        {
+            var symbolProperties = SymbolPropertiesDatabase.GetSymbolProperties(market, null, SecurityType.Crypto, Currencies.USD);
+            SymbolPropertiesDatabase.SetEntry(market, ticker, SecurityType.Crypto, symbolProperties);
         }
 
         public override void OnSecuritiesChanged(SecurityChanges changes)

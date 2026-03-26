@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  * 
@@ -17,18 +17,19 @@ using NUnit.Framework;
 using QuantConnect.Data;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
+using QuantConnect.Indicators;
 
 namespace QuantConnect.Tests.Common.Data
 {
     [TestFixture]
-    public class SequentialConsolidatorTests
+    public class SequentialConsolidatorTests: BaseConsolidatorTests
     {
         [Test]
         public void SequentialConsolidatorsFiresAllEvents()
         {
-            var first = new IdentityDataConsolidator<IBaseData>();
-            var second = new IdentityDataConsolidator<IBaseData>();
-            var sequential = new SequentialConsolidator(first, second);
+            using var first = new IdentityDataConsolidator<IBaseData>();
+            using var second = new IdentityDataConsolidator<IBaseData>();
+            using var sequential = new SequentialConsolidator(first, second);
 
             bool firstFired = false;
             bool secondFired = false;
@@ -59,9 +60,9 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void SequentialConsolidatorAcceptsSubTypesForSecondInputType()
         {
-            var first = new IdentityDataConsolidator<TradeBar>();
-            var second = new IdentityDataConsolidator<IBaseData>();
-            var sequential = new SequentialConsolidator(first, second);
+            using var first = new IdentityDataConsolidator<TradeBar>();
+            using var second = new IdentityDataConsolidator<IBaseData>();
+            using var sequential = new SequentialConsolidator(first, second);
 
 
             bool firstFired = false;
@@ -88,6 +89,21 @@ namespace QuantConnect.Tests.Common.Data
             Assert.IsTrue(firstFired);
             Assert.IsTrue(secondFired);
             Assert.IsTrue(sequentialFired);
+        }
+
+        protected override IDataConsolidator CreateConsolidator()
+        {
+            var first = new IdentityDataConsolidator<IndicatorDataPoint>();
+            var second = new IdentityDataConsolidator<IndicatorDataPoint>();
+            return new SequentialConsolidator(first, second);
+        }
+
+        protected override void AssertConsolidator(IDataConsolidator consolidator)
+        {
+            base.AssertConsolidator(consolidator);
+            var sequentialConsolidator = consolidator as SequentialConsolidator;
+            Assert.IsNull(sequentialConsolidator.First.Consolidated);
+            Assert.IsNull(sequentialConsolidator.Second.Consolidated);
         }
     }
 }

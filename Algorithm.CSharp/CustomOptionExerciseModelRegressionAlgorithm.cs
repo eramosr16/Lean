@@ -60,19 +60,21 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public override List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "32"},
+            {"Total Orders", "32"},
             {"Average Win", "6.14%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "26116903817855100000000000000%"},
             {"Drawdown", "0.500%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "257114"},
             {"Net Profit", "157.114%"},
             {"Sharpe Ratio", "107.743"},
             {"Sortino Ratio", "0"},
@@ -89,9 +91,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "-3.295"},
             {"Total Fees", "$16.00"},
             {"Estimated Strategy Capacity", "$87000.00"},
-            {"Lowest Capacity Asset", "GOOCV 305RBQ20WHPNQ|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV 305RBQ20WLZZA|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "10.93%"},
-            {"OrderListHash", "1b9493f01c5a9c5bc5032cf84c249782"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "19b8f2a8081c3cfa8f6bc02b5d045765"}
         };
     }
 }

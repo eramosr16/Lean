@@ -49,7 +49,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
         /// Initializes a new instance of the <see cref="CompositeRiskManagementModel"/> class
         /// </summary>
         /// <param name="riskManagementModels">The individual risk management models defining this composite model</param>
-        public CompositeRiskManagementModel(IEnumerable<IRiskManagementModel>riskManagementModels)
+        public CompositeRiskManagementModel(IEnumerable<IRiskManagementModel> riskManagementModels)
         {
             foreach (var riskManagementModel in riskManagementModels)
             {
@@ -77,16 +77,6 @@ namespace QuantConnect.Algorithm.Framework.Risk
             {
                 AddRiskManagement(pyRiskManagementModel);
             }
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="CompositeRiskManagementModel"/> class
-        /// </summary>
-        /// <param name="riskManagementModel">The individual risk management model defining this composite model</param>
-        public CompositeRiskManagementModel(PyObject riskManagementModel)
-            : this(new[] { riskManagementModel} )
-        {
-
         }
 
         /// <summary>
@@ -139,11 +129,10 @@ namespace QuantConnect.Algorithm.Framework.Risk
         /// <param name="pyRiskManagementModel">The risk management model to add</param>
         public void AddRiskManagement(PyObject pyRiskManagementModel)
         {
-            IRiskManagementModel riskManagementModel;
-            if (!pyRiskManagementModel.TryConvert(out riskManagementModel))
-            {
-                riskManagementModel = new RiskManagementModelPythonWrapper(pyRiskManagementModel);
-            }
+            var riskManagementModel = PythonUtil.CreateInstanceOrWrapper<IRiskManagementModel>(
+                pyRiskManagementModel,
+                py => new RiskManagementModelPythonWrapper(py)
+            );
             _riskManagementModels.Add(riskManagementModel);
         }
     }

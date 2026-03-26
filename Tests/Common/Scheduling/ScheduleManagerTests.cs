@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,11 +15,16 @@
 */
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Lean.Engine;
+using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.RealTime;
 using QuantConnect.Packets;
+using QuantConnect.Scheduling;
+using QuantConnect.Tests.Engine.DataFeeds;
 using QuantConnect.Util.RateLimit;
 
 namespace QuantConnect.Tests.Common.Scheduling
@@ -57,6 +62,166 @@ namespace QuantConnect.Tests.Common.Scheduling
             handler.Exit();
             Assert.AreEqual(timeSteps, count1);
             Assert.AreEqual(timeSteps, count2);
+        }
+
+        [Test]
+        public void TriggersWeeklyScheduledEventsEachWeekBacktesting()
+        {
+            var algorithm = new AlgorithmStub();
+
+            var handler = new BacktestingRealTimeHandler();
+            var time = new DateTime(2024, 02, 10);
+            handler.SetTime(time);
+            var timeLimitManager = new AlgorithmTimeLimitManager(TokenBucket.Null, TimeSpan.FromMinutes(20));
+            handler.Setup(algorithm, new AlgorithmNodePacket(PacketType.BacktestNode), null, null, timeLimitManager);
+
+            algorithm.Schedule.SetEventSchedule(handler);
+
+            algorithm.SetDateTime(time);
+
+            var spy = algorithm.AddEquity("SPY").Symbol;
+
+            var eventTriggerTimes = new List<DateTime>();
+            var scheduledEvent = algorithm.Schedule.On(algorithm.Schedule.DateRules.WeekStart(spy),
+                algorithm.Schedule.TimeRules.BeforeMarketClose(spy, 3),
+                () =>
+                {
+                    eventTriggerTimes.Add(time);
+                });
+
+            while (time.Month < 4)
+            {
+                handler.SetTime(time);
+                time = time.AddMinutes(1);
+            }
+
+            handler.Exit();
+
+            var expectedEventTriggerTimes = new List<DateTime>()
+            {
+                new DateTime(2024, 02, 12, 20, 57, 0),
+                new DateTime(2024, 02, 20, 20, 57, 0),  // Monday is 19th but it's a holiday
+                new DateTime(2024, 02, 26, 20, 57, 0),
+                new DateTime(2024, 03, 04, 20, 57, 0),
+                // Daylight saving adjustment
+                new DateTime(2024, 03, 11, 19, 57, 0),
+                new DateTime(2024, 03, 18, 19, 57, 0),
+                new DateTime(2024, 03, 25, 19, 57, 0),
+            };
+            CollectionAssert.AreEqual(expectedEventTriggerTimes, eventTriggerTimes);
+        }
+
+        [Test]
+        public void TriggersWeeklyScheduledEventsEachWeekLive()
+        {
+            var time = new DateTime(2024, 02, 10);
+            SetUp(time, out var algorithm, out var handler, out var spy);
+            var eventTriggerTimes = new List<DateTime>();
+            var scheduledEvent = algorithm.Schedule.On(algorithm.Schedule.DateRules.WeekStart(spy),
+                algorithm.Schedule.TimeRules.BeforeMarketClose(spy, 60),
+                () =>
+                {
+                    eventTriggerTimes.Add(handler.ManualTimeProvider.GetUtcNow());
+                });
+
+            algorithm.SetFinishedWarmingUp();
+
+            using var finished = new ManualResetEventSlim(false);
+
+            // Schedule a task to advance time
+            var timeStep = TimeSpan.FromMinutes(60);
+            algorithm.Schedule.On(algorithm.Schedule.DateRules.EveryDay(),
+                algorithm.Schedule.TimeRules.Every(timeStep),
+                () =>
+                {
+                    handler.ManualTimeProvider.Advance(timeStep);
+                    var now = handler.ManualTimeProvider.GetUtcNow();
+                    if (now.Month >= 4)
+                    {
+                        finished.Set();
+                    }
+                });
+
+            // Start
+            handler.SetTime(time);
+
+            finished.Wait(TimeSpan.FromSeconds(15));
+
+            handler.Exit();
+
+            var expectedEventTriggerTimes = new List<DateTime>()
+            {
+                new DateTime(2024, 02, 12, 20, 0, 0),
+                new DateTime(2024, 02, 20, 20, 0, 0),   // Monday is 19th but it's a holiday
+                new DateTime(2024, 02, 26, 20, 0, 0),
+                new DateTime(2024, 03, 04, 20, 0, 0),
+                // Daylight saving adjustment
+                new DateTime(2024, 03, 11, 19, 0, 0),
+                new DateTime(2024, 03, 18, 19, 0, 0),
+                new DateTime(2024, 03, 25, 19, 0, 0),
+            };
+            CollectionAssert.AreEqual(expectedEventTriggerTimes, eventTriggerTimes);
+        }
+
+        [Test]
+        public void DatesReturnedAreNormalized()
+        {
+            var time = new DateTime(2024, 02, 10);
+            SetUp(time, out var algorithm, out var handler, out var spy);
+            var eventTriggerTimes = new List<DateTime>();
+            using var finished = new ManualResetEventSlim(false);
+
+            // Schedule a task to advance time
+            var timeStep = TimeSpan.FromMinutes(1);
+            var wasCalled = false;
+            Func<DateTime, DateTime, IEnumerable<DateTime>> func = (date1, date2) =>
+            {
+                Assert.AreEqual(DateTimeKind.Unspecified, date1.Kind);
+                Assert.AreEqual(DateTimeKind.Unspecified, date2.Kind);
+                wasCalled = true;
+                return new List<DateTime> { date1, date2 };
+            };
+
+            algorithm.Schedule.On(new FuncDateRule("Test", func),
+                algorithm.Schedule.TimeRules.Every(timeStep),
+                () =>
+                {
+                    handler.ManualTimeProvider.Advance(timeStep);
+                    var now = handler.ManualTimeProvider.GetUtcNow();
+                    finished.Set();
+                });
+
+            // Start
+            handler.SetTime(time);
+
+            finished.Wait(TimeSpan.FromSeconds(15));
+
+            handler.Exit();
+            Assert.IsTrue(wasCalled);
+        }
+
+        private void SetUp(DateTime time, out QCAlgorithm algorithm, out TestableLiveTradingRealTimeHandler handler, out Symbol spy)
+        {
+            algorithm = new AlgorithmStub();
+
+            handler = new TestableLiveTradingRealTimeHandler();
+
+            handler.ManualTimeProvider.SetCurrentTime(time);
+            var timeLimitManager = new AlgorithmTimeLimitManager(TokenBucket.Null, TimeSpan.FromMinutes(20));
+            handler.Setup(algorithm, new LiveNodePacket(), null, null, timeLimitManager);
+
+            algorithm.Schedule.SetEventSchedule(handler);
+
+            algorithm.SetDateTime(time);
+
+            spy = algorithm.AddEquity("SPY").Symbol;
+        }
+
+        private class TestableLiveTradingRealTimeHandler : LiveTradingRealTimeHandler
+        {
+            public ManualTimeProvider ManualTimeProvider = new ManualTimeProvider();
+
+            protected override ITimeProvider TimeProvider => ManualTimeProvider;
         }
     }
 }

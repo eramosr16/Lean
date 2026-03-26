@@ -44,7 +44,7 @@ namespace QuantConnect.Algorithm.CSharp
             var option = AddOption("GOOG");
             _optionSymbol = option.Symbol;
 
-            option.SetFilter(-2, +2, 0, 180);
+            option.SetFilter(u => u.StandardsOnly().Strikes(-2, +2).Expiration(0, 180));
         }
 
         public override void OnData(Slice slice)
@@ -89,7 +89,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (filledOrders.Count != 2)
             {
-                throw new Exception($"Expected 2 filled orders but found {filledOrders.Count}");
+                throw new RegressionTestException($"Expected 2 filled orders but found {filledOrders.Count}");
             }
         }
 
@@ -101,7 +101,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -111,19 +111,26 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 25;
+        public int AlgorithmHistoryDataPoints => 175;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "95130.3"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -140,9 +147,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$24.70"},
             {"Estimated Strategy Capacity", "$6000.00"},
-            {"Lowest Capacity Asset", "GOOCV 30AKMELSHQVZA|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV 30AKMELSHV6AU|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "208.51%"},
-            {"OrderListHash", "f53992823027e3b976ab8de0b3f96100"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "574530af8e007d4b770b3782bbe31b1b"}
         };
     }
 }

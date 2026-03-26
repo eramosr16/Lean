@@ -40,7 +40,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private readonly CurrencySubscriptionDataConfigManager _currencySubscriptionDataConfigManager;
         private readonly InternalSubscriptionManager _internalSubscriptionManager;
         private bool _initializedSecurityBenchmark;
-        private readonly IDataProvider _dataProvider;
         private bool _anyDoesNotHaveFundamentalDataWarningLogged;
         private readonly SecurityChangesConstructor _securityChangesConstructor;
 
@@ -59,7 +58,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             IDataProvider dataProvider,
             Resolution internalConfigResolution = Resolution.Minute)
         {
-            _dataProvider = dataProvider;
             _algorithm = algorithm;
             _securityService = securityService;
             _pendingRemovalsManager = new PendingRemovalsManager(algorithm.Transactions);
@@ -180,13 +178,16 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 selectSymbolsResult = universe.PerformSelection(dateTimeUtc, universeData);
             }
 
-            // materialize the enumerable into a set for processing
-            var selections = selectSymbolsResult.ToHashSet();
+            if (!ReferenceEquals(selectSymbolsResult, Universe.Unchanged))
+            {
+                // materialize the enumerable into a set for processing
+                universe.Selected = selectSymbolsResult.ToHashSet();
+            }
 
             // first check for no pending removals, even if the universe selection
             // didn't change we might need to remove a security because a position was closed
             RemoveSecurityFromUniverse(
-                _pendingRemovalsManager.CheckPendingRemovals(selections, universe),
+                _pendingRemovalsManager.CheckPendingRemovals(universe.Selected, universe),
                 dateTimeUtc,
                 algorithmEndDateUtc);
 
@@ -197,22 +198,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
 
             // determine which data subscriptions need to be removed from this universe
-            foreach (var member in universe.Securities.Values.OrderBy(member => member.Security.Symbol.SecurityType))
+            foreach (var member in universe.Securities.Values.OrderBy(member => member.Security.Symbol.SecurityType).ThenBy(x => x.Security.Symbol.ID))
             {
                 var security = member.Security;
                 // if we've selected this subscription again, keep it
-                if (selections.Contains(security.Symbol)) continue;
+                if (universe.Selected.Contains(security.Symbol)) continue;
 
                 // don't remove if the universe wants to keep him in
                 if (!universe.CanRemoveMember(dateTimeUtc, security)) continue;
 
-                if (!member.Security.IsDelisted)
+                if (!member.Security.IsDelisted && !_pendingRemovalsManager.IsPendingForRemoval(member))
                 {
                     // TODO: here we are not checking if other universes have this security still selected
                     _securityChangesConstructor.Remove(member.Security, member.IsInternal);
                 }
 
-                RemoveSecurityFromUniverse(_pendingRemovalsManager.TryRemoveMember(security, universe),
+                RemoveSecurityFromUniverse(_pendingRemovalsManager.TryRemoveMember(member, universe),
                     dateTimeUtc,
                     algorithmEndDateUtc);
             }
@@ -229,7 +230,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
 
             // find new selections and add them to the algorithm
-            foreach (var symbol in selections)
+            foreach (var symbol in universe.Selected)
             {
                 if (universe.Securities.ContainsKey(symbol))
                 {
@@ -251,6 +252,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 foreach (var request in universe.GetSubscriptionRequests(security, dateTimeUtc, algorithmEndDateUtc,
                                                                          _algorithm.SubscriptionManager.SubscriptionDataConfigService))
                 {
+                    if (!request.TradableDaysInDataTimeZone.Any())
+                    {
+                        // Remove the config from the data manager. universe.GetSubscriptionRequests() might have added the configs
+                        _dataManager.RemoveSubscription(request.Configuration, universe);
+                        continue;
+                    }
+
                     if (security.Symbol == request.Configuration.Symbol // Just in case check its the same symbol, else AddData will throw.
                         && !security.Subscriptions.Contains(request.Configuration))
                     {
@@ -304,6 +312,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 // this can be executed many times and its in the algorithm thread
                 Log.Debug("UniverseSelection.ApplyUniverseSelection(): " + dateTimeUtc + ": " + securityChanges);
             }
+
+            SeedAddedSecurities(securityChanges);
 
             return securityChanges;
         }
@@ -368,7 +378,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         _algorithm.LiveMode ? Time.OneMinute : Time.OneDay,
                         1,
                         false,
-                        dataConfig.DataTimeZone).ConvertToUtc(securityBenchmark.Security.Exchange.TimeZone);
+                        dataConfig.DataTimeZone,
+                        LeanData.UseStrictEndTime(_algorithm.Settings.DailyPreciseEndTime, securityBenchmark.Security.Symbol, _algorithm.LiveMode ? Time.OneMinute : Time.OneDay, securityBenchmark.Security.Exchange.Hours)
+                        ).ConvertToUtc(securityBenchmark.Security.Exchange.TimeZone);
 
                     if (dataConfig != null)
                     {
@@ -411,15 +423,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             _currencySubscriptionDataConfigManager.EnsureCurrencySubscriptionDataConfigs(securityChanges, _algorithm.BrokerageModel);
         }
 
+        /// <summary>
+        /// Handles the delisting process of the given data symbol from the algorithm securities
+        /// </summary>
         public SecurityChanges HandleDelisting(BaseData data, bool isInternalFeed)
         {
             if (_algorithm.Securities.TryGetValue(data.Symbol, out var security))
             {
                 // don't allow users to open a new position once delisted
                 security.IsDelisted = true;
-                security.IsTradable = false;
+                security.Reset();
 
-                if (_algorithm.Securities.Remove(data.Symbol))
+                _algorithm.Securities.Remove(data.Symbol);
+
+                // Add the security removal to the security changes but only if not pending for removal.
+                // If pending, the removed change event was already emitted for this security
+                if (!_pendingRemovalsManager.IsPendingForRemoval(security, isInternalFeed))
                 {
                     _securityChangesConstructor.Remove(security, isInternalFeed);
 
@@ -458,11 +477,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         // if not used by any universe
                         if (!isActive)
                         {
-                            member.IsTradable = false;
+                            member.Reset();
                             // We need to mark this security as untradeable while it has no data subscription
                             // it is expected that this function is called while in sync with the algo thread,
                             // so we can make direct edits to the security here.
                             // We only clear the cache once the subscription is removed from the data stack
+                            // Note: Security.Reset() won't clear the cache, it only clears the data subscription
+                            // and marks it as non-tradable, because in some cases the cache needs to be kept,
+                            // like when delisting, which could lead to a liquidation or option exercise.
                             member.Cache.Reset();
 
                             _algorithm.Securities.Remove(member.Symbol);
@@ -476,14 +498,28 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         {
             // create the new security, the algorithm thread will add this at the appropriate time
             Security security;
-            if (!pendingAdditions.TryGetValue(symbol, out security) && !_algorithm.Securities.TryGetValue(symbol, out security))
+            if (!pendingAdditions.TryGetValue(symbol, out security))
             {
-                security = _securityService.CreateSecurity(symbol, new List<SubscriptionDataConfig>(), universeSettings.Leverage, symbol.ID.SecurityType.IsOption(), underlying);
+                security = _securityService.CreateSecurity(symbol,
+                    (List<SubscriptionDataConfig>)null,
+                    universeSettings.Leverage,
+                    symbol.ID.SecurityType.IsOption(),
+                    underlying,
+                    // Securities will be seeded after all selections are applied
+                    seedSecurity: false);
 
                 pendingAdditions.Add(symbol, security);
             }
 
             return security;
+        }
+
+        private void SeedAddedSecurities(SecurityChanges changes)
+        {
+            if (_algorithm.Settings.SeedInitialPrices)
+            {
+                AlgorithmUtils.SeedSecurities(changes.AddedSecurities, _algorithm);
+            }
         }
     }
 }

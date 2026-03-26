@@ -27,15 +27,14 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public class CustomDataUniverseRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
+        private HashSet<Symbol> _currentUnderlyingSymbols = new();
         private readonly Queue<DateTime> _selectionTime = new (new[] {
             new DateTime(2014, 03, 24, 0, 0, 0),
             new DateTime(2014, 03, 25, 0, 0, 0),
             new DateTime(2014, 03, 26, 0, 0, 0),
             new DateTime(2014, 03, 27, 0, 0, 0),
             new DateTime(2014, 03, 28, 0, 0, 0),
-            new DateTime(2014, 03, 29, 0, 0, 0),
-            new DateTime(2014, 03, 30, 0, 0, 0),
-            new DateTime(2014, 03, 31, 0, 0, 0)
+            new DateTime(2014, 03, 29, 0, 0, 0)
         });
 
         /// <summary>
@@ -54,9 +53,9 @@ namespace QuantConnect.Algorithm.CSharp
                 var expectedTime = _selectionTime.Dequeue();
                 if (expectedTime != Time)
                 {
-                    throw new Exception($"Unexpected selection time {Time} expected {expectedTime}");
+                    throw new RegressionTestException($"Unexpected selection time {Time} expected {expectedTime}");
                 }
-                return coarse.OrderByDescending(x => x.DollarVolume)
+                return coarse.OfType<CoarseFundamental>().OrderByDescending(x => x.DollarVolume)
                     .SelectMany(x => new[] {
                         x.Symbol,
                         QuantConnect.Symbol.CreateBase(typeof(CustomData), x.Symbol)})
@@ -68,19 +67,25 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
-                var customData = data.Get<CustomData>();
-                var symbols = data.Keys.Where(symbol => symbol.SecurityType != SecurityType.Base).ToList();
-                foreach (var symbol in symbols)
+                var customData = slice.Get<CustomData>();
+                if (customData.Count > 0)
                 {
-                    SetHoldings(symbol, 1m / symbols.Count);
-
-                    if (!customData.Any(custom => custom.Key.Underlying == symbol))
+                    foreach (var symbol in _currentUnderlyingSymbols.OrderBy(x => x.ID.Symbol))
                     {
-                        throw new Exception($"Custom data was not found for underlying symbol {symbol}");
+                        if (!Securities[symbol].HasData)
+                        {
+                            continue;
+                        }
+                        SetHoldings(symbol, 1m / _currentUnderlyingSymbols.Count);
+
+                        if (!customData.Any(custom => custom.Key.Underlying == symbol))
+                        {
+                            throw new RegressionTestException($"Custom data was not found for underlying symbol {symbol}");
+                        }
                     }
                 }
             }
@@ -90,7 +95,19 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_selectionTime.Count != 0)
             {
-                throw new Exception($"Unexpected selection times, missing {_selectionTime.Count}");
+                throw new RegressionTestException($"Unexpected selection times, missing {_selectionTime.Count}");
+            }
+        }
+
+        public override void OnSecuritiesChanged(SecurityChanges changes)
+        {
+            foreach(var security in changes.AddedSecurities.Where(sec => sec.Symbol.SecurityType != SecurityType.Base))
+            {
+                _currentUnderlyingSymbols.Add(security.Symbol);
+            }
+            foreach (var security in changes.RemovedSecurities.Where(sec => sec.Symbol.SecurityType != SecurityType.Base))
+            {
+                _currentUnderlyingSymbols.Remove(security.Symbol);
             }
         }
 
@@ -102,12 +119,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 42611;
+        public long DataPoints => 42622;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -115,35 +132,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "7"},
+            {"Total Orders", "6"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-65.130%"},
-            {"Drawdown", "2.900%"},
+            {"Compounding Annual Return", "-50.796%"},
+            {"Drawdown", "1.900%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-2.283%"},
-            {"Sharpe Ratio", "-4.298"},
-            {"Sortino Ratio", "-4.067"},
-            {"Probabilistic Sharpe Ratio", "5.388%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98457.63"},
+            {"Net Profit", "-1.542%"},
+            {"Sharpe Ratio", "-4.343"},
+            {"Sortino Ratio", "-3.19"},
+            {"Probabilistic Sharpe Ratio", "4.159%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-1.062"},
-            {"Beta", "1.336"},
-            {"Annual Standard Deviation", "0.132"},
-            {"Annual Variance", "0.018"},
-            {"Information Ratio", "-12.03"},
-            {"Tracking Error", "0.078"},
-            {"Treynor Ratio", "-0.426"},
-            {"Total Fees", "$13.87"},
-            {"Estimated Strategy Capacity", "$430000000.00"},
-            {"Lowest Capacity Asset", "NB R735QTJ8XC9X"},
-            {"Portfolio Turnover", "12.54%"},
-            {"OrderListHash", "c00c07ca602942dda8213f147cfdbc72"}
+            {"Alpha", "-0.804"},
+            {"Beta", "1.002"},
+            {"Annual Standard Deviation", "0.1"},
+            {"Annual Variance", "0.01"},
+            {"Information Ratio", "-14.419"},
+            {"Tracking Error", "0.056"},
+            {"Treynor Ratio", "-0.433"},
+            {"Total Fees", "$7.86"},
+            {"Estimated Strategy Capacity", "$1200000000.00"},
+            {"Lowest Capacity Asset", "GOOG T1AZ164W5VTX"},
+            {"Portfolio Turnover", "7.58%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "fd3e6e9f401bc140d6b7cc8f1df8e46a"}
         };
     }
 }

@@ -21,6 +21,7 @@ using QuantConnect.Util;
 using System.Globalization;
 using QuantConnect.Logging;
 using static QuantConnect.StringExtensions;
+using QuantConnect.Python;
 
 namespace QuantConnect.Data.Market
 {
@@ -34,7 +35,7 @@ namespace QuantConnect.Data.Market
         // scale factor used in QC equity/forex data files
         private const decimal _scaleFactor = 1 / 10000m;
 
-        private int _initialized;
+        protected int Initialized;
         private decimal _open;
         private decimal _high;
         private decimal _low;
@@ -104,6 +105,7 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// The closing time of this bar, computed via the Time and Period
         /// </summary>
+        [PandasIgnore]
         public override DateTime EndTime
         {
             get { return Time + Period; }
@@ -114,6 +116,7 @@ namespace QuantConnect.Data.Market
         /// The period of this trade bar, (second, minute, daily, ect...)
         /// </summary>
         [ProtoMember(106)]
+        [PandasIgnore]
         public virtual TimeSpan Period { get; set; }
 
         //In Base Class: Alias of Closing:
@@ -152,7 +155,7 @@ namespace QuantConnect.Data.Market
             Close = original.Close;
             Volume = original.Volume;
             Period = original.Period;
-            _initialized = 1;
+            Initialized = 1;
         }
 
         /// <summary>
@@ -178,7 +181,7 @@ namespace QuantConnect.Data.Market
             Volume = volume;
             Period = period ?? QuantConnect.Time.OneMinute;
             DataType = MarketDataType.TradeBar;
-            _initialized = 1;
+            Initialized = 1;
         }
 
         /// <summary>
@@ -253,6 +256,7 @@ namespace QuantConnect.Data.Market
         /// <param name="date">Date of this reader request</param>
         /// <param name="isLiveMode">true if we're in live mode, false for backtesting mode</param>
         /// <returns>Enumerable iterator for returning each line of the required data.</returns>
+        [StubsIgnore]
         public override BaseData Reader(SubscriptionDataConfig config, StreamReader stream, DateTime date, bool isLiveMode)
         {
             //Handle end of file:
@@ -369,49 +373,14 @@ namespace QuantConnect.Data.Market
                 Symbol = config.Symbol,
                 Period = config.Increment
             };
-            ParseEquity(tradeBar, config, streamReader, date);
+            StreamParseScale(config, streamReader, date, useScaleFactor: true, tradeBar, true);
+
             return tradeBar;
-        }
-
-        private static void ParseEquity(TradeBar tradeBar, SubscriptionDataConfig config, StreamReader stream, DateTime date)
-        {
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = stream.GetDateTime().ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                // Using custom "ToDecimal" conversion for speed on high resolution data.
-                tradeBar.Time = date.Date.AddMilliseconds(stream.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = stream.GetDecimal() * _scaleFactor;
-            tradeBar.High = stream.GetDecimal() * _scaleFactor;
-            tradeBar.Low = stream.GetDecimal() * _scaleFactor;
-            tradeBar.Close = stream.GetDecimal() * _scaleFactor;
-            tradeBar.Volume = stream.GetDecimal();
         }
 
         private static void ParseEquity(TradeBar tradeBar, SubscriptionDataConfig config, string line, DateTime date)
         {
-            var csv = line.ToCsv(6);
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = DateTime.ParseExact(csv[0], DateFormat.TwelveCharacter, CultureInfo.InvariantCulture).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                // Using custom "ToDecimal" conversion for speed on high resolution data.
-                tradeBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            tradeBar.Open = csv[1].ToDecimal() * _scaleFactor;
-            tradeBar.High = csv[2].ToDecimal() * _scaleFactor;
-            tradeBar.Low = csv[3].ToDecimal() * _scaleFactor;
-            tradeBar.Close = csv[4].ToDecimal() * _scaleFactor;
-            tradeBar.Volume = csv[5].ToDecimal();
+            LineParseScale(config, line, date, useScaleFactor: true, tradeBar, hasVolume: true);
         }
 
         /// <summary>
@@ -576,25 +545,7 @@ namespace QuantConnect.Data.Market
                 Period = config.Increment,
                 Symbol = config.Symbol
             };
-
-            var csv = line.ToCsv(6);
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = DateTime.ParseExact(csv[0], DateFormat.TwelveCharacter, CultureInfo.InvariantCulture).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                // Using custom "ToDecimal" conversion for speed on high resolution data.
-                tradeBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            var scalingFactor = GetScaleFactor(config.Symbol);
-            tradeBar.Open = csv[1].ToDecimal() * scalingFactor;
-            tradeBar.High = csv[2].ToDecimal() * scalingFactor;
-            tradeBar.Low = csv[3].ToDecimal() * scalingFactor;
-            tradeBar.Close = csv[4].ToDecimal() * scalingFactor;
-            tradeBar.Volume = csv[5].ToDecimal();
+            LineParseScale(config, line, date, useScaleFactor: LeanData.OptionUseScaleFactor(config.Symbol), tradeBar, hasVolume: true);
 
             return tradeBar;
         }
@@ -615,24 +566,7 @@ namespace QuantConnect.Data.Market
                 Period = config.Increment,
                 Symbol = config.Symbol
             };
-
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                tradeBar.Time = streamReader.GetDateTime().ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                // Using custom "ToDecimal" conversion for speed on high resolution data.
-                tradeBar.Time = date.Date.AddMilliseconds(streamReader.GetInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            var scalingFactor = GetScaleFactor(config.Symbol);
-            tradeBar.Open = streamReader.GetDecimal() * scalingFactor;
-            tradeBar.High = streamReader.GetDecimal() * scalingFactor;
-            tradeBar.Low = streamReader.GetDecimal() * scalingFactor;
-            tradeBar.Close = streamReader.GetDecimal() * scalingFactor;
-            tradeBar.Volume = streamReader.GetDecimal();
+            StreamParseScale(config, streamReader, date, useScaleFactor: LeanData.OptionUseScaleFactor(config.Symbol), tradeBar, true);
 
             return tradeBar;
         }
@@ -717,7 +651,6 @@ namespace QuantConnect.Data.Market
             {
                 tradeBar.Volume = csv[5].ToDecimal();
             }
-
             return tradeBar;
         }
 
@@ -749,6 +682,45 @@ namespace QuantConnect.Data.Market
             if (hasVolume)
             {
                 tradeBar.Volume = streamReader.GetDecimal();
+            }
+            return tradeBar;
+        }
+
+        private static TradeBar LineParseScale(SubscriptionDataConfig config, string line, DateTime date, bool useScaleFactor, TradeBar bar = null, bool hasVolume = true)
+        {
+            var tradeBar = bar ?? new TradeBar
+            {
+                Period = config.Increment,
+                Symbol = config.Symbol
+            };
+
+            LineParseNoScale(config, line, date, tradeBar, hasVolume);
+            if (useScaleFactor)
+            {
+                tradeBar.Open *= _scaleFactor;
+                tradeBar.High *= _scaleFactor;
+                tradeBar.Low *= _scaleFactor;
+                tradeBar.Close *= _scaleFactor;
+            }
+
+            return tradeBar;
+        }
+
+        private static TradeBar StreamParseScale(SubscriptionDataConfig config, StreamReader streamReader, DateTime date, bool useScaleFactor, TradeBar bar = null, bool hasVolume = true)
+        {
+            var tradeBar = bar ?? new TradeBar
+            {
+                Period = config.Increment,
+                Symbol = config.Symbol
+            };
+
+            StreamParseNoScale(config, streamReader, date, tradeBar, hasVolume);
+            if (useScaleFactor)
+            {
+                tradeBar.Open *= _scaleFactor;
+                tradeBar.High *= _scaleFactor;
+                tradeBar.Low *= _scaleFactor;
+                tradeBar.Close *= _scaleFactor;
             }
 
             return tradeBar;
@@ -895,32 +867,12 @@ namespace QuantConnect.Data.Market
         }
 
         /// <summary>
-        /// Gets the scaling factor according to the <see cref="SecurityType"/> of the <see cref="Symbol"/> provided.
-        /// Non-equity data will not be scaled, including options with an underlying non-equity asset class.
-        /// </summary>
-        /// <param name="symbol">Symbol to get scaling factor for</param>
-        /// <returns>Scaling factor</returns>
-        private static decimal GetScaleFactor(Symbol symbol)
-        {
-            return UseScaleFactor(symbol)
-                ? _scaleFactor
-                : 1;
-        }
-
-        private static bool UseScaleFactor(Symbol symbol)
-        {
-            return symbol.SecurityType == SecurityType.Equity ||
-                symbol.SecurityType == SecurityType.Option ||
-                symbol.SecurityType == SecurityType.IndexOption;
-        }
-
-        /// <summary>
         /// Initializes this bar with a first data point
         /// </summary>
         /// <param name="value">The seed value for this bar</param>
         private void Initialize(decimal value)
         {
-            if (Interlocked.CompareExchange(ref _initialized, 1, 0) == 0)
+            if (Interlocked.CompareExchange(ref Initialized, 1, 0) == 0)
             {
                 _open = value;
                 _low = value;

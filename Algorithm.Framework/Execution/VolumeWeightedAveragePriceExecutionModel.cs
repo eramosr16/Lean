@@ -42,6 +42,15 @@ namespace QuantConnect.Algorithm.Framework.Execution
         public decimal MaximumOrderQuantityPercentVolume { get; set; } = 0.01m;
 
         /// <summary>
+        /// Initializes a new instance of the <see cref="VolumeWeightedAveragePriceExecutionModel"/> class.
+        /// </summary>
+        /// <param name="asynchronous">If true, orders will be submitted asynchronously</param>
+        public VolumeWeightedAveragePriceExecutionModel(bool asynchronous = true)
+            : base(asynchronous)
+        {
+        }
+
+        /// <summary>
         /// Submit orders for the specified portfolio targets.
         /// This model is free to delay or spread out these orders as it sees fit
         /// </summary>
@@ -78,7 +87,7 @@ namespace QuantConnect.Algorithm.Framework.Execution
 
                         if (orderSize != 0)
                         {
-                            algorithm.MarketOrder(data.Security.Symbol, orderSize);
+                            algorithm.MarketOrder(data.Security.Symbol, orderSize, Asynchronous, target.Tag);
                         }
                     }
                 }
@@ -122,6 +131,12 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// </summary>
         protected virtual bool IsSafeToRemove(QCAlgorithm algorithm, Symbol symbol)
         {
+            // Check if this method was overridden in Python
+            if (TryInvokePythonOverride(nameof(IsSafeToRemove), out bool result, algorithm, symbol))
+            {
+                return result;
+            }
+
             // confirm the security isn't currently a member of any universe
             return !algorithm.UniverseManager.Any(kvp => kvp.Value.ContainsMember(symbol));
         }
@@ -131,6 +146,12 @@ namespace QuantConnect.Algorithm.Framework.Execution
         /// </summary>
         protected virtual bool PriceIsFavorable(SymbolData data, decimal unorderedQuantity)
         {
+            // Check if this method was overridden in Python
+            if (TryInvokePythonOverride(nameof(PriceIsFavorable), out bool result, data, unorderedQuantity))
+            {
+                return result;
+            }
+
             if (unorderedQuantity > 0)
             {
                 if (data.Security.BidPrice < data.VWAP)
@@ -179,7 +200,7 @@ namespace QuantConnect.Algorithm.Framework.Execution
                 var name = algorithm.CreateIndicatorName(security.Symbol, "VWAP", security.Resolution);
                 VWAP = new IntradayVwap(name);
 
-                algorithm.RegisterIndicator(security.Symbol, VWAP, Consolidator, bd => (BaseData) bd);
+                algorithm.RegisterIndicator(security.Symbol, VWAP, Consolidator, bd => (BaseData)bd);
             }
         }
     }

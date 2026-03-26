@@ -15,8 +15,9 @@
 
 using System;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System.ComponentModel;
 using QuantConnect.Securities;
-using System.Collections.Generic;
 using Newtonsoft.Json.Converters;
 using System.Runtime.Serialization;
 using System.Runtime.CompilerServices;
@@ -35,11 +36,13 @@ namespace QuantConnect
         /// Daily and hourly time format
         public const string TwelveCharacter = "yyyyMMdd HH:mm";
         /// JSON Format Date Representation
-        public static string JsonFormat = "yyyy-MM-ddTHH:mm:ss";
+        public static string JsonFormat { get; } = "yyyy-MM-ddTHH:mm:ss";
         /// MySQL Format Date Representation
         public const string DB = "yyyy-MM-dd HH:mm:ss";
         /// QuantConnect UX Date Representation
         public const string UI = "yyyy-MM-dd HH:mm:ss";
+        /// ISO Date Representation
+        public const string ISOShort = "yyyy-MM-ddTHH:mm:ssZ";
         /// en-US Short Date and Time Pattern
         public const string USShort = "M/d/yy h:mm tt";
         /// en-US Short Date Pattern
@@ -61,46 +64,104 @@ namespace QuantConnect
     /// <summary>
     /// Singular holding of assets from backend live nodes:
     /// </summary>
-    [JsonObject]
+    [JsonConverter(typeof(HoldingJsonConverter))]
     public class Holding
     {
+        private decimal? _conversionRate;
+        private decimal _marketValue;
+        private decimal _unrealizedPnl;
+        private decimal _unrealizedPnLPercent;
+
         /// Symbol of the Holding:
-        public Symbol Symbol = Symbol.Empty;
+        [JsonIgnore]
+        public Symbol Symbol { get; set; } = Symbol.Empty;
 
         /// Type of the security
         [JsonIgnore]
         public SecurityType Type => Symbol.SecurityType;
 
         /// The currency symbol of the holding, such as $
-        public string CurrencySymbol;
+        [DefaultValue("$")]
+        [JsonProperty(PropertyName = "c", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string CurrencySymbol { get; set; }
 
         /// Average Price of our Holding in the currency the symbol is traded in
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal AveragePrice;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "a", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal AveragePrice { get; set; }
 
         /// Quantity of Symbol We Hold.
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal Quantity;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "q", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal Quantity { get; set; }
 
         /// Current Market Price of the Asset in the currency the symbol is traded in
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal MarketPrice;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "p", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal MarketPrice { get; set; }
 
         /// Current market conversion rate into the account currency
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal? ConversionRate;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "r", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? ConversionRate
+        {
+            get
+            {
+                return _conversionRate;
+            }
+            set
+            {
+                if (value != 1)
+                {
+                    _conversionRate = value;
+                }
+            }
+        }
 
         /// Current market value of the holding
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal MarketValue;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "v", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal MarketValue
+        {
+            get
+            {
+                return _marketValue;
+            }
+            set
+            {
+                _marketValue = value.SmartRoundingShort();
+            }
+        }
 
         /// Current unrealized P/L of the holding
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal UnrealizedPnL;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "u", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal UnrealizedPnL
+        {
+            get
+            {
+                return _unrealizedPnl;
+            }
+            set
+            {
+                _unrealizedPnl = value.SmartRoundingShort();
+            }
+        }
 
         /// Current unrealized P/L % of the holding
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal UnrealizedPnLPercent;
+        [JsonConverter(typeof(DecimalJsonConverter))]
+        [JsonProperty(PropertyName = "up", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal UnrealizedPnLPercent
+        {
+            get
+            {
+                return _unrealizedPnLPercent;
+            }
+            set
+            {
+                _unrealizedPnLPercent = value.SmartRoundingShort();
+            }
+        }
 
         /// Create a new default holding:
         public Holding()
@@ -157,6 +218,54 @@ namespace QuantConnect
         public override string ToString()
         {
             return Messages.Holding.ToString(this);
+        }
+
+        private class DecimalJsonConverter : JsonConverter
+        {
+            public override bool CanRead => false;
+            public override bool CanConvert(Type objectType) => typeof(decimal) == objectType;
+            public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+            {
+                writer.WriteRawValue(((decimal)value).NormalizeToStr());
+            }
+            public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+            {
+                throw new NotImplementedException();
+            }
+        }
+        private class HoldingJsonConverter : JsonConverter
+        {
+            public override bool CanWrite => false;
+            public override bool CanConvert(Type objectType) => typeof(Holding) == objectType;
+            public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+            {
+                var jObject = JObject.Load(reader);
+                var result = new Holding
+                {
+                    Symbol = jObject["symbol"]?.ToObject<Symbol>() ?? jObject["Symbol"]?.ToObject<Symbol>() ?? Symbol.Empty,
+                    CurrencySymbol = jObject["c"]?.Value<string>() ?? jObject["currencySymbol"]?.Value<string>() ?? jObject["CurrencySymbol"]?.Value<string>() ?? string.Empty,
+                    AveragePrice = jObject["a"]?.Value<decimal>() ?? jObject["averagePrice"]?.Value<decimal>() ?? jObject["AveragePrice"]?.Value<decimal>() ?? 0,
+                    Quantity = jObject["q"]?.Value<decimal>() ?? jObject["quantity"]?.Value<decimal>() ?? jObject["Quantity"]?.Value<decimal>() ?? 0,
+                    MarketPrice = jObject["p"]?.Value<decimal>() ?? jObject["marketPrice"]?.Value<decimal>() ?? jObject["MarketPrice"]?.Value<decimal>() ?? 0,
+                    ConversionRate = jObject["r"]?.Value<decimal>() ?? jObject["conversionRate"]?.Value<decimal>() ?? jObject["ConversionRate"]?.Value<decimal>() ?? null,
+                    MarketValue = jObject["v"]?.Value<decimal>() ?? jObject["marketValue"]?.Value<decimal>() ?? jObject["MarketValue"]?.Value<decimal>() ?? 0,
+                    UnrealizedPnL = jObject["u"]?.Value<decimal>() ?? jObject["unrealizedPnl"]?.Value<decimal>() ?? jObject["UnrealizedPnl"]?.Value<decimal>() ?? 0,
+                    UnrealizedPnLPercent = jObject["up"]?.Value<decimal>() ?? jObject["unrealizedPnLPercent"]?.Value<decimal>() ?? jObject["UnrealizedPnLPercent"]?.Value<decimal>() ?? 0,
+                };
+                if (!result.ConversionRate.HasValue)
+                {
+                    result.ConversionRate = 1;
+                }
+                if (string.IsNullOrEmpty(result.CurrencySymbol))
+                {
+                    result.CurrencySymbol = "$";
+                }
+                return result;
+            }
+            public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 
@@ -334,19 +443,39 @@ namespace QuantConnect
     /// </summary>
     public enum MarketDataType
     {
+        /// <summary>
         /// Base market data type (0)
+        /// </summary>
         Base,
+
+        /// <summary>
         /// TradeBar market data type (OHLC summary bar) (1)
+        /// </summary>
         TradeBar,
+
+        /// <summary>
         /// Tick market data type (price-time pair) (2)
+        /// </summary>
         Tick,
+
+        /// <summary>
         /// Data associated with an instrument (3)
+        /// </summary>
         Auxiliary,
+
+        /// <summary>
         /// QuoteBar market data type (4) [Bid(OHLC), Ask(OHLC) and Mid(OHLC) summary bar]
+        /// </summary>
         QuoteBar,
+
+        /// <summary>
         /// Option chain data (5)
+        /// </summary>
         OptionChain,
+
+        /// <summary>
         /// Futures chain data (6)
+        /// </summary>
         FuturesChain
     }
 
@@ -355,13 +484,24 @@ namespace QuantConnect
     /// </summary>
     public enum DataFeedEndpoint
     {
+        /// <summary>
         /// Backtesting Datafeed Endpoint (0)
+        /// </summary>
         Backtesting,
+
+        /// <summary>
         /// Loading files off the local system (1)
+        /// </summary>
         FileSystem,
+
+        /// <summary>
         /// Getting datafeed from a QC-Live-Cloud (2)
+        /// </summary>
         LiveTrading,
+
+        /// <summary>
         /// Database (3)
+        /// </summary>
         Database
     }
 
@@ -370,10 +510,14 @@ namespace QuantConnect
     /// </summary>
     public enum StoragePermissions
     {
+        /// <summary>
         /// Public Storage Permissions (0)
+        /// </summary>
         Public,
 
+        /// <summary>
         /// Authenticated Read Storage Permissions (1)
+        /// </summary>
         Authenticated
     }
 
@@ -383,11 +527,19 @@ namespace QuantConnect
     /// <remarks>QuantConnect currently only has trade, quote, open interest tick data.</remarks>
     public enum TickType
     {
+        /// <summary>
         /// Trade type tick object (0)
-        Trade ,
+        /// </summary>
+        Trade,
+
+        /// <summary>
         /// Quote type tick object (1)
+        /// </summary>
         Quote,
+
+        /// <summary>
         /// Open Interest type tick object (for options, futures) (2)
+        /// </summary>
         OpenInterest
     }
 
@@ -429,15 +581,29 @@ namespace QuantConnect
     /// <remarks>Always sort the enum from the smallest to largest resolution</remarks>
     public enum Resolution
     {
+        /// <summary>
         /// Tick Resolution (0)
+        /// </summary>
         Tick,
+
+        /// <summary>
         /// Second Resolution (1)
+        /// </summary>
         Second,
+
+        /// <summary>
         /// Minute Resolution (2)
+        /// </summary>
         Minute,
+
+        /// <summary>
         /// Hour Resolution (3)
+        /// </summary>
         Hour,
+
+        /// <summary>
         /// Daily Resolution (4)
+        /// </summary>
         Daily
     }
 
@@ -530,22 +696,22 @@ namespace QuantConnect
         /// <summary>
         /// Register this control packet as not defaults.
         /// </summary>
-        public bool Initialized;
+        public bool Initialized { get; set; }
 
         /// <summary>
         /// Current run status of the algorithm id.
         /// </summary>
-        public AlgorithmStatus Status;
+        public AlgorithmStatus Status { get; set; }
 
         /// <summary>
         /// Currently requested chart.
         /// </summary>
-        public string ChartSubscription;
+        public string ChartSubscription { get; set; }
 
         /// <summary>
         /// True if there's subscribers on the channel
         /// </summary>
-        public bool HasSubscribers;
+        public bool HasSubscribers { get; set; }
     }
 
     /// <summary>
@@ -553,29 +719,64 @@ namespace QuantConnect
     /// </summary>
     public enum AlgorithmStatus
     {
+        /// <summary>
         /// Error compiling algorithm at start (0)
+        /// </summary>
         DeployError,
+
+        /// <summary>
         /// Waiting for a server (1)
+        /// </summary>
         InQueue,
+
+        /// <summary>
         /// Running algorithm (2)
+        /// </summary>
         Running,
+
+        /// <summary>
         /// Stopped algorithm or exited with runtime errors (3)
+        /// </summary>
         Stopped,
+
+        /// <summary>
         /// Liquidated algorithm (4)
+        /// </summary>
         Liquidated,
+
+        /// <summary>
         /// Algorithm has been deleted (5)
+        /// </summary>
         Deleted,
+
+        /// <summary>
         /// Algorithm completed running (6)
+        /// </summary>
         Completed,
+
+        /// <summary>
         /// Runtime Error Stoped Algorithm (7)
+        /// </summary>
         RuntimeError,
+
+        /// <summary>
         /// Error in the algorithm id (not used) (8)
+        /// </summary>
         Invalid,
+
+        /// <summary>
         /// The algorithm is logging into the brokerage (9)
+        /// </summary>
         LoggingIn,
+
+        /// <summary>
         /// The algorithm is initializing (10)
+        /// </summary>
         Initializing,
+
+        /// <summary>
         /// History status update (11)
+        /// </summary>
         History
     }
 
@@ -636,33 +837,74 @@ namespace QuantConnect
     /// </summary>
     public enum Period
     {
+        /// <summary>
         /// Period Short Codes - 10
+        /// </summary>
         TenSeconds = 10,
+
+        /// <summary>
         /// Period Short Codes - 30 Second
+        /// </summary>
         ThirtySeconds = 30,
+
+        /// <summary>
         /// Period Short Codes - 60 Second
+        /// </summary>
         OneMinute = 60,
+
+        /// <summary>
         /// Period Short Codes - 120 Second
+        /// </summary>
         TwoMinutes = 120,
+
+        /// <summary>
         /// Period Short Codes - 180 Second
+        /// </summary>
         ThreeMinutes = 180,
+
+        /// <summary>
         /// Period Short Codes - 300 Second
+        /// </summary>
         FiveMinutes = 300,
+
+        /// <summary>
         /// Period Short Codes - 600 Second
+        /// </summary>
         TenMinutes = 600,
+
+        /// <summary>
         /// Period Short Codes - 900 Second
+        /// </summary>
         FifteenMinutes = 900,
+
+        /// <summary>
         /// Period Short Codes - 1200 Second
+        /// </summary>
         TwentyMinutes = 1200,
+
+        /// <summary>
         /// Period Short Codes - 1800 Second
+        /// </summary>
         ThirtyMinutes = 1800,
+
+        /// <summary>
         /// Period Short Codes - 3600 Second
+        /// </summary>
         OneHour = 3600,
+
+        /// <summary>
         /// Period Short Codes - 7200 Second
+        /// </summary>
         TwoHours = 7200,
+
+        /// <summary>
         /// Period Short Codes - 14400 Second
+        /// </summary>
         FourHours = 14400,
+
+        /// <summary>
         /// Period Short Codes - 21600 Second
+        /// </summary>
         SixHours = 21600
     }
 
@@ -850,6 +1092,7 @@ namespace QuantConnect
                     case "Y":
                     case "BATS Y":
                     case "BATS_Y":
+                    case "BYX":
                         return Exchange.BATS_Y;
                     case "BB":
                     case "BOSTON":
@@ -872,6 +1115,8 @@ namespace QuantConnect
                     case "MM":
                     case "MEMX":
                         return Exchange.MEMX;
+                    case "CSFB":
+                        return Exchange.CSFB;
                 }
             }
             else if (securityType == SecurityType.Option)
@@ -909,6 +1154,21 @@ namespace QuantConnect
                     case "W":
                     case "C2":
                         return Exchange.C2;
+                    case "XNDQ":
+                        return Exchange.NASDAQ_Options;
+                    case "ARCX":
+                        return Exchange.ARCA_Options;
+                    case "EDGO":
+                        return Exchange.EDGO;
+                    case "BOX":
+                    case "B":
+                        return Exchange.BOX;
+                    case "PHLX":
+                        return Exchange.PHLX;
+                    case "SPHR":
+                    case "MIAX SAPPHIRE":
+                    case "MIAX_SAPPHIRE":
+                        return Exchange.MIAX_SAPPHIRE;
                     default:
                         return Exchange.UNKNOWN;
                 }
@@ -929,6 +1189,10 @@ namespace QuantConnect
                         return Exchange.CFE;
                     case "COMEX":
                         return Exchange.COMEX;
+                    case "NYSELIFFE":
+                        return Exchange.NYSELIFFE;
+                    case "EUREX":
+                        return Exchange.EUREX;
                     default:
                         return Exchange.UNKNOWN;
                 }
@@ -967,7 +1231,12 @@ namespace QuantConnect
         /// <summary>
         /// Local Platform (1)
         /// </summary>
-        LocalPlatform
+        LocalPlatform,
+
+        /// <summary>
+        /// Private Cloud Platform (2)
+        /// </summary>
+        PrivateCloudPlatform
     }
 
     /// <summary>

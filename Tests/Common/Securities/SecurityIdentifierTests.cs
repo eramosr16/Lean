@@ -26,6 +26,12 @@ using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Logging;
 using QuantConnect.Util;
 using QuantConnect.Securities;
+using QuantConnect.Data.Fundamental;
+using QuantConnect.Data.Custom.AlphaStreams;
+using QuantConnect.Data.Custom.IconicTypes;
+using QuantConnect.Data.Custom.Intrinio;
+using QuantConnect.Data.Custom;
+using QuantConnect.Data.Custom.Tiingo;
 
 namespace QuantConnect.Tests.Common.Securities
 {
@@ -415,6 +421,38 @@ namespace QuantConnect.Tests.Common.Securities
         }
 
         [Test]
+        public void DecimalStrikePriceRoundTrip()
+        {
+            var future = Symbol.CreateFuture(
+                "CL",
+                Market.NYMEX,
+                new DateTime(2020, 5, 20));
+
+            var option = Symbol.CreateOption(
+                future,
+                Market.NYMEX,
+                OptionStyle.American,
+                OptionRight.Call,
+                0.006425m,
+                new DateTime(2020, 4, 16));
+
+            Assert.AreEqual(0.006425m, option.ID.StrikePrice);
+
+            var newSid = SecurityIdentifier.Parse(option.ID.ToString());
+            Assert.AreEqual(0.006425m, newSid.StrikePrice);
+
+            var option2 = Symbol.CreateOption(
+                future,
+                Market.NYMEX,
+                OptionStyle.American,
+                OptionRight.Call,
+                0.0064m,
+                new DateTime(2020, 4, 16));
+
+            Assert.AreNotEqual(option2, option);
+        }
+
+        [Test]
         public void NegativeStrikePriceRoundTrip()
         {
             var future = Symbol.CreateFuture(
@@ -437,10 +475,10 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(-50, newSid.StrikePrice);
         }
 
-        [TestCase(OptionStyle.American, OptionRight.Call, "AAPL XEOLB4YAQ8BQ|AAPL R735QTJ8XC9X")]
-        [TestCase(OptionStyle.American, OptionRight.Put, "AAPL 31DSLGKXI01PI|AAPL R735QTJ8XC9X")]
-        [TestCase(OptionStyle.European, OptionRight.Call, "AAPL XEOOUQW0JB1I|AAPL R735QTJ8XC9X")]
-        [TestCase(OptionStyle.European, OptionRight.Put, "AAPL 31DSP06V7T4FA|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.American, OptionRight.Call, "AAPL XEOLB4YAUINA|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.American, OptionRight.Put, "AAPL 31DSLGKXI4C12|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.European, OptionRight.Call, "AAPL XEOOUQW0NLD2|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.European, OptionRight.Put, "AAPL 31DSP06V7XEQU|AAPL R735QTJ8XC9X")]
         public void SymbolHashForOptionsBackwardsCompatibilityWholeNumber(OptionStyle style, OptionRight right, string expected)
         {
             var equity = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
@@ -456,10 +494,10 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(100m, option.ID.StrikePrice);
         }
 
-        [TestCase(OptionStyle.American, OptionRight.Call, "AAPL XEOLB4YAHNOM|AAPL R735QTJ8XC9X")]
-        [TestCase(OptionStyle.American, OptionRight.Put, "AAPL 31DSLGKXHRH2E|AAPL R735QTJ8XC9X")]
-        [TestCase(OptionStyle.European, OptionRight.Call, "AAPL XEOOUQW0AQEE|AAPL R735QTJ8XC9X")]
-        [TestCase(OptionStyle.European, OptionRight.Put, "AAPL 31DSP06V7KJS6|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.American, OptionRight.Call, "AAPL XEOLB4YALY06|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.American, OptionRight.Put, "AAPL 31DSLGKXHVRDY|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.European, OptionRight.Call, "AAPL XEOOUQW0F0PY|AAPL R735QTJ8XC9X")]
+        [TestCase(OptionStyle.European, OptionRight.Put, "AAPL 31DSP06V7OU3Q|AAPL R735QTJ8XC9X")]
         public void SymbolHashForOptionsBackwardsCompatibilityFractionalNumber(OptionStyle style, OptionRight right, string expected)
         {
             var equity = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
@@ -553,7 +591,8 @@ namespace QuantConnect.Tests.Common.Securities
         [Test, Ignore("Requires complete option data to validate chain")]
         public void ValidateAAPLOptionChainSecurityIdentifiers()
         {
-            var chainProvider = new BacktestingOptionChainProvider(TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider);
+            var chainProvider = new BacktestingOptionChainProvider();
+            chainProvider.Initialize(new(TestGlobals.MapFileProvider, TestGlobals.HistoryProvider));
             var aapl = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
             var chains = new HashSet<Symbol>();
             var expectedChains = File.ReadAllLines("TestData/aapl_chain.csv")
@@ -610,6 +649,33 @@ namespace QuantConnect.Tests.Common.Securities
 
             CollectionAssert.AreEqual(expected, sids);
         }
+
+        [TestCaseSource(nameof(ReturnsExpectedCustomDataTypeTestCases))]
+        public void ReturnsExpectedCustomDataType(string symbol, Type expectedDataType)
+        {
+            SecurityIdentifier.GenerateBaseSymbol(expectedDataType, symbol.Split(".")[0]);
+            var result = SecurityIdentifier.TryGetCustomDataTypeInstance(symbol, out var obtainedDataType);
+
+            Assert.AreEqual(expectedDataType, obtainedDataType);
+        }
+
+        public static object[] ReturnsExpectedCustomDataTypeTestCases =
+        {
+            new object[] {"BTC.Bitcoin", typeof(CustomDataBitcoinAlgorithm.Bitcoin)},
+            new object[] {"AAPL.FundamentalUniverse", typeof(FundamentalUniverse)},
+            new object[] {"AAPL.PlaceHolder", typeof(PlaceHolder)},
+            new object[] {"AAPL.LinkedData", typeof(LinkedData)},
+            new object[] {"AAPL.UnlinkedData", typeof(UnlinkedData)},
+            new object[] {"AAPL.UnlinkedDataTradeBar", typeof(UnlinkedDataTradeBar)},
+            new object[] {"AAPL.IndexedLinkedData", typeof(IndexedLinkedData)},
+            new object[] {"AAPL.IndexedLinkedData2", typeof(IndexedLinkedData2)},
+            new object[] {"AAPL.IntrinioEconomicDataSources", typeof(IntrinioEconomicDataSources)},
+            new object[] {"AAPL.IntrinioEconomicData", typeof(IntrinioEconomicData)},
+            new object[] {"AAPL.FxcmVolume", typeof(FxcmVolume)},
+            new object[] {"AAPL.Tiingo", typeof(Tiingo)},
+            new object[] {"AAPL.TiingoDailyData", typeof(TiingoDailyData)},
+            new object[] {"AAPL.TiingoPrice", typeof(TiingoPrice)},
+        };
 
         class Container
         {

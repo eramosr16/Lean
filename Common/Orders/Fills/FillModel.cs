@@ -39,7 +39,7 @@ namespace QuantConnect.Orders.Fills
         /// When Python calls a C# method that calls a method that's overriden in python it won't
         /// run the python implementation unless the call is performed through python too.
         /// </summary>
-        protected FillModelPythonWrapper PythonWrapper;
+        protected FillModelPythonWrapper PythonWrapper { get; set; }
 
         /// <summary>
         /// Used to set the <see cref="FillModelPythonWrapper"/> instance if any
@@ -802,8 +802,8 @@ namespace QuantConnect.Orders.Fills
             {
                 return fill;
             }
-            // make sure the exchange is open/normal market hours before filling
-            if (!IsExchangeOpen(asset, false)) return fill;
+
+            // LocalTime has reached or passed market close, proceed to fill
 
             fill.FillPrice = GetPricesCheckingPythonWrapper(asset, order.Direction).Close;
             fill.Status = OrderStatus.Filled;
@@ -1094,8 +1094,8 @@ namespace QuantConnect.Orders.Fills
                     return false;
                 }
 
-                var resolution = (currentBar.EndTime - currentBar.Time).ToHigherResolutionEquivalent(false);
-                var isOnCurrentBar = resolution == Resolution.Daily
+                var barSpan = currentBar.EndTime - currentBar.Time;
+                var isOnCurrentBar = barSpan > Time.OneHour
                     // for fill purposes we consider the market open for daily bars if we are in the same day
                     ? asset.LocalTime.Date == currentBar.EndTime.Date
                     // for other resolution bars, market is considered open if we are within the bar time

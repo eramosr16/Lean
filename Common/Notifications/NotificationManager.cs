@@ -13,10 +13,9 @@
  * limitations under the License.
 */
 
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using Python.Runtime;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 namespace QuantConnect.Notifications
 {
@@ -25,13 +24,7 @@ namespace QuantConnect.Notifications
     /// </summary>
     public class NotificationManager
     {
-        private const int RateLimit = 30;
-
-        private int _count;
-        private DateTime _resetTime;
-
         private readonly bool _liveMode;
-        private readonly object _sync = new object();
 
         /// <summary>
         /// Public access to the messages
@@ -43,12 +36,8 @@ namespace QuantConnect.Notifications
         /// </summary>
         public NotificationManager(bool liveMode)
         {
-            _count = 0;
             _liveMode = liveMode;
             Messages = new ConcurrentQueue<Notification>();
-
-            // start counting reset time based on first invocation of NotificationManager
-            _resetTime = default(DateTime);
         }
 
         /// <summary>
@@ -57,7 +46,7 @@ namespace QuantConnect.Notifications
         /// <param name="subject">Subject of the email</param>
         /// <param name="message">Message body, up to 10kb</param>
         /// <param name="data">Data attachment (optional)</param>
-        /// <param name="address">Email address to send to</param>
+        /// <param name="address">Email address to send to, if null will default to users email</param>
         /// <param name="headers">Optional email headers to use</param>
         public bool Email(string address, string subject, string message, string data, PyObject headers)
         {
@@ -70,11 +59,11 @@ namespace QuantConnect.Notifications
         /// <param name="subject">Subject of the email</param>
         /// <param name="message">Message body, up to 10kb</param>
         /// <param name="data">Data attachment (optional)</param>
-        /// <param name="address">Email address to send to</param>
+        /// <param name="address">Email address to send to, if null will default to users email</param>
         /// <param name="headers">Optional email headers to use</param>
         public bool Email(string address, string subject, string message, string data = "", Dictionary<string, string> headers = null)
         {
-            if (!Allow())
+            if (!_liveMode)
             {
                 return false;
             }
@@ -92,7 +81,7 @@ namespace QuantConnect.Notifications
         /// <param name="message">Message to send</param>
         public bool Sms(string phoneNumber, string message)
         {
-            if (!Allow())
+            if (!_liveMode)
             {
                 return false;
             }
@@ -123,7 +112,7 @@ namespace QuantConnect.Notifications
         /// <param name="headers">Optional headers to use</param>
         public bool Web(string address, object data = null, Dictionary<string, string> headers = null)
         {
-            if (!Allow())
+            if (!_liveMode)
             {
                 return false;
             }
@@ -138,12 +127,12 @@ namespace QuantConnect.Notifications
         /// Send a telegram message to the chat ID specified, supply token for custom bot.
         /// Note: Requires bot to have chat with user or be in the group specified by ID.
         /// </summary>
-        /// <param name="user">Chat or group ID to send message to</param>
+        /// <param name="id">Chat or group ID to send message to</param>
         /// <param name="message">Message to send</param>
         /// <param name="token">Bot token to use for this message</param>
         public bool Telegram(string id, string message, string token = null)
         {
-            if (!Allow())
+            if (!_liveMode)
             {
                 return false;
             }
@@ -155,35 +144,135 @@ namespace QuantConnect.Notifications
         }
 
         /// <summary>
-        /// Maintain a rate limit of the notification messages per hour send of roughly 20 messages per hour.
+        /// Send a file to the FTP specified server using password authentication over unsecure FTP.
         /// </summary>
-        /// <returns>True when running in live mode and under the rate limit</returns>
-        private bool Allow()
+        /// <param name="hostname">FTP server hostname</param>
+        /// <param name="username">The FTP server username</param>
+        /// <param name="password">The FTP server password</param>
+        /// <param name="filePath">The path to file on the FTP server</param>
+        /// <param name="fileContent">The contents of the file</param>
+        /// <param name="port">The FTP server port. Defaults to 21</param>
+        public bool Ftp(string hostname, string username, string password, string filePath, byte[] fileContent, int? port = null)
+        {
+            return Ftp(hostname, username, password, filePath, fileContent, secure: false, port);
+        }
+
+        /// <summary>
+        /// Send a file to the FTP specified server using password authentication over unsecure FTP.
+        /// </summary>
+        /// <param name="hostname">FTP server hostname</param>
+        /// <param name="username">The FTP server username</param>
+        /// <param name="password">The FTP server password</param>
+        /// <param name="filePath">The path to file on the FTP server</param>
+        /// <param name="fileContent">The string contents of the file</param>
+        /// <param name="port">The FTP server port. Defaults to 21</param>
+        public bool Ftp(string hostname, string username, string password, string filePath, string fileContent, int? port = null)
+        {
+            return Ftp(hostname, username, password, filePath, fileContent, secure: false, port);
+        }
+
+        /// <summary>
+        /// Send a file to the FTP specified server using password authentication over SFTP.
+        /// </summary>
+        /// <param name="hostname">FTP server hostname</param>
+        /// <param name="username">The FTP server username</param>
+        /// <param name="password">The FTP server password</param>
+        /// <param name="filePath">The path to file on the FTP server</param>
+        /// <param name="fileContent">The contents of the file</param>
+        /// <param name="port">The FTP server port. Defaults to 21</param>
+        public bool Sftp(string hostname, string username, string password, string filePath, byte[] fileContent, int? port = null)
+        {
+            return Ftp(hostname, username, password, filePath, fileContent, secure: true, port);
+        }
+
+        /// <summary>
+        /// Send a file to the FTP specified server using password authentication over SFTP.
+        /// </summary>
+        /// <param name="hostname">FTP server hostname</param>
+        /// <param name="username">The FTP server username</param>
+        /// <param name="password">The FTP server password</param>
+        /// <param name="filePath">The path to file on the FTP server</param>
+        /// <param name="fileContent">The string contents of the file</param>
+        /// <param name="port">The FTP server port. Defaults to 21</param>
+        public bool Sftp(string hostname, string username, string password, string filePath, string fileContent, int? port = null)
+        {
+            return Ftp(hostname, username, password, filePath, fileContent, secure: true, port);
+        }
+
+        /// <summary>
+        /// Send a file to the FTP specified server using password authentication over SFTP using SSH keys.
+        /// </summary>
+        /// <param name="hostname">FTP server hostname</param>
+        /// <param name="username">The FTP server username</param>
+        /// <param name="privateKey">The private SSH key to use for authentication</param>
+        /// <param name="privateKeyPassphrase">The optional passphrase to decrypt the private key.
+        /// This can be empty or null if the private key is not encrypted</param>
+        /// <param name="filePath">The path to file on the FTP server</param>
+        /// <param name="fileContent">The contents of the file</param>
+        /// <param name="port">The FTP server port. Defaults to 21</param>
+        public bool Sftp(string hostname, string username, string privateKey, string privateKeyPassphrase, string filePath, byte[] fileContent,
+            int? port = null)
         {
             if (!_liveMode)
             {
                 return false;
             }
 
-            lock (_sync)
+            var ftp = new NotificationFtp(hostname, username, privateKey, privateKeyPassphrase, filePath, fileContent, port);
+            Messages.Enqueue(ftp);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Send a file to the FTP specified server using password authentication over SFTP using SSH keys.
+        /// </summary>
+        /// <param name="hostname">FTP server hostname</param>
+        /// <param name="username">The FTP server username</param>
+        /// <param name="privateKey">The private SSH key to use for authentication</param>
+        /// <param name="privateKeyPassphrase">The optional passphrase to decrypt the private key.
+        /// This can be empty or null if the private key is not encrypted</param>
+        /// <param name="filePath">The path to file on the FTP server</param>
+        /// <param name="fileContent">The string contents of the file</param>
+        /// <param name="port">The FTP server port. Defaults to 21</param>
+        public bool Sftp(string hostname, string username, string privateKey, string privateKeyPassphrase, string filePath, string fileContent,
+            int? port = null)
+        {
+            if (!_liveMode)
             {
-                var now = DateTime.UtcNow;
-                if (now > _resetTime)
-                {
-                    _count = 0;
-
-                    // rate limiting set at 30/hour
-                    _resetTime = now.Add(TimeSpan.FromHours(1));
-                }
-
-                if (_count < RateLimit)
-                {
-                    _count++;
-                    return true;
-                }
-
                 return false;
             }
+
+            var ftp = new NotificationFtp(hostname, username, privateKey, privateKeyPassphrase, filePath, fileContent, port);
+            Messages.Enqueue(ftp);
+
+            return true;
+        }
+
+        private bool Ftp(string hostname, string username, string password, string filePath, byte[] fileContent, bool secure = true, int? port = null)
+        {
+            if (!_liveMode)
+            {
+                return false;
+            }
+
+            var ftp = new NotificationFtp(hostname, username, password, filePath, fileContent, secure: secure, port);
+            Messages.Enqueue(ftp);
+
+            return true;
+        }
+
+        private bool Ftp(string hostname, string username, string password, string filePath, string fileContent, bool secure = true, int? port = null)
+        {
+            if (!_liveMode)
+            {
+                return false;
+            }
+
+            var ftp = new NotificationFtp(hostname, username, password, filePath, fileContent, secure: secure, port);
+            Messages.Enqueue(ftp);
+
+            return true;
         }
     }
 }

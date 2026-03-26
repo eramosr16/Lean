@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -33,8 +33,9 @@ namespace QuantConnect.Data.Consolidators
         /// Creates a consolidator to produce a new 'TradeBar' representing the period
         /// </summary>
         /// <param name="period">The minimum span of time before emitting a consolidated bar</param>
-        protected TradeBarConsolidatorBase(TimeSpan period)
-            : base(period)
+        /// <param name="startTime">Optionally the bar start time anchor to use</param>
+        protected TradeBarConsolidatorBase(TimeSpan period, TimeSpan? startTime = null)
+            : base(period, startTime)
         {
         }
 

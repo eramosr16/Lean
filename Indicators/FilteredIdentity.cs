@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using Python.Runtime;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using System;
@@ -39,6 +40,28 @@ namespace QuantConnect.Indicators
             // default our filter to true (do not filter)
             _filter = filter ?? (x => true);
         }
+
+        /// <summary>
+        /// Initializes a new instance of the FilteredIdentity indicator with the specified name
+        /// </summary>
+        /// <param name="filter">Filters the IBaseData send into the indicator, if null defaults to true (x => true) which means no filter</param>
+        public FilteredIdentity(Func<IBaseData, bool> filter) : this("", filter) { }
+
+        /// <summary>
+        /// Initializes a new instance of the FilteredIdentity indicator with the specified name
+        /// </summary>
+        /// <param name="name">The name of the indicator</param>
+        /// <param name="filter">Filters the IBaseData send into the indicator, if null defaults to true (x => true) which means no filter</param>
+        public FilteredIdentity(string name, PyObject filter)
+            : this(name, filter.SafeAs<Func<IBaseData, bool>>())
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the FilteredIdentity indicator with the specified name
+        /// </summary>
+        /// <param name="filter">Filters the IBaseData send into the indicator, if null defaults to true (x => true) which means no filter</param>
+        public FilteredIdentity(PyObject filter) : this("", filter) { }
 
         /// <summary>
         /// Gets a flag indicating when this indicator is ready and fully initialized

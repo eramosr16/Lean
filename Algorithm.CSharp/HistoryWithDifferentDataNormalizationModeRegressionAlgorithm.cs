@@ -66,7 +66,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (historyResults.Any(x => x.Count == 0 || x.Count != historyResults.First().Count))
             {
-                throw new Exception($"History results for {symbol} have different number of bars");
+                throw new RegressionTestException($"History results for {symbol} have different number of bars");
             }
 
             // Check that, for each history result, close prices at each time are different for these securities (AAPL and ES)
@@ -75,7 +75,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var closePrices = historyResults.Select(hr => hr[j].Bars.First().Value.Close).ToHashSet();
                 if (closePrices.Count != dataNormalizationModes.Length)
                 {
-                    throw new Exception($"History results for {symbol} have different close prices at the same time");
+                    throw new RegressionTestException($"History results for {symbol} have different close prices at the same time");
                 }
             }
         }
@@ -88,12 +88,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 1626;
+        public long DataPoints => 1026;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -101,16 +101,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 668;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -122,13 +129,14 @@ namespace QuantConnect.Algorithm.CSharp
             {"Beta", "0"},
             {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-4.178"},
-            {"Tracking Error", "0.085"},
+            {"Information Ratio", "-4.244"},
+            {"Tracking Error", "0.086"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

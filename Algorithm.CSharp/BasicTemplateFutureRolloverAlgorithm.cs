@@ -98,10 +98,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             private QCAlgorithm _algorithm;
             private Future _future;
-            public ExponentialMovingAverage EMA;
-            public decimal Price;
-            public bool IsLong;
-            public bool IsShort;
+            public ExponentialMovingAverage EMA { get; set; }
+            public decimal Price { get; set; }
+            public bool IsLong { get; set; }
+            public bool IsShort { get; set; }
             public Symbol Symbol => _future.Symbol;
             public Symbol Mapped => _future.Mapped;
 
@@ -171,48 +171,56 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 1333;
+        public long DataPoints => 727;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 4;
+        public int AlgorithmHistoryDataPoints => 2;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
-            {"Average Win", "0.53%"},
+            {"Total Orders", "1"},
+            {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "3.011%"},
+            {"Compounding Annual Return", "-0.010%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "0"},
-            {"Net Profit", "0.528%"},
-            {"Sharpe Ratio", "1.285"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999983.2"},
+            {"Net Profit", "-0.002%"},
+            {"Sharpe Ratio", "-225.214"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "83.704%"},
+            {"Probabilistic Sharpe Ratio", "0.135%"},
             {"Loss Rate", "0%"},
-            {"Win Rate", "100%"},
+            {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.015"},
-            {"Beta", "-0.004"},
-            {"Annual Standard Deviation", "0.011"},
+            {"Alpha", "-0.008"},
+            {"Beta", "0"},
+            {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-4.774"},
-            {"Tracking Error", "0.084"},
-            {"Treynor Ratio", "-3.121"},
-            {"Total Fees", "$4.30"},
-            {"Estimated Strategy Capacity", "$5900000000.00"},
+            {"Information Ratio", "-5.146"},
+            {"Tracking Error", "0.083"},
+            {"Treynor Ratio", "-542.359"},
+            {"Total Fees", "$2.15"},
+            {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Portfolio Turnover", "0.27%"},
-            {"OrderListHash", "9fb6d9433c29815301d818ccd7f3863f"}
+            {"Portfolio Turnover", "0.13%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "a6ccce3a1a7f549f887d83e84bfa878d"}
         };
-    }  
+    }
 }

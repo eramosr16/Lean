@@ -54,7 +54,7 @@ namespace QuantConnect.DataLibrary.Tests
                 var weights = kvp.Value;
                 if (weights.Count < 2)
                 {
-                    throw new Exception($"Expected multiple different weigths from the PCM for {kvp.Key}");
+                    throw new RegressionTestException($"Expected multiple different weigths from the PCM for {kvp.Key}");
                 }
             }
         }
@@ -89,7 +89,7 @@ namespace QuantConnect.DataLibrary.Tests
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -99,19 +99,26 @@ namespace QuantConnect.DataLibrary.Tests
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 519;
+        public int AlgorithmHistoryDataPoints => 514;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "31"},
+            {"Total Orders", "31"},
             {"Average Win", "0.01%"},
             {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "5.011%"},
+            {"Compounding Annual Return", "5.057%"},
             {"Drawdown", "4.900%"},
             {"Expectancy", "-0.273"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100509.82"},
             {"Net Profit", "0.510%"},
             {"Sharpe Ratio", "0.265"},
             {"Sortino Ratio", "0.371"},
@@ -127,10 +134,11 @@ namespace QuantConnect.DataLibrary.Tests
             {"Tracking Error", "0.088"},
             {"Treynor Ratio", "0.043"},
             {"Total Fees", "$31.65"},
-            {"Estimated Strategy Capacity", "$1300000000.00"},
+            {"Estimated Strategy Capacity", "$1200000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "3.08%"},
-            {"OrderListHash", "c6a79aecd23149bd6ccad4008d56e397"}
+            {"Drawdown Recovery", "14"},
+            {"OrderListHash", "6194b89f404d05e8ba437ce38f4bc4a4"}
         };
 
     }

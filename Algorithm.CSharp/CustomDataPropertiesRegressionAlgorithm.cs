@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void Initialize()
         {
-            SetStartDate(2011, 9, 13);
-            SetEndDate(2015, 12, 01);
+            SetStartDate(2020, 01, 05);
+            SetEndDate(2020, 01, 10);
 
             //Set the cash for the strategy:
             SetCash(100000);
@@ -56,13 +56,13 @@ namespace QuantConnect.Algorithm.CSharp
             //Verify our symbol properties were changed and loaded into this security
             if (_bitcoin.SymbolProperties != properties)
             {
-                throw new Exception("Failed to set and retrieve custom SymbolProperties for BTC");
+                throw new RegressionTestException("Failed to set and retrieve custom SymbolProperties for BTC");
             }
 
             //Verify our exchange hours were changed and loaded into this security
             if (_bitcoin.Exchange.Hours != exchangeHours)
             {
-                throw new Exception("Failed to set and retrieve custom ExchangeHours for BTC");
+                throw new RegressionTestException("Failed to set and retrieve custom ExchangeHours for BTC");
             }
 
             // For regression purposes on AddData overloads, this call is simply to ensure Lean can accept this
@@ -104,12 +104,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 10491;
+        public long DataPoints => 57;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -117,35 +117,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "155.211%"},
-            {"Drawdown", "84.800%"},
+            {"Compounding Annual Return", "34781.071%"},
+            {"Drawdown", "4.300%"},
             {"Expectancy", "0"},
-            {"Net Profit", "5123.242%"},
-            {"Sharpe Ratio", "2.058"},
-            {"Sortino Ratio", "2.492"},
-            {"Probabilistic Sharpe Ratio", "68.833%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "110102.2"},
+            {"Net Profit", "10.102%"},
+            {"Sharpe Ratio", "283.719"},
+            {"Sortino Ratio", "1123.876"},
+            {"Probabilistic Sharpe Ratio", "81.716%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "1.724"},
-            {"Beta", "0.043"},
-            {"Annual Standard Deviation", "0.841"},
-            {"Annual Variance", "0.707"},
-            {"Information Ratio", "1.902"},
-            {"Tracking Error", "0.848"},
-            {"Treynor Ratio", "40.293"},
+            {"Alpha", "184.11"},
+            {"Beta", "-6.241"},
+            {"Annual Standard Deviation", "0.635"},
+            {"Annual Variance", "0.403"},
+            {"Information Ratio", "260.511"},
+            {"Tracking Error", "0.689"},
+            {"Treynor Ratio", "-28.849"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "BTC.Bitcoin 2S"},
-            {"Portfolio Turnover", "0.06%"},
-            {"OrderListHash", "afc1a24e5f563b115605767ce78b6970"}
+            {"Portfolio Turnover", "16.73%"},
+            {"Drawdown Recovery", "2"},
+            {"OrderListHash", "b890a8e73bf118e943ad2f2e712f12d0"}
         };
 
         /// <summary>
@@ -154,24 +162,25 @@ namespace QuantConnect.Algorithm.CSharp
         public class Bitcoin : BaseData
         {
             [JsonProperty("timestamp")]
-            public int Timestamp = 0;
+            public int Timestamp { get; set; }
             [JsonProperty("open")]
-            public decimal Open = 0;
+            public decimal Open { get; set; }
             [JsonProperty("high")]
-            public decimal High = 0;
+            public decimal High { get; set; }
             [JsonProperty("low")]
-            public decimal Low = 0;
+            public decimal Low { get; set; }
+            public decimal Mid { get; set; }
             [JsonProperty("last")]
-            public decimal Close = 0;
+            public decimal Close { get; set; }
             [JsonProperty("bid")]
-            public decimal Bid = 0;
+            public decimal Bid { get; set; }
             [JsonProperty("ask")]
-            public decimal Ask = 0;
+            public decimal Ask { get; set; }
             [JsonProperty("vwap")]
-            public decimal WeightedPrice = 0;
+            public decimal WeightedPrice { get; set; }
             [JsonProperty("volume")]
-            public decimal VolumeBTC = 0;
-            public decimal VolumeUSD = 0;
+            public decimal VolumeBTC { get; set; }
+            public decimal VolumeUSD { get; set; }
 
             /// <summary>
             /// The end time of this data. Some data covers spans (trade bars)
@@ -189,7 +198,6 @@ namespace QuantConnect.Algorithm.CSharp
             /// </summary>
             public Bitcoin()
             {
-                Symbol = "BTC";
             }
 
             /// <summary>
@@ -210,7 +218,10 @@ namespace QuantConnect.Algorithm.CSharp
 
                 //return "http://my-ftp-server.com/futures-data-" + date.ToString("Ymd") + ".zip";
                 // OR simply return a fixed small data file. Large files will slow down your backtest
-                return new SubscriptionDataSource("https://www.quantconnect.com/api/v2/proxy/quandl/api/v3/datasets/BCHARTS/BITSTAMPUSD.csv?order=asc&api_key=WyAazVXnq7ATy_fefTqm", SubscriptionTransportMedium.RemoteFile);
+                return new SubscriptionDataSource("https://www.quantconnect.com/api/v2/proxy/nasdaq/api/v3/datatables/QDL/BITFINEX.csv?code=BTCUSD&api_key=WyAazVXnq7ATy_fefTqm")
+                {
+                    Sort = true
+                };
             }
 
             /// <summary>
@@ -225,7 +236,7 @@ namespace QuantConnect.Algorithm.CSharp
             /// <returns>New Bitcoin Object which extends BaseData.</returns>
             public override BaseData Reader(SubscriptionDataConfig config, string line, DateTime date, bool isLiveMode)
             {
-                var coin = new Bitcoin();
+                var coin = new Bitcoin() { Symbol = config.Symbol };
                 if (isLiveMode)
                 {
                     //Example Line Format:
@@ -241,20 +252,20 @@ namespace QuantConnect.Algorithm.CSharp
                 }
 
                 //Example Line Format:
-                //Date      Open   High    Low     Close   Volume (BTC)    Volume (Currency)   Weighted Price
-                //2011-09-13 5.8    6.0     5.65    5.97    58.37138238,    346.0973893944      5.929230648356
+                // code    date        high     low      mid      last     bid      ask      volume
+                // BTCUSD  2024-10-08  63248.0  61940.0  62246.5  62245.0  62246.0  62247.0       5.929230648356
                 try
                 {
                     string[] data = line.Split(',');
-                    coin.Time = DateTime.Parse(data[0], CultureInfo.InvariantCulture);
+                    coin.Time = DateTime.Parse(data[1], CultureInfo.InvariantCulture);
                     coin.EndTime = coin.Time.AddDays(1);
-                    coin.Open = Convert.ToDecimal(data[1], CultureInfo.InvariantCulture);
                     coin.High = Convert.ToDecimal(data[2], CultureInfo.InvariantCulture);
                     coin.Low = Convert.ToDecimal(data[3], CultureInfo.InvariantCulture);
-                    coin.Close = Convert.ToDecimal(data[4], CultureInfo.InvariantCulture);
-                    coin.VolumeBTC = Convert.ToDecimal(data[5], CultureInfo.InvariantCulture);
-                    coin.VolumeUSD = Convert.ToDecimal(data[6], CultureInfo.InvariantCulture);
-                    coin.WeightedPrice = Convert.ToDecimal(data[7], CultureInfo.InvariantCulture);
+                    coin.Mid = Convert.ToDecimal(data[4], CultureInfo.InvariantCulture);
+                    coin.Close = Convert.ToDecimal(data[5], CultureInfo.InvariantCulture);
+                    coin.Bid = Convert.ToDecimal(data[6], CultureInfo.InvariantCulture);
+                    coin.Ask = Convert.ToDecimal(data[7], CultureInfo.InvariantCulture);
+                    coin.VolumeBTC = Convert.ToDecimal(data[8], CultureInfo.InvariantCulture);
                     coin.Value = coin.Close;
                 }
                 catch { /* Do nothing, skip first title row */ }

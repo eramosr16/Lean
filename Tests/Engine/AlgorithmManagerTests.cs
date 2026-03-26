@@ -56,7 +56,7 @@ namespace QuantConnect.Tests.Engine
             AlgorithmManagerAlgorithmStatusTest.AlgorithmStatus = algorithmStatus;
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("QuantConnect.Tests.Engine.AlgorithmManagerTests+AlgorithmManagerAlgorithmStatusTest",
                 new Dictionary<string, string> {
-                    {"Total Trades", "0"},
+                    {PerformanceMetrics.TotalOrders, "0"},
                     {"Average Win", "0%"},
                     {"Average Loss", "0%"},
                     {"Compounding Annual Return", "0%"},
@@ -106,9 +106,9 @@ namespace QuantConnect.Tests.Engine
                         symbolPropertiesDataBase,
                         algorithm,
                         RegisteredSecurityDataTypesProvider.Null,
-                        new SecurityCacheProvider(algorithm.Portfolio)),
-                    dataPermissionManager,
-                    new DefaultDataProvider()),
+                        new SecurityCacheProvider(algorithm.Portfolio),
+                        algorithm: algorithm), dataPermissionManager,
+                    TestGlobals.DataProvider),
                 algorithm,
                 algorithm.TimeKeeper,
                 marketHoursDatabase,
@@ -119,25 +119,29 @@ namespace QuantConnect.Tests.Engine
             var transactions = new BacktestingTransactionHandler();
             var results = new BacktestingResultHandler();
             var realtime = new BacktestingRealTimeHandler();
-            var leanManager = new NullLeanManager();
-            var token = new CancellationToken();
+            using var leanManager = new NullLeanManager();
             var nullSynchronizer = new NullSynchronizer(algorithm);
 
             algorithm.Initialize();
             algorithm.PostInitialize();
 
-            results.Initialize(job, new QuantConnect.Messaging.Messaging(), new Api.Api(), transactions);
+            using var messaging = new QuantConnect.Messaging.Messaging();
+            using var api = new Api.Api();
+            results.Initialize(new (job, messaging, api, transactions, null));
             results.SetAlgorithm(algorithm, algorithm.Portfolio.TotalPortfolioValue);
-            transactions.Initialize(algorithm, new BacktestingBrokerage(algorithm), results);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactions.Initialize(algorithm, backtestingBrokerage, results);
             feed.Initialize(algorithm, job, results, null, null, null, dataManager, null, null);
 
             Log.Trace("Starting algorithm manager loop to process " + nullSynchronizer.Count + " time slices");
             var sw = Stopwatch.StartNew();
-            algorithmManager.Run(job, algorithm, nullSynchronizer, transactions, results, realtime, leanManager, token);
+            using var tokenSource = new CancellationTokenSource();
+            algorithmManager.Run(job, algorithm, nullSynchronizer, transactions, results, realtime, leanManager, tokenSource, new());
             sw.Stop();
 
             realtime.Exit();
             results.Exit();
+            transactions.Exit();
             var thousands = nullSynchronizer.Count / 1000d;
             var seconds = sw.Elapsed.TotalSeconds;
             Log.Trace("COUNT: " + nullSynchronizer.Count + "  KPS: " + thousands/seconds);
@@ -183,13 +187,6 @@ namespace QuantConnect.Tests.Engine
             public bool IsActive { get; }
 
             public void OnSecuritiesChanged(SecurityChanges changes)
-            {
-            }
-
-            public void Initialize(AlgorithmNodePacket job,
-                IMessagingHandler messagingHandler,
-                IApi api,
-                ITransactionHandler transactionHandler)
             {
             }
 
@@ -263,6 +260,18 @@ namespace QuantConnect.Tests.Engine
             }
 
             public void SetSummaryStatistic(string name, string value)
+            {
+            }
+
+            public void AlgorithmTagsUpdated(HashSet<string> tags)
+            {
+            }
+
+            public void AlgorithmNameUpdated(string name)
+            {
+            }
+
+            public void Initialize(ResultHandlerInitializeParameters parameters)
             {
             }
         }

@@ -47,14 +47,14 @@ namespace QuantConnect.Algorithm.CSharp
             SetCash(500000);
 
             var option = AddOption("GOOG", Resolution.Minute);
-            option.SetFilter(universe => universe.Strikes(-1, 1).Expiration(0, 62));
+            option.SetFilter(universe => universe.StandardsOnly().Strikes(-1, 1).Expiration(0, 62));
 
             _symbol = option.Symbol;
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
-            if (_done || !data.OptionChains.TryGetValue(_symbol, out var chain) || !chain.Any())
+            if (_done || !slice.OptionChains.TryGetValue(_symbol, out var chain) || !chain.Any())
             {
                 return;
             }
@@ -90,7 +90,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                 if (!tickets.Any(ticket => ticket.Symbol == _frontMonthPutSymbol && ticket.Quantity == 1))
                 {
-                    throw new Exception($"Expected to find a ticket for {_frontMonthPutSymbol} with quantity {-Securities[_frontMonthPutSymbol].Holdings.Quantity}");
+                    throw new RegressionTestException($"Expected to find a ticket for {_frontMonthPutSymbol} with quantity {-Securities[_frontMonthPutSymbol].Holdings.Quantity}");
                 }
 
                 _backMonthPutSymbol = tickets.First(ticket => ticket.Symbol != _frontMonthPutSymbol).Symbol;
@@ -102,25 +102,25 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!_done)
             {
-                throw new Exception("Expected the algorithm to have bought and sold a Bull Call Spread and a Bear Put Spread.");
+                throw new RegressionTestException("Expected the algorithm to have bought and sold a Bull Call Spread and a Bear Put Spread.");
             }
 
             if (Portfolio.Positions.Groups.Count != 1)
             {
-                throw new Exception($"Expected 1 position group, found {Portfolio.Positions.Groups.Count}");
+                throw new RegressionTestException($"Expected 1 position group, found {Portfolio.Positions.Groups.Count}");
             }
 
             var positions = Portfolio.Positions.Groups.Single().Positions.ToList();
             if (positions.Count != 1)
             {
-                throw new Exception($"Expected 1 position in the position group, found {positions.Count()}");
+                throw new RegressionTestException($"Expected 1 position in the position group, found {positions.Count}");
             }
 
             // The position should correspond to the far expiry contract
             var position = positions[0];
             if (position.Symbol != _backMonthPutSymbol)
             {
-                throw new Exception($"Expected final portfolio position to be {_backMonthPutSymbol}, found {position.Symbol}");
+                throw new RegressionTestException($"Expected final portfolio position to be {_backMonthPutSymbol}, found {position.Symbol}");
             }
         }
 
@@ -132,12 +132,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 464263;
+        public long DataPoints => 8151;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -145,16 +145,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "3"},
+            {"Total Orders", "3"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "500000"},
+            {"End Equity", "499792"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -171,9 +178,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$3.00"},
             {"Estimated Strategy Capacity", "$190000.00"},
-            {"Lowest Capacity Asset", "GOOCV 306CZK4DP0LC6|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV 306CZK4DP4VNQ|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "1.19%"},
-            {"OrderListHash", "4a5e3aac203b4a44532db1e657de3245"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "860bacced1208f152cfc0aad369a111e"}
         };
     }
 }

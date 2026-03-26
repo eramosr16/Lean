@@ -222,7 +222,7 @@ namespace QuantConnect.Data
             Resolution = resolution;
             _sid = symbol.ID;
             Symbol = symbol;
-            ExtendedMarketHours = extendedHours;
+            ExtendedMarketHours = extendedHours && LeanData.SupportsExtendedMarketHours(Type);
             PriceScaleFactor = 1;
             IsInternalFeed = isInternalFeed;
             IsCustomData = isCustom;
@@ -398,9 +398,22 @@ namespace QuantConnect.Data
         /// <filterpriority>2</filterpriority>
         public override string ToString()
         {
-            return Invariant($"{Symbol.Value},#{ContractDepthOffset},{MappedSymbol},{Resolution},{Type.Name},{TickType},{DataNormalizationMode},{DataMappingMode}{(IsInternalFeed ? ",Internal" : string.Empty)}");
+            return ToString(Symbol.Value);
         }
 
+        /// <summary>
+        /// Returns a string that represents the current object.
+        /// </summary>
+        /// <param name="symbol">Symbol to use in the string representation of the object</param>
+        /// <returns>/// A string that represents the current object.</returns>
+        public string ToString(string symbol)
+        {
+            return Invariant($"{symbol},#{ContractDepthOffset},{MappedSymbol},{Resolution},{Type.Name},{TickType},{DataNormalizationMode},{DataMappingMode}{(IsInternalFeed ? ",Internal" : string.Empty)}");
+        }
+
+        /// <summary>
+        /// New base class for all event classes.
+        /// </summary>
         public class NewSymbolEventArgs : EventArgs
         {
             /// <summary>
@@ -413,6 +426,11 @@ namespace QuantConnect.Data
             /// </summary>
             public Symbol New { get; }
 
+            /// <summary>
+            /// Create an instance of NewSymbolEventArgs
+            /// </summary>
+            /// <param name="new"></param>
+            /// <param name="old"></param>
             public NewSymbolEventArgs(Symbol @new, Symbol old)
             {
                 New = @new;

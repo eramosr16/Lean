@@ -49,16 +49,16 @@ namespace QuantConnect.Algorithm.CSharp
         private bool _firstCall = true;
 
         private PortfolioTarget[] _targets = new PortfolioTarget[4];
-        
+
         /// <summary>
         /// Symbols accepted by Collective2. Collective2 accepts stock,
         /// future, forex and US stock option symbols
         /// </summary>
         private List<Symbol> _symbols = new()
-        {   
-            QuantConnect.Symbol.Create("SPY", SecurityType.Equity, Market.USA, null, null),
-            QuantConnect.Symbol.Create("EURUSD", SecurityType.Forex, Market.Oanda, null, null),
-            QuantConnect.Symbol.CreateFuture("ES", Market.CME, new DateTime(2023, 12, 15), null),
+        {
+            QuantConnect.Symbol.Create("SPY", SecurityType.Equity, Market.USA),
+            QuantConnect.Symbol.Create("EURUSD", SecurityType.Forex, Market.Oanda),
+            QuantConnect.Symbol.CreateFuture("ES", Market.CME, new DateTime(2023, 12, 15)),
             QuantConnect.Symbol.CreateOption("GOOG", Market.USA, OptionStyle.American, OptionRight.Call, 130, new DateTime(2023, 9, 1)),
         };
 
@@ -95,15 +95,22 @@ namespace QuantConnect.Algorithm.CSharp
             // Initialize this flag, to check when the ema indicators crosses between themselves
             _emaFastIsNotSet = true;
 
-            // Set Collective2 signal export provider
-            SignalExport.AddSignalExportProviders(new Collective2SignalExport(_collective2ApiKey, _collective2SystemId));
+            // Disable automatic exports as we manually set them
+            SignalExport.AutomaticExportTimeSpan = null;
+
+            // Set Collective2 signal export provider.
+            // If using the Collective2 white-label API, you can specify it in the constructor with the optional parameter `useWhiteLabelApi`:
+            // e.g. new Collective2SignalExport(_collective2ApiKey, _collective2SystemId, useWhiteLabelApi: true)
+            // The API url can also be overridden by setting the Destination property:
+            // e.g. new Collective2SignalExport(_collective2ApiKey, _collective2SystemId) { Destination = new Uri("your url") }
+            SignalExport.AddSignalExportProvider(new Collective2SignalExport(_collective2ApiKey, _collective2SystemId));
 
             SetWarmUp(100);
         }
 
         /// <summary>
-        /// Reduce the quantity of holdings for SPY or increase it, depending the case, 
-        /// when the EMA's indicators crosses between themselves, then send a signal to 
+        /// Reduce the quantity of holdings for SPY or increase it, depending the case,
+        /// when the EMA's indicators crosses between themselves, then send a signal to
         /// Collective2 API
         /// </summary>
         /// <param name="slice"></param>
@@ -159,7 +166,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -169,19 +176,26 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 11147;
+        public int AlgorithmHistoryDataPoints => 50;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "14.180%"},
             {"Drawdown", "0.200%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000.00"},
+            {"End Equity", "100169.68"},
             {"Net Profit", "0.170%"},
             {"Sharpe Ratio", "4.88"},
             {"Sortino Ratio", "0"},
@@ -200,7 +214,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$260000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "2.00%"},
-            {"OrderListHash", "e79432ec624fbed8497b0171b33bfbe2"}
+            {"Drawdown Recovery", "3"},
+            {"OrderListHash", "006af1a065fca33ac1f1e9cd6bd02c11"}
         };
     }
 }

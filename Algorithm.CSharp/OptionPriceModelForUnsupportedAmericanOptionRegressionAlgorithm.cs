@@ -14,6 +14,7 @@
 */
 
 using System.Collections.Generic;
+using QuantConnect.Indicators;
 using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp
@@ -29,8 +30,10 @@ namespace QuantConnect.Algorithm.CSharp
             SetEndDate(2014, 6, 9);
 
             var option = AddOption("AAPL", Resolution.Minute);
-            // BlackSholes model does not support American style options
-            option.PriceModel = OptionPriceModels.BlackScholes();
+            option.SetFilter(u => u.StandardsOnly().Strikes(-1, 1).Expiration(0, 35));
+
+            // QL BlackSholes model does not support American style options
+            option.PriceModel = OptionPriceModels.QuantLib.BlackScholes();
 
             SetWarmup(2, Resolution.Daily);
 
@@ -40,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 861805;
+        public override long DataPoints => 15787;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -48,16 +51,23 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public override AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -76,6 +86,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

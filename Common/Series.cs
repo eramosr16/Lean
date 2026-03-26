@@ -124,8 +124,16 @@ namespace QuantConnect
         /// <param name="value">Value of the chart point</param>
         public void AddPoint(DateTime time, decimal value)
         {
-            var chartPoint = new ChartPoint(time, value);
-            AddPoint(chartPoint);
+            ISeriesPoint point;
+            if (SeriesType == SeriesType.Scatter)
+            {
+                point = new ScatterChartPoint(time, value);
+            }
+            else
+            {
+                point = new ChartPoint(time, value);
+            }
+            AddPoint(point);
         }
 
         /// <summary>
@@ -168,7 +176,7 @@ namespace QuantConnect
             var sum = 0m;
             foreach (ChartPoint point in Values)
             {
-                if(point.y.HasValue)
+                if (point.y.HasValue)
                 {
                     sum += point.y.Value;
                 }
@@ -187,7 +195,10 @@ namespace QuantConnect
             var series = new Series(Name, SeriesType, Index, Unit)
             {
                 Color = Color,
-                ScatterMarkerSymbol = ScatterMarkerSymbol
+                ZIndex = ZIndex,
+                Tooltip = Tooltip,
+                IndexName = IndexName,
+                ScatterMarkerSymbol = ScatterMarkerSymbol,
             };
 
             if (!empty)
@@ -205,22 +216,39 @@ namespace QuantConnect
     [JsonConverter(typeof(StringEnumConverter))]
     public enum ScatterMarkerSymbol
     {
+        /// <summary>
         /// Circle symbol (0)
+        /// </summary>
         [EnumMember(Value = "none")]
         None,
+
+        /// <summary>
         /// Circle symbol (1)
+        /// </summary>
         [EnumMember(Value = "circle")]
         Circle,
+
+        /// <summary>
         /// Square symbol (2)
+        /// </summary>
         [EnumMember(Value = "square")]
         Square,
+
+        /// <summary>
         /// Diamond symbol (3)
+        /// </summary>
         [EnumMember(Value = "diamond")]
         Diamond,
+
+        /// <summary>
         /// Triangle symbol (4)
+        /// </summary>
         [EnumMember(Value = "triangle")]
         Triangle,
+
+        /// <summary>
         /// Triangle-down symbol (5)
+        /// </summary>
         [EnumMember(Value = "triangle-down")]
         TriangleDown
     }

@@ -58,10 +58,10 @@ namespace QuantConnect.Algorithm.CSharp
                 Resolution.Minute).Symbol;
 
             // Select a future option expiring ITM, and adds it to the algorithm.
-            var esOptions = OptionChainProvider.GetOptionContractList(es20m20, Time)
-                .Concat(OptionChainProvider.GetOptionContractList(es20h20, Time))
-                .Where(x => x.ID.StrikePrice == 3200m && x.ID.OptionRight == OptionRight.Call)
-                .Select(x => AddFutureOptionContract(x, Resolution.Minute).Symbol)
+            var esOptions = OptionChain(es20m20)
+                .Concat(OptionChain(es20h20))
+                .Where(contractData => contractData.ID.StrikePrice == 3200m && contractData.ID.OptionRight == OptionRight.Call)
+                .Select(contractData => AddFutureOptionContract(contractData, Resolution.Minute).Symbol)
                 .ToList();
 
             var expectedContracts = new[]
@@ -76,7 +76,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (!expectedContracts.Contains(esOption))
                 {
-                    throw new Exception($"Contract {esOption} was not found in the chain");
+                    throw new RegressionTestException($"Contract {esOption} was not found in the chain");
                 }
             }
 
@@ -90,12 +90,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Ran at the end of the algorithm to ensure the algorithm has no holdings
         /// </summary>
-        /// <exception cref="Exception">The algorithm has holdings</exception>
+        /// <exception cref="RegressionTestException">The algorithm has holdings</exception>
         public override void OnEndOfAlgorithm()
         {
             if (Portfolio.Invested)
             {
-                throw new Exception($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
+                throw new RegressionTestException($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
             }
         }
 
@@ -107,29 +107,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 309280;
+        public long DataPoints => 309286;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 2;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "6"},
+            {"Total Orders", "6"},
             {"Average Win", "3.37%"},
             {"Average Loss", "-4.34%"},
             {"Compounding Annual Return", "-4.637%"},
             {"Drawdown", "5.200%"},
             {"Expectancy", "-0.111"},
+            {"Start Equity", "100000"},
+            {"End Equity", "97715.91"},
             {"Net Profit", "-2.284%"},
             {"Sharpe Ratio", "-0.555"},
             {"Sortino Ratio", "-0.069"},
@@ -143,12 +150,13 @@ namespace QuantConnect.Algorithm.CSharp
             {"Annual Variance", "0.005"},
             {"Information Ratio", "-0.134"},
             {"Tracking Error", "0.385"},
-            {"Treynor Ratio", "3.784"},
+            {"Treynor Ratio", "3.785"},
             {"Total Fees", "$2.84"},
             {"Estimated Strategy Capacity", "$120000000.00"},
-            {"Lowest Capacity Asset", "ES XFH59UPBIJ7O|ES XFH59UK0MYO1"},
+            {"Lowest Capacity Asset", "ES XFH59UPBMTJ8|ES XFH59UK0MYO1"},
             {"Portfolio Turnover", "3.67%"},
-            {"OrderListHash", "9a70dbb5a45c69e1845da16ccdb3a13b"}
+            {"Drawdown Recovery", "74"},
+            {"OrderListHash", "6e17a52c917383260dcf0345567a1ea9"}
         };
     }
 }

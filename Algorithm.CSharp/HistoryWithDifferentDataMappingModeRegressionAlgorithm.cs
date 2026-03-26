@@ -45,7 +45,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (historyResults.Any(x => x.Count != historyResults[0].Count))
             {
-                throw new Exception("History results bar count did not match");
+                throw new RegressionTestException("History results bar count did not match");
             }
 
             // Check that all history results have a mapping date at some point in the history
@@ -68,13 +68,13 @@ namespace QuantConnect.Algorithm.CSharp
 
                 if (mappingsCount == 0)
                 {
-                    throw new Exception($"History results for {dataMappingModes[i]} data mapping mode did not contain any mappings");
+                    throw new RegressionTestException($"History results for {dataMappingModes[i]} data mapping mode did not contain any mappings");
                 }
             }
 
             if (mappingDates.Count < dataMappingModes.Count)
             {
-                throw new Exception($"History results should have had different mapping dates for each data mapping mode");
+                throw new RegressionTestException($"History results should have had different mapping dates for each data mapping mode");
             }
 
             // Check that close prices at each time are different for different data mapping modes
@@ -83,7 +83,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var closePrices = historyResults.Select(hr => hr[j].Bars.First().Value.Close).ToHashSet();
                 if (closePrices.Count != dataMappingModes.Count)
                 {
-                    throw new Exception($"History results close prices should have been different for each data mapping mode at each time");
+                    throw new RegressionTestException($"History results close prices should have been different for each data mapping mode at each time");
                 }
             }
         }
@@ -96,12 +96,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 1567;
+        public long DataPoints => 968;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -109,16 +109,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 488;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -130,13 +137,14 @@ namespace QuantConnect.Algorithm.CSharp
             {"Beta", "0"},
             {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-3.681"},
-            {"Tracking Error", "0.086"},
+            {"Information Ratio", "-3.738"},
+            {"Tracking Error", "0.087"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

@@ -58,6 +58,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <param name="config">The subscription's configuration</param>
         /// <param name="date">The date this factory was produced to read data for</param>
         /// <param name="isLiveMode">True if we're in live mode, false for backtesting</param>
+        /// <param name="objectStore">The object storage for data persistence.</param>
         public TextSubscriptionDataSourceReader(IDataCacheProvider dataCacheProvider, SubscriptionDataConfig config, DateTime date, bool isLiveMode,
             IObjectStore objectStore)
             : base(dataCacheProvider, isLiveMode, objectStore)
@@ -65,7 +66,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             _date = date;
             Config = config;
             _shouldCacheDataPoints = !Config.IsCustomData && Config.Resolution >= Resolution.Hour
-                && Config.Type != typeof(FineFundamental) && Config.Type != typeof(CoarseFundamental) && Config.Type != typeof(Fundamental) && Config.Type != typeof(Fundamentals)
+                && Config.Type != typeof(FineFundamental) && Config.Type != typeof(CoarseFundamental) && Config.Type != typeof(Fundamental)
+                // don't cache universe data, doesn't make much sense and we don't want to change the symbol of the clone
+                && !Config.Type.IsAssignableTo(typeof(BaseDataCollection))
                 && !DataCacheProvider.IsDataEphemeral;
 
             _implementsStreamReader = Config.Type.ImplementsStreamReader();
@@ -128,7 +131,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             OnReaderError(line ?? "StreamReader", err);
                         }
 
-                        if (instance != null && instance.EndTime != default(DateTime))
+                        if (instance != null && instance.EndTime != default)
                         {
                             if (_shouldCacheDataPoints)
                             {

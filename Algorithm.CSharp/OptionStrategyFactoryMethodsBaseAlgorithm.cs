@@ -32,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public abstract class OptionStrategyFactoryMethodsBaseAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        protected Symbol _optionSymbol;
+        protected Symbol _optionSymbol { get; set; }
 
         protected abstract int ExpectedOrdersCount { get; }
 
@@ -45,7 +45,7 @@ namespace QuantConnect.Algorithm.CSharp
             var option = AddOption("GOOG");
             _optionSymbol = option.Symbol;
 
-            option.SetFilter(-2, +2, 0, 180);
+            option.SetFilter(u => u.StandardsOnly().Strikes(-2, +2).Expiration(0, 180));
 
             SetBenchmark("GOOG");
         }
@@ -67,8 +67,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var buyingPowerModel = positionGroup.BuyingPowerModel as OptionStrategyPositionGroupBuyingPowerModel;
                 if (buyingPowerModel == null)
                 {
-                    throw new Exception($@"Expected position group buying power model type: {nameof(OptionStrategyPositionGroupBuyingPowerModel)
-                        }. Actual: {positionGroup.BuyingPowerModel.GetType()}");
+                    throw new RegressionTestException($@"Expected position group buying power model type: {nameof(OptionStrategyPositionGroupBuyingPowerModel)}. Actual: {positionGroup.BuyingPowerModel.GetType()}");
                 }
 
                 AssertStrategyPositionGroup(positionGroup);
@@ -85,15 +84,13 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (Portfolio.Invested)
             {
-                throw new Exception("Expected no holdings at end of algorithm");
+                throw new RegressionTestException("Expected no holdings at end of algorithm");
             }
 
             var ordersCount = Transactions.GetOrders((order) => order.Status == OrderStatus.Filled).Count();
             if (ordersCount != ExpectedOrdersCount)
             {
-                throw new Exception($@"Expected {ExpectedOrdersCount
-                    } orders to have been submitted and filled, half for buying the strategy and the other half for the liquidation. Actual {
-                    ordersCount}");
+                throw new RegressionTestException($@"Expected {ExpectedOrdersCount} orders to have been submitted and filled, half for buying the strategy and the other half for the liquidation. Actual {ordersCount}");
             }
         }
 
@@ -111,7 +108,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public abstract Language[] Languages { get; }
+        public abstract List<Language> Languages { get; }
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -122,6 +119,11 @@ namespace QuantConnect.Algorithm.CSharp
         /// Data Points count of the algorithm history
         /// </summary>
         public abstract int AlgorithmHistoryDataPoints { get; }
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm

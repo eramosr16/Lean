@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,6 +16,7 @@
 
 using System;
 using System.Collections.Generic;
+using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
@@ -46,7 +47,7 @@ namespace QuantConnect.Algorithm.CSharp
             AddUniverse(Universe.Top(3));
         }
 
-        public void OnData(TradeBars data)
+        public override void OnData(Slice slice)
         {
             if (_changes == SecurityChanges.None) return;
 
@@ -75,7 +76,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!_onSecuritiesChangedWasCalled)
             {
-                throw new Exception($"OnSecuritiesChanged() method was never called!");
+                throw new RegressionTestException($"OnSecuritiesChanged() method was never called!");
             }
         }
 
@@ -93,12 +94,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 35417;
+        public long DataPoints => 35413;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -106,35 +107,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "7"},
-            {"Average Win", "0.00%"},
-            {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "-3.587%"},
+            {"Total Orders", "7"},
+            {"Average Win", "0%"},
+            {"Average Loss", "-0.01%"},
+            {"Compounding Annual Return", "-5.668%"},
             {"Drawdown", "0.100%"},
-            {"Expectancy", "-0.439"},
-            {"Net Profit", "-0.050%"},
-            {"Sharpe Ratio", "-17.344"},
-            {"Sortino Ratio", "-17.344"},
+            {"Expectancy", "-1"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99920.10"},
+            {"Net Profit", "-0.080%"},
+            {"Sharpe Ratio", "-12.528"},
+            {"Sortino Ratio", "-11.575"},
             {"Probabilistic Sharpe Ratio", "0%"},
-            {"Loss Rate", "50%"},
-            {"Win Rate", "50%"},
-            {"Profit-Loss Ratio", "0.12"},
-            {"Alpha", "-0.039"},
-            {"Beta", "0.017"},
-            {"Annual Standard Deviation", "0.002"},
+            {"Loss Rate", "100%"},
+            {"Win Rate", "0%"},
+            {"Profit-Loss Ratio", "0"},
+            {"Alpha", "-0.058"},
+            {"Beta", "0.042"},
+            {"Annual Standard Deviation", "0.005"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-0.747"},
-            {"Tracking Error", "0.092"},
-            {"Treynor Ratio", "-2.271"},
+            {"Information Ratio", "-0.968"},
+            {"Tracking Error", "0.09"},
+            {"Treynor Ratio", "-1.342"},
             {"Total Fees", "$7.00"},
-            {"Estimated Strategy Capacity", "$1200000000.00"},
-            {"Lowest Capacity Asset", "QQQ RIWIV7K5Z9LX"},
+            {"Estimated Strategy Capacity", "$3700000000.00"},
+            {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "1.06%"},
-            {"OrderListHash", "395c2dd8d0a89ef1472497a641287eb1"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "4b589eb854896e3516fb9ebcde6fd6c1"}
         };
     }
 }

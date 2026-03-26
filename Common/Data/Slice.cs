@@ -18,8 +18,11 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Python.Runtime;
 using QuantConnect.Data.Custom.IconicTypes;
+using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.Market;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Python;
 
 namespace QuantConnect.Data
@@ -27,7 +30,7 @@ namespace QuantConnect.Data
     /// <summary>
     /// Provides a data structure for all of an algorithm's data at a single time step
     /// </summary>
-    public class Slice : ExtendedDictionary<dynamic>, IEnumerable<KeyValuePair<Symbol, BaseData>>
+    public class Slice : ExtendedDictionary<Symbol, dynamic>, IEnumerable<KeyValuePair<Symbol, BaseData>>
     {
         private Ticks _ticks;
         private TradeBars _bars;
@@ -51,7 +54,7 @@ namespace QuantConnect.Data
         /// <summary>
         /// All the data hold in this slice
         /// </summary>
-        public List<BaseData> AllData { get; private set; }
+        public IEnumerable<BaseData> AllData { get; private set; }
 
         /// <summary>
         /// Gets the timestamp for this slice of data
@@ -168,7 +171,7 @@ namespace QuantConnect.Data
         /// <summary>
         /// Gets the number of symbols held in this slice
         /// </summary>
-        public virtual int Count
+        public override int Count
         {
             get { return _data.Value.Count; }
         }
@@ -206,6 +209,13 @@ namespace QuantConnect.Data
         }
 
         /// <summary>
+        /// Gets all the items in the dictionary
+        /// </summary>
+        /// <returns>All the items in the dictionary</returns>
+        public override IEnumerable<KeyValuePair<Symbol, dynamic>> GetItems() =>
+            GetKeyValuePairEnumerable().Select(kvp => KeyValuePair.Create<Symbol, dynamic>(kvp.Key, kvp.Value));
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="Slice"/> class, lazily
         /// instantiating the <see cref="Slice.Bars"/> and <see cref="Slice.Ticks"/>
         /// collections on demand
@@ -236,7 +246,7 @@ namespace QuantConnect.Data
                 CreateCollection<Dividends, Dividend>(time, data),
                 CreateCollection<Delistings, Delisting>(time, data),
                 CreateCollection<SymbolChangedEvents, SymbolChangedEvent>(time, data),
-                CreateCollection<MarginInterestRates, MarginInterestRate> (time, data),
+                CreateCollection<MarginInterestRates, MarginInterestRate>(time, data),
                 utcTime: utcTime)
         {
         }
@@ -329,7 +339,14 @@ namespace QuantConnect.Data
                 {
                     return value.GetData();
                 }
+                CheckForImplicitlyCreatedSymbol(symbol);
                 throw new KeyNotFoundException($"'{symbol}' wasn't found in the Slice object, likely because there was no-data at this moment in time and it wasn't possible to fillforward historical data. Please check the data exists before accessing it with data.ContainsKey(\"{symbol}\")");
+            }
+            set
+            {
+                // this is a no-op, we don't want to allow setting data in the slice
+                // this is a read-only collection
+                throw new NotSupportedException("The Slice object is read-only. You cannot set data in the slice.");
             }
         }
 
@@ -341,7 +358,7 @@ namespace QuantConnect.Data
         public DataDictionary<T> Get<T>()
             where T : IBaseData
         {
-            return GetImpl(typeof(T), this);
+            return GetImpl(typeof(T));
         }
 
         /// <summary>
@@ -351,23 +368,59 @@ namespace QuantConnect.Data
         /// <returns>The <see cref="DataDictionary{T}"/> instance for the requested type</returns>
         public dynamic Get(Type type)
         {
-            return GetImpl(type, this);
+            return GetImpl(type);
+        }
+
+        /// <summary>
+        /// Gets the data of the specified symbol and type.
+        /// </summary>
+        /// <param name="type">The type of data we seek</param>
+        /// <param name="symbol">The specific symbol was seek</param>
+        /// <returns>The data point for the requested symbol</returns>
+        public PyObject Get(PyObject type, Symbol symbol)
+        {
+            using var _ = Py.GIL();
+            var datapoint = (object)GetImpl(type.CreateType())[symbol];
+            return datapoint.ToPython();
+        }
+
+        /// <summary>
+        /// Gets the data of the specified data type.
+        /// </summary>
+        /// <param name="type">The type of data we seek</param>
+        /// <returns>The data dictionary for the requested data type</returns>
+        public PyObject Get(PyObject type)
+        {
+            using var _ = Py.GIL();
+            var dataDictionary = (object)GetImpl(type.CreateType());
+            return dataDictionary.ToPython();
         }
 
         /// <summary>
         /// Gets the data of the specified type.
         /// </summary>
         /// <remarks>Supports both C# and Python use cases</remarks>
-        protected dynamic GetImpl(Type type, Slice instance)
+        private dynamic GetImpl(Type type)
         {
-            if (instance._dataByType == null)
+            if (type == typeof(Fundamentals))
+            {
+                // backwards compatibility for users doing a get of Fundamentals type
+                type = typeof(FundamentalUniverse);
+            }
+            else if (type == typeof(ETFConstituentData))
+            {
+                // backwards compatibility for users doing a get of ETFConstituentData type
+                type = typeof(ETFConstituentUniverse);
+            }
+
+            if (_dataByType == null)
             {
                 // for performance we only really create this collection if someone used it
-                instance._dataByType = new Dictionary<Type, object>(1);
+                _dataByType = new Dictionary<Type, object>(1);
             }
 
             object dictionary;
-            if (!instance._dataByType.TryGetValue(type, out dictionary))
+            if (!_dataByType.TryGetValue(type, out dictionary))
             {
                 var requestedOpenInterest = type == typeof(OpenInterest);
                 if (type == typeof(Tick) || requestedOpenInterest)
@@ -376,7 +429,7 @@ namespace QuantConnect.Data
                     dictionary = Activator.CreateInstance(dataDictionaryCache.GenericType);
                     ((dynamic)dictionary).Time = Time;
 
-                    foreach (var data in instance.Ticks)
+                    foreach (var data in Ticks)
                     {
                         var symbol = data.Key;
                         // preserving existing behavior we will return the last data point, users expect a 'DataDictionary<Tick> : IDictionary<Symbol, Tick>'.
@@ -391,39 +444,39 @@ namespace QuantConnect.Data
                 }
                 else if (type == typeof(TradeBar))
                 {
-                    dictionary = instance.Bars;
+                    dictionary = Bars;
                 }
                 else if (type == typeof(QuoteBar))
                 {
-                    dictionary = instance.QuoteBars;
+                    dictionary = QuoteBars;
                 }
                 else if (type == typeof(Delisting))
                 {
-                    dictionary = instance.Delistings;
+                    dictionary = Delistings;
                 }
                 else if (type == typeof(Split))
                 {
-                    dictionary = instance.Splits;
+                    dictionary = Splits;
                 }
                 else if (type == typeof(OptionChain))
                 {
-                    dictionary = instance.OptionChains;
+                    dictionary = OptionChains;
                 }
                 else if (type == typeof(FuturesChain))
                 {
-                    dictionary = instance.FuturesChains;
+                    dictionary = FuturesChains;
                 }
                 else if (type == typeof(Dividend))
                 {
-                    dictionary = instance.Dividends;
+                    dictionary = Dividends;
                 }
                 else if (type == typeof(SymbolChangedEvent))
                 {
-                    dictionary = instance.SymbolChangedEvents;
+                    dictionary = SymbolChangedEvents;
                 }
                 else if (type == typeof(MarginInterestRate))
                 {
-                    dictionary = instance.MarginInterestRates;
+                    dictionary = MarginInterestRates;
                 }
                 else
                 {
@@ -433,7 +486,7 @@ namespace QuantConnect.Data
                     dictionary = Activator.CreateInstance(dataDictionaryCache.GenericType);
                     ((dynamic)dictionary).Time = Time;
 
-                    foreach (var data in instance._data.Value.Values)
+                    foreach (var data in _data.Value.Values)
                     {
                         // let's first check custom data, else double check the user isn't requesting auxiliary data we have
                         if (IsDataPointOfType(data.Custom, type, isPythonData))
@@ -450,7 +503,7 @@ namespace QuantConnect.Data
                     }
                 }
 
-                instance._dataByType[type] = dictionary;
+                _dataByType[type] = dictionary;
             }
             return dictionary;
         }
@@ -472,7 +525,7 @@ namespace QuantConnect.Data
         /// </summary>
         /// <param name="symbol">The symbol we seek data for</param>
         /// <returns>True if this instance contains data for the symbol, false otherwise</returns>
-        public virtual bool ContainsKey(Symbol symbol)
+        public override bool ContainsKey(Symbol symbol)
         {
             return _data.Value.ContainsKey(symbol);
         }
@@ -518,19 +571,21 @@ namespace QuantConnect.Data
             _symbolChangedEvents = (SymbolChangedEvents)UpdateCollection(_symbolChangedEvents, inputSlice.SymbolChangedEvents);
             _marginInterestRates = (MarginInterestRates)UpdateCollection(_marginInterestRates, inputSlice.MarginInterestRates);
 
-            if (inputSlice.AllData.Count != 0)
+            var ourDataList = (List<BaseData>)AllData;
+            var othersDataList = (List<BaseData>)inputSlice.AllData;
+            if (othersDataList.Count != 0)
             {
-                if (AllData.Count == 0)
+                if (ourDataList.Count == 0)
                 {
-                    AllData = inputSlice.AllData;
+                    AllData = othersDataList;
                     _data = inputSlice._data;
                 }
                 else
                 {
                     // Should keep this._rawDataList last so that selected data points are not overriden
                     // while creating _data
-                    inputSlice.AllData.AddRange(AllData);
-                    AllData = inputSlice.AllData;
+                    othersDataList.AddRange(ourDataList);
+                    AllData = othersDataList;
                     _data = new Lazy<DataDictionary<SymbolData>>(() => CreateDynamicDataDictionary(AllData));
                 }
             }
@@ -759,7 +814,7 @@ namespace QuantConnect.Data
         /// of the generic types instances and there add methods.</remarks>
         private class GenericDataDictionary
         {
-            private static readonly Dictionary<Type, GenericDataDictionary> _genericCache = new Dictionary<Type, GenericDataDictionary>();
+            private static Dictionary<Type, GenericDataDictionary> _genericCache = new Dictionary<Type, GenericDataDictionary>();
 
             /// <summary>
             /// The <see cref="DataDictionary{T}.Add(KeyValuePair{QuantConnect.Symbol,T})"/> method
@@ -785,8 +840,7 @@ namespace QuantConnect.Data
             /// <returns>A new instance or retrieved from the cache</returns>
             public static GenericDataDictionary Get(Type type, bool isPythonData)
             {
-                GenericDataDictionary dataDictionaryCache;
-                if (!_genericCache.TryGetValue(type, out dataDictionaryCache))
+                if (!_genericCache.TryGetValue(type, out var dataDictionaryCache))
                 {
                     var dictionaryType = type;
                     if (isPythonData)
@@ -796,7 +850,11 @@ namespace QuantConnect.Data
                     }
                     var generic = typeof(DataDictionary<>).MakeGenericType(dictionaryType);
                     var method = generic.GetMethod("Add", new[] { typeof(Symbol), dictionaryType });
-                    _genericCache[type] = dataDictionaryCache = new GenericDataDictionary(generic, method);
+
+                    // Replace the cache instance with a new one instead of locking in order to avoid the overhead
+                    var temp = new Dictionary<Type, GenericDataDictionary>(_genericCache);
+                    temp[type] = dataDictionaryCache = new GenericDataDictionary(generic, method);
+                    _genericCache = temp;
                 }
 
                 return dataDictionaryCache;

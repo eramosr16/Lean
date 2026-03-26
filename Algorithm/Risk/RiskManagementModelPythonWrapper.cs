@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -26,7 +26,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
     /// </summary>
     public class RiskManagementModelPythonWrapper : RiskManagementModel
     {
-        private readonly dynamic _model;
+        private readonly BasePythonWrapper<IRiskManagementModel> _model;
 
         /// <summary>
         /// Constructor for initialising the <see cref="IRiskManagementModel"/> class with wrapped <see cref="PyObject"/> object
@@ -34,7 +34,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
         /// <param name="model">Model defining how risk is managed</param>
         public RiskManagementModelPythonWrapper(PyObject model)
         {
-            _model = model.ValidateImplementationOf<IRiskManagementModel>();
+            _model = new BasePythonWrapper<IRiskManagementModel>(model);
         }
 
         /// <summary>
@@ -44,17 +44,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
         /// <param name="targets">The current portfolio targets to be assessed for risk</param>
         public override IEnumerable<IPortfolioTarget> ManageRisk(QCAlgorithm algorithm, IPortfolioTarget[] targets)
         {
-            using (Py.GIL())
-            {
-                var riskTargetOverrides = _model.ManageRisk(algorithm, targets) as PyObject;
-                var iterator = riskTargetOverrides.GetIterator();
-                foreach (PyObject target in iterator)
-                {
-                    yield return target.GetAndDispose<IPortfolioTarget>();
-                }
-                iterator.Dispose();
-                riskTargetOverrides.Dispose();
-            }
+            return _model.InvokeMethodAndEnumerate<IPortfolioTarget>(nameof(ManageRisk), algorithm, targets);
         }
 
         /// <summary>
@@ -64,10 +54,7 @@ namespace QuantConnect.Algorithm.Framework.Risk
         /// <param name="changes">The security additions and removals from the algorithm</param>
         public override void OnSecuritiesChanged(QCAlgorithm algorithm, SecurityChanges changes)
         {
-            using (Py.GIL())
-            {
-                _model.OnSecuritiesChanged(algorithm, changes);
-            }
+            _model.InvokeMethod(nameof(OnSecuritiesChanged), algorithm, changes).Dispose();
         }
     }
 }

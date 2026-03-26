@@ -48,7 +48,7 @@ namespace QuantConnect.Tests.Algorithm
                     algorithm.UtcTime,
                     new BaseDataCollection(algorithm.UtcTime, null, Enumerable.Empty<CoarseFundamental>()));
 
-            Assert.AreEqual(1, changes.AddedSecurities.Count());
+            Assert.AreEqual(1, changes.AddedSecurities.Count);
 
             var security = changes.AddedSecurities.First();
             Assert.AreEqual(symbol, security.Symbol);
@@ -78,7 +78,7 @@ namespace QuantConnect.Tests.Algorithm
                     algorithm.UtcTime,
                     new BaseDataCollection(algorithm.UtcTime, null, Enumerable.Empty<CoarseFundamental>()));
 
-            Assert.AreEqual(1, changes.AddedSecurities.Count());
+            Assert.AreEqual(1, changes.AddedSecurities.Count);
 
             var security = changes.AddedSecurities.First();
             Assert.AreEqual(symbol, security.Symbol);
@@ -117,7 +117,7 @@ namespace QuantConnect.Tests.Algorithm
                     algorithm.UtcTime,
                     new BaseDataCollection(algorithm.UtcTime, null, Enumerable.Empty<CoarseFundamental>()));
 
-            Assert.AreEqual(1, changes.AddedSecurities.Count());
+            Assert.AreEqual(1, changes.AddedSecurities.Count);
 
             var security = changes.AddedSecurities.First();
             Assert.AreEqual(symbol, security.Symbol);
@@ -144,9 +144,10 @@ namespace QuantConnect.Tests.Algorithm
                         symbolPropertiesDatabase,
                         algorithm,
                         RegisteredSecurityDataTypesProvider.Null,
-                        new SecurityCacheProvider(algorithm.Portfolio)),
+                        new SecurityCacheProvider(algorithm.Portfolio),
+                        algorithm: algorithm),
                     dataPermissionManager,
-                    new DefaultDataProvider()),
+                    TestGlobals.DataProvider),
                 algorithm,
                 algorithm.TimeKeeper,
                 marketHoursDatabase,
@@ -160,7 +161,8 @@ namespace QuantConnect.Tests.Algorithm
                 symbolPropertiesDatabase,
                 algorithm,
                 RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCacheProvider(algorithm.Portfolio));
+                new SecurityCacheProvider(algorithm.Portfolio),
+                algorithm: algorithm);
 
             algorithm.SubscriptionManager.SetDataManager(dataManager);
             algorithm.Securities.SetSecurityService(securityService);

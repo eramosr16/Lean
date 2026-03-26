@@ -302,8 +302,9 @@ def RebalanceFunc(time):
         [TestCase(Language.CSharp)]
         public void RebalanceFunctionDateRules(Language language)
         {
-            var dateRules = new DateRules(new SecurityManager(
-                new TimeKeeper(new DateTime(2015, 1, 1), DateTimeZone.Utc)), DateTimeZone.Utc);
+            var mhdb = MarketHoursDatabase.FromDataFolder();
+            var dateRules = new DateRules(null, new SecurityManager(
+                new TimeKeeper(new DateTime(2015, 1, 1), DateTimeZone.Utc)), DateTimeZone.Utc, mhdb);
 
             TestPortfolioConstructionModel constructionModel;
             if (language == Language.Python)

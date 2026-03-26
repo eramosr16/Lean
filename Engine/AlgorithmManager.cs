@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Fasterflect;
+using QuantConnect.Util;
 using QuantConnect.Algorithm;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
@@ -48,6 +49,9 @@ namespace QuantConnect.Lean.Engine
         private IAlgorithm _algorithm;
         private readonly object _lock;
         private readonly bool _liveMode;
+        private bool _cancelRequested;
+        private PerformanceTrackingTool _performanceTrackingTool;
+        private CancellationTokenSource _cancellationTokenSource;
 
         /// <summary>
         /// Publicly accessible algorithm status
@@ -74,12 +78,12 @@ namespace QuantConnect.Lean.Engine
         /// <summary>
         /// Gets the number of data points processed per second
         /// </summary>
-        public long DataPoints { get; private set; }
+        public long DataPoints => _performanceTrackingTool?.DataPoints ?? 0;
 
         /// <summary>
         /// Gets the number of data points of algorithm history provider
         /// </summary>
-        public int AlgorithmHistoryDataPoints => _algorithm?.HistoryProvider?.DataPointCount ?? 0;
+        public int AlgorithmHistoryDataPoints => _performanceTrackingTool?.HistoryDataPoints ?? 0;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AlgorithmManager"/> class
@@ -111,13 +115,17 @@ namespace QuantConnect.Lean.Engine
         /// <param name="results">Result handler object</param>
         /// <param name="realtime">Realtime processing object</param>
         /// <param name="leanManager">ILeanManager implementation that is updated periodically with the IAlgorithm instance</param>
-        /// <param name="token">Cancellation token</param>
+        /// <param name="cancellationTokenSource">Cancellation token source to monitor</param>
         /// <remarks>Modify with caution</remarks>
-        public void Run(AlgorithmNodePacket job, IAlgorithm algorithm, ISynchronizer synchronizer, ITransactionHandler transactions, IResultHandler results, IRealTimeHandler realtime, ILeanManager leanManager, CancellationToken token)
+        public void Run(AlgorithmNodePacket job, IAlgorithm algorithm, ISynchronizer synchronizer, ITransactionHandler transactions, IResultHandler results, IRealTimeHandler realtime,
+            ILeanManager leanManager, CancellationTokenSource cancellationTokenSource, PerformanceTrackingTool performanceTrackingTool)
         {
             //Initialize:
-            DataPoints = 0;
             _algorithm = algorithm;
+            _performanceTrackingTool = performanceTrackingTool;
+
+            var token = cancellationTokenSource.Token;
+            _cancellationTokenSource = cancellationTokenSource;
 
             var backtestMode = (job.Type == PacketType.BacktestNode);
             var methodInvokers = new Dictionary<Type, MethodInvoker>();
@@ -131,20 +139,6 @@ namespace QuantConnect.Lean.Engine
 
             //Initialize Properties:
             AlgorithmId = job.AlgorithmId;
-
-            //Create the method accessors to push generic types into algorithm: Find all OnData events:
-
-            // Algorithm 2.0 data accessors
-            var hasOnDataTradeBars = AddMethodInvoker<TradeBars>(algorithm, methodInvokers);
-            var hasOnDataQuoteBars = AddMethodInvoker<QuoteBars>(algorithm, methodInvokers);
-            var hasOnDataOptionChains = AddMethodInvoker<OptionChains>(algorithm, methodInvokers);
-            var hasOnDataTicks = AddMethodInvoker<Ticks>(algorithm, methodInvokers);
-
-            // dividend and split events
-            var hasOnDataDividends = AddMethodInvoker<Dividends>(algorithm, methodInvokers);
-            var hasOnDataSplits = AddMethodInvoker<Splits>(algorithm, methodInvokers);
-            var hasOnDataDelistings = AddMethodInvoker<Delistings>(algorithm, methodInvokers);
-            var hasOnDataSymbolChangedEvents = AddMethodInvoker<SymbolChangedEvents>(algorithm, methodInvokers);
 
             //Go through the subscription types and create invokers to trigger the event handlers for each custom type:
             foreach (var config in algorithm.SubscriptionManager.Subscriptions)
@@ -197,7 +191,7 @@ namespace QuantConnect.Lean.Engine
                 leanManager.Update();
 
                 time = timeSlice.Time;
-                DataPoints += timeSlice.DataPointCount;
+                performanceTrackingTool.Sample(timeSlice.DataPointCount, time);
 
                 if (backtestMode && algorithm.Portfolio.TotalPortfolioValue <= 0)
                 {
@@ -210,8 +204,22 @@ namespace QuantConnect.Lean.Engine
                 // If backtesting/warmup, we need to check if there are realtime events in the past
                 // which didn't fire because at the scheduled times there was no data (i.e. markets closed)
                 // and fire them with the correct date/time.
+                performanceTrackingTool.Start(PerformanceTarget.Schedule);
                 realtime.ScanPastEvents(time);
+                performanceTrackingTool.Stop(PerformanceTarget.Schedule);
 
+                // will scan registered consolidators for which we've past the expected scan call.
+                // In live mode we want to round down to the second, so we don't scan too far into the future:
+                // The time slice might carry the data needed to complete a current consolidated bar but the
+                // time slice time might be slightly ahead (a few milliseconds or even ticks) because in live we
+                // use DateTime.UtcNow. So we don't want to scan past the data time so that the consolidators can
+                // complete the current bar.
+                var pastConsolidatorsScanTime = _liveMode ? time.RoundDown(Time.OneSecond) : time;
+                performanceTrackingTool.Start(PerformanceTarget.Consolidators);
+                algorithm.SubscriptionManager.ScanPastConsolidators(pastConsolidatorsScanTime, algorithm);
+                performanceTrackingTool.Stop(PerformanceTarget.Consolidators);
+
+                performanceTrackingTool.Start(PerformanceTarget.Securities);
                 //Set the algorithm and real time handler's time
                 algorithm.SetDateTime(time);
 
@@ -223,22 +231,6 @@ namespace QuantConnect.Lean.Engine
 
                 // Update the current slice before firing scheduled events or any other task
                 algorithm.SetCurrentSlice(timeSlice.Slice);
-
-                if (timeSlice.Slice.SymbolChangedEvents.Count != 0)
-                {
-                    if (hasOnDataSymbolChangedEvents)
-                    {
-                        methodInvokers[typeof(SymbolChangedEvents)](algorithm, timeSlice.Slice.SymbolChangedEvents);
-                    }
-                    foreach (var symbol in timeSlice.Slice.SymbolChangedEvents.Keys)
-                    {
-                        // cancel all orders for the old symbol
-                        foreach (var ticket in transactions.GetOpenOrderTickets(x => x.Symbol == symbol))
-                        {
-                            ticket.Cancel("Open order cancelled on symbol changed event");
-                        }
-                    }
-                }
 
                 if (timeSlice.SecurityChanges != SecurityChanges.None)
                 {
@@ -254,7 +246,7 @@ namespace QuantConnect.Lean.Engine
                 {
                     var security = update.Target;
 
-                    security.Update(update.Data, update.DataType, update.ContainsFillForwardData);
+                    security.Update(update.Data, update.DataType, update.ContainsFillForwardData, update.IsInternalConfig);
 
                     // Send market price updates to the TradeBuilder
                     algorithm.TradeBuilder.SetMarketPrice(security.Symbol, security.Price);
@@ -299,14 +291,43 @@ namespace QuantConnect.Lean.Engine
                 // security prices got updated
                 algorithm.Portfolio.InvalidateTotalPortfolioValue();
 
+                if (timeSlice.Slice.SymbolChangedEvents.Count != 0)
+                {
+                    try
+                    {
+                        algorithm.OnSymbolChangedEvents(timeSlice.Slice.SymbolChangedEvents);
+                    }
+                    catch (Exception err)
+                    {
+                        algorithm.SetRuntimeError(err, "OnSymbolChangedEvents");
+                        return;
+                    }
+
+                    foreach (var symbol in timeSlice.Slice.SymbolChangedEvents.Keys)
+                    {
+                        // cancel all orders for the old symbol
+                        foreach (var ticket in transactions.GetOpenOrderTickets(x => x.Symbol == symbol))
+                        {
+                            ticket.Cancel("Open order cancelled on symbol changed event");
+                        }
+                    }
+                }
+                performanceTrackingTool.Stop(PerformanceTarget.Securities);
+
                 // process fill models on the updated data before entering algorithm, applies to all non-market orders
+                performanceTrackingTool.Start(PerformanceTarget.Transactions);
                 transactions.ProcessSynchronousEvents();
+                performanceTrackingTool.Stop(PerformanceTarget.Transactions);
 
                 // fire real time events after we've updated based on the new data
+                performanceTrackingTool.Start(PerformanceTarget.Schedule);
                 realtime.SetTime(timeSlice.Time);
+                performanceTrackingTool.Stop(PerformanceTarget.Schedule);
 
                 // process split warnings for options
+                performanceTrackingTool.Start(PerformanceTarget.SplitsDividendsDelisting);
                 ProcessSplitSymbols(algorithm, splitWarnings, pendingDelistings);
+                performanceTrackingTool.Stop(PerformanceTarget.SplitsDividendsDelisting);
 
                 //Check if the user's signalled Quit: loop over data until day changes.
                 if (_algorithm.Status != AlgorithmStatus.Running && _algorithm.RunTimeError == null)
@@ -326,23 +347,28 @@ namespace QuantConnect.Lean.Engine
                     // determine if there are possible margin call orders to be executed
                     bool issueMarginCallWarning;
                     var marginCallOrders = algorithm.Portfolio.MarginCallModel.GetMarginCallOrders(out issueMarginCallWarning);
+                    var executedTicketsCount = 0;
                     if (marginCallOrders.Count != 0)
                     {
                         var executingMarginCall = false;
                         try
                         {
-                            // tell the algorithm we're about to issue the margin call
-                            algorithm.OnMarginCall(marginCallOrders);
 
-                            executingMarginCall = true;
-
-                            // execute the margin call orders
-                            var executedTickets = algorithm.Portfolio.MarginCallModel.ExecuteMarginCall(marginCallOrders);
-                            foreach (var ticket in executedTickets)
+                            if (marginCallOrders.All(order => algorithm.Portfolio.Securities[order.Symbol].Exchange.ExchangeOpen))
                             {
-                                algorithm.Error($"{algorithm.Time.ToStringInvariant()} - Executed MarginCallOrder: {ticket.Symbol} - " +
-                                    $"Quantity: {ticket.Quantity.ToStringInvariant()} @ {ticket.AverageFillPrice.ToStringInvariant()}"
-                                );
+                                // tell the algorithm we're about to issue the margin call
+                                algorithm.OnMarginCall(marginCallOrders);
+
+                                // execute the margin call orders
+                                var executedTickets = algorithm.Portfolio.MarginCallModel.ExecuteMarginCall(marginCallOrders);
+                                executedTicketsCount = executedTickets.Count;
+
+                                foreach (var ticket in executedTickets)
+                                {
+                                    algorithm.Error($"{algorithm.Time.ToStringInvariant()} - Executed MarginCallOrder: {ticket.Symbol} - " +
+                                        $"Quantity: {ticket.Quantity.ToStringInvariant()} @ {ticket.AverageFillPrice.ToStringInvariant()}"
+                                    );
+                                }
                             }
                         }
                         catch (Exception err)
@@ -352,7 +378,7 @@ namespace QuantConnect.Lean.Engine
                         }
                     }
                     // we didn't perform a margin call, but got the warning flag back, so issue the warning to the algorithm
-                    else if (issueMarginCallWarning)
+                    if (executedTicketsCount == 0 && issueMarginCallWarning)
                     {
                         try
                         {
@@ -391,13 +417,16 @@ namespace QuantConnect.Lean.Engine
                     }
                 }
 
+                performanceTrackingTool.Start(PerformanceTarget.SplitsDividendsDelisting);
                 // apply dividends
                 HandleDividends(timeSlice, algorithm, _liveMode);
 
                 // apply splits
                 HandleSplits(timeSlice, algorithm, _liveMode);
+                performanceTrackingTool.Stop(PerformanceTarget.SplitsDividendsDelisting);
 
                 //Update registered consolidators for this symbol index
+                performanceTrackingTool.Start(PerformanceTarget.Consolidators);
                 try
                 {
                     if (timeSlice.ConsolidatorUpdateData.Count > 0)
@@ -411,11 +440,7 @@ namespace QuantConnect.Lean.Engine
                             {
                                 foreach (var dataPoint in update.Data)
                                 {
-                                    // only push data into consolidators on the native, subscribed to resolution
-                                    if (EndTimeIsInNativeResolution(update.Target, dataPoint.EndTime))
-                                    {
-                                        consolidator.Update(dataPoint);
-                                    }
+                                    consolidator.Update(dataPoint);
                                 }
 
                                 // scan for time after we've pumped all the data through for this consolidator
@@ -429,6 +454,7 @@ namespace QuantConnect.Lean.Engine
                     algorithm.SetRuntimeError(err, "Consolidators update");
                     return;
                 }
+                performanceTrackingTool.Stop(PerformanceTarget.Consolidators);
 
                 // fire custom event handlers
                 foreach (var update in timeSlice.CustomData)
@@ -456,25 +482,43 @@ namespace QuantConnect.Lean.Engine
                     }
                 }
 
+                performanceTrackingTool.Start(PerformanceTarget.SplitsDividendsDelisting);
                 try
                 {
-                    // fire off the dividend and split events before pricing events
-                    if (hasOnDataDividends && timeSlice.Slice.Dividends.Count != 0)
+                    if (timeSlice.Slice.Splits.Count != 0)
                     {
-                        methodInvokers[typeof(Dividends)](algorithm, timeSlice.Slice.Dividends);
-                    }
-                    if (hasOnDataSplits && timeSlice.Slice.Splits.Count != 0)
-                    {
-                        methodInvokers[typeof(Splits)](algorithm, timeSlice.Slice.Splits);
-                    }
-                    if (hasOnDataDelistings && timeSlice.Slice.Delistings.Count != 0)
-                    {
-                        methodInvokers[typeof(Delistings)](algorithm, timeSlice.Slice.Delistings);
+                        algorithm.OnSplits(timeSlice.Slice.Splits);
                     }
                 }
                 catch (Exception err)
                 {
-                    algorithm.SetRuntimeError(err, "Dividends/Splits/Delistings");
+                    algorithm.SetRuntimeError(err, "OnSplits");
+                    return;
+                }
+
+                try
+                {
+                    if (timeSlice.Slice.Dividends.Count != 0)
+                    {
+                        algorithm.OnDividends(timeSlice.Slice.Dividends);
+                    }
+                }
+                catch (Exception err)
+                {
+                    algorithm.SetRuntimeError(err, "OnDividends");
+                    return;
+                }
+
+                try
+                {
+                    if (timeSlice.Slice.Delistings.Count != 0)
+                    {
+                        algorithm.OnDelistings(timeSlice.Slice.Delistings);
+                    }
+                }
+                catch (Exception err)
+                {
+                    algorithm.SetRuntimeError(err, "OnDelistings");
                     return;
                 }
 
@@ -503,31 +547,20 @@ namespace QuantConnect.Lean.Engine
 
                 // run split logic after firing split events
                 HandleSplitSymbols(timeSlice.Slice.Splits, splitWarnings);
-
-                //After we've fired all other events in this second, fire the pricing events:
-                try
-                {
-                    if (hasOnDataTradeBars && timeSlice.Slice.Bars.Count > 0) methodInvokers[typeof(TradeBars)](algorithm, timeSlice.Slice.Bars);
-                    if (hasOnDataQuoteBars && timeSlice.Slice.QuoteBars.Count > 0) methodInvokers[typeof(QuoteBars)](algorithm, timeSlice.Slice.QuoteBars);
-                    if (hasOnDataOptionChains && timeSlice.Slice.OptionChains.Count > 0) methodInvokers[typeof(OptionChains)](algorithm, timeSlice.Slice.OptionChains);
-                    if (hasOnDataTicks && timeSlice.Slice.Ticks.Count > 0) methodInvokers[typeof(Ticks)](algorithm, timeSlice.Slice.Ticks);
-                }
-                catch (Exception err)
-                {
-                    algorithm.SetRuntimeError(err, "methodInvokers");
-                    return;
-                }
+                performanceTrackingTool.Stop(PerformanceTarget.SplitsDividendsDelisting);
 
                 try
                 {
+                    performanceTrackingTool.Start(PerformanceTarget.OnData);
                     if (timeSlice.Slice.HasData)
                     {
                         // EVENT HANDLER v3.0 -- all data in a single event
-                        algorithm.OnData(timeSlice.Slice);
+                        algorithm.OnData(algorithm.CurrentSlice);
                     }
 
                     // always turn the crank on this method to ensure universe selection models function properly on day changes w/out data
                     algorithm.OnFrameworkData(timeSlice.Slice);
+                    performanceTrackingTool.Stop(PerformanceTarget.OnData);
                 }
                 catch (Exception err)
                 {
@@ -535,17 +568,19 @@ namespace QuantConnect.Lean.Engine
                     return;
                 }
 
+                performanceTrackingTool.Start(PerformanceTarget.Transactions);
                 //If its the historical/paper trading models, wait until market orders have been "filled"
                 // Manually trigger the event handler to prevent thread switch.
                 transactions.ProcessSynchronousEvents();
+                performanceTrackingTool.Stop(PerformanceTarget.Transactions);
 
                 // Process any required events of the results handler such as sampling assets, equity, or stock prices.
                 results.ProcessSynchronousEvents();
 
                 // poke the algorithm at the end of each time step
                 algorithm.OnEndOfTimeStep();
-
             } // End of ForEach feed.Bridge.GetConsumingEnumerable
+            _performanceTrackingTool.Shutdown();
 
             // stop timing the loops
             TimeLimit.StopEnforcingTimeLimit();
@@ -613,6 +648,22 @@ namespace QuantConnect.Lean.Engine
                 {
                     _algorithm.SetStatus(state);
                 }
+
+                if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested && !_cancelRequested)
+                {
+                    if (state == AlgorithmStatus.Deleted)
+                    {
+                        _cancelRequested = true;
+                        // if the algorithm was deleted, let's give the algorithm a few seconds to shutdown and cancel it out
+                        _cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(5));
+                    }
+                    else if (state == AlgorithmStatus.Stopped)
+                    {
+                        _cancelRequested = true;
+                        // if the algorithm was stopped, let's give the algorithm a few seconds to shutdown and cancel it out
+                        _cancellationTokenSource.CancelAfter(TimeSpan.FromMinutes(1));
+                    }
+                }
             }
         }
 
@@ -621,6 +672,7 @@ namespace QuantConnect.Lean.Engine
             var nextWarmupStatusTime = DateTime.MinValue;
             var warmingUp = algorithm.IsWarmingUp;
             var warmingUpPercent = 0;
+            var logSubscriptionCountFlag = false;
             if (warmingUp)
             {
                 nextWarmupStatusTime = DateTime.UtcNow.AddSeconds(1);
@@ -665,6 +717,11 @@ namespace QuantConnect.Lean.Engine
                             results.SendStatusUpdate(AlgorithmStatus.History, $"{warmingUpPercent}");
                         }
                     }
+                    if (!logSubscriptionCountFlag)
+                    {
+                        Log.Trace($"AlgorithmManager.Stream(): Subscriptions count before warm up: {algorithm.SubscriptionManager.Count}");
+                        logSubscriptionCountFlag = true;
+                    }
                 }
                 else if (warmingUp)
                 {
@@ -673,6 +730,7 @@ namespace QuantConnect.Lean.Engine
                     // we trigger this callback here and not internally in the algorithm so that we can go through python if required
                     algorithm.OnWarmupFinished();
                     algorithm.Debug("Algorithm finished warming up.");
+                    Log.Trace($"AlgorithmManager.Stream(): Subscriptions count after warm up: {algorithm.SubscriptionManager.Count}");
                     results.SendStatusUpdate(AlgorithmStatus.Running, "100");
                 }
                 yield return timeSlice;
@@ -713,20 +771,7 @@ namespace QuantConnect.Lean.Engine
                         continue;
                     }
 
-                    if (liveMode && algorithm.IsWarmingUp)
-                    {
-                        // skip past split during live warmup, the algorithms position already reflects them
-                        Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Skip Split during live warmup: {split}");
-                        continue;
-                    }
-
-                    if (Log.DebuggingEnabled)
-                    {
-                        Log.Debug($"AlgorithmManager.Run(): {algorithm.Time}: Applying Split for {split.Symbol}");
-                    }
-
-                    Security security = null;
-                    if (algorithm.Securities.TryGetValue(split.Symbol, out security) && liveMode)
+                    if (algorithm.Securities.TryGetValue(split.Symbol, out var security) && liveMode && !algorithm.IsWarmingUp)
                     {
                         Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Pre-Split for {split}. Security Price: {security.Price} Holdings: {security.Holdings.Quantity}");
                     }
@@ -735,26 +780,39 @@ namespace QuantConnect.Lean.Engine
                         .GetSubscriptionDataConfigs(split.Symbol)
                         .DataNormalizationMode();
 
-                    // apply the split event to the portfolio
-                    algorithm.Portfolio.ApplySplit(split, security, liveMode, mode);
+                    if (algorithm.IsWarmingUp)
+                    {
+                        // skip past split during live warmup, the algorithms position already reflects them
+                        Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Skip Split during warmup: {split}");
+                    }
+                    else
+                    {
+                        if (Log.DebuggingEnabled)
+                        {
+                            Log.Debug($"AlgorithmManager.Run(): {algorithm.Time}: Applying Split for {split.Symbol}");
+                        }
 
-                    // apply the split event to the trade builder
-                    algorithm.TradeBuilder.ApplySplit(split, liveMode, mode);
+                        // apply the split event to the portfolio
+                        algorithm.Portfolio.ApplySplit(split, security, liveMode, mode);
+
+                        // apply the split event to the trade builder
+                        algorithm.TradeBuilder.ApplySplit(split, liveMode, mode);
+
+                        // apply the split to open orders as well in raw mode, all other modes are split adjusted
+                        if (liveMode || mode == DataNormalizationMode.Raw)
+                        {
+                            // in live mode we always want to have our order match the order at the brokerage, so apply the split to the orders
+                            var openOrders = algorithm.Transactions.GetOpenOrderTickets(ticket => ticket.Symbol == split.Symbol);
+                            algorithm.BrokerageModel.ApplySplit(openOrders.ToList(), split);
+                        }
+                    }
 
                     // apply the split event to the security volatility model
                     ApplySplitOrDividendToVolatilityModel(algorithm, security, liveMode, mode);
 
-                    if (liveMode && security != null)
+                    if (liveMode && security != null && !algorithm.IsWarmingUp)
                     {
                         Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Post-Split for {split}. Security Price: {security.Price} Holdings: {security.Holdings.Quantity}");
-                    }
-
-                    // apply the split to open orders as well in raw mode, all other modes are split adjusted
-                    if (liveMode || mode == DataNormalizationMode.Raw)
-                    {
-                        // in live mode we always want to have our order match the order at the brokerage, so apply the split to the orders
-                        var openOrders = algorithm.Transactions.GetOpenOrderTickets(ticket => ticket.Symbol == split.Symbol);
-                        algorithm.BrokerageModel.ApplySplit(openOrders.ToList(), split);
                     }
                 }
                 catch (Exception err)
@@ -772,20 +830,12 @@ namespace QuantConnect.Lean.Engine
         {
             foreach (var dividend in timeSlice.Slice.Dividends.Values)
             {
-                if (liveMode && algorithm.IsWarmingUp)
-                {
-                    // skip past dividends during live warmup, the algorithms position already reflects them
-                    Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Skip Dividend during live warmup: {dividend}");
-                    continue;
-                }
-
                 if (Log.DebuggingEnabled)
                 {
                     Log.Debug($"AlgorithmManager.Run(): {algorithm.Time}: Applying Dividend: {dividend}");
                 }
 
-                Security security = null;
-                if (algorithm.Securities.TryGetValue(dividend.Symbol, out security) && liveMode)
+                if (algorithm.Securities.TryGetValue(dividend.Symbol, out var security) && liveMode && !algorithm.IsWarmingUp)
                 {
                     Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Pre-Dividend: {dividend}. " +
                         $"Security Holdings: {security.Holdings.Quantity} Account Currency Holdings: " +
@@ -796,38 +846,27 @@ namespace QuantConnect.Lean.Engine
                     .GetSubscriptionDataConfigs(dividend.Symbol)
                     .DataNormalizationMode();
 
-                // apply the dividend event to the portfolio
-                algorithm.Portfolio.ApplyDividend(dividend, liveMode, mode);
+                if (algorithm.IsWarmingUp)
+                {
+                    // skip past dividends during warmup, the algorithms position already reflects them
+                    Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Skip Dividend during warmup: {dividend}");
+                }
+                else
+                {
+                    // apply the dividend event to the portfolio
+                    algorithm.Portfolio.ApplyDividend(dividend, liveMode, mode);
+                }
 
                 // apply the dividend event to the security volatility model
                 ApplySplitOrDividendToVolatilityModel(algorithm, security, liveMode, mode);
 
-                if (liveMode && security != null)
+                if (liveMode && security != null && !algorithm.IsWarmingUp)
                 {
                     Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Post-Dividend: {dividend}. Security " +
                         $"Holdings: {security.Holdings.Quantity} Account Currency Holdings: " +
                         $"{algorithm.Portfolio.CashBook[algorithm.AccountCurrency].Amount}");
                 }
             }
-        }
-
-        /// <summary>
-        /// Adds a method invoker if the method exists to the method invokers dictionary
-        /// </summary>
-        /// <typeparam name="T">The data type to check for 'OnData(T data)</typeparam>
-        /// <param name="algorithm">The algorithm instance</param>
-        /// <param name="methodInvokers">The dictionary of method invokers</param>
-        /// <param name="methodName">The name of the method to search for</param>
-        /// <returns>True if the method existed and was added to the collection</returns>
-        private bool AddMethodInvoker<T>(IAlgorithm algorithm, Dictionary<Type, MethodInvoker> methodInvokers, string methodName = "OnData")
-        {
-            var newSplitMethodInfo = algorithm.GetType().GetMethod(methodName, new[] { typeof(T) });
-            if (newSplitMethodInfo != null)
-            {
-                methodInvokers.Add(typeof(T), newSplitMethodInfo.DelegateForCallMethod());
-                return true;
-            }
-            return false;
         }
 
         /// <summary>
@@ -907,6 +946,16 @@ namespace QuantConnect.Lean.Engine
                 // we don't need to do anyhing until the market closes
                 if (security.LocalTime < latestMarketOnCloseTimeRoundedDownByResolution) continue;
 
+                // Skip processing split warnings during warmup
+                // Historical splits are already reflected in current positions
+                if (algorithm.IsWarmingUp)
+                {
+                    splitWarnings.RemoveAt(i);
+                    // skip past split during warmup, the algorithms position already reflects them
+                    Log.Trace($"AlgorithmManager.Run(): {algorithm.Time}: Skip Splits during warmup {split}");
+                    continue;
+                }
+
                 // fetch all option derivatives of the underlying with holdings (excluding the canonical security)
                 var derivatives = algorithm.Securities.Values.Where(potentialDerivate =>
                     potentialDerivate.Symbol.SecurityType.IsOption() &&
@@ -961,26 +1010,6 @@ namespace QuantConnect.Lean.Engine
                 security?.VolatilityModel.WarmUp(algorithm.HistoryProvider, algorithm.SubscriptionManager, security, algorithm.UtcTime,
                     algorithm.TimeZone, liveMode, dataNormalizationMode);
             }
-        }
-
-        /// <summary>
-        /// Determines if a data point is in it's native, configured resolution
-        /// </summary>
-        private static bool EndTimeIsInNativeResolution(SubscriptionDataConfig config, DateTime dataPointEndTime)
-        {
-            if (config.Resolution == Resolution.Tick
-                ||
-                // time zones don't change seconds or milliseconds so we can
-                // shortcut timezone conversions
-                (config.Resolution == Resolution.Second
-                || config.Resolution == Resolution.Minute)
-                && dataPointEndTime.Ticks % config.Increment.Ticks == 0)
-            {
-                return true;
-            }
-
-            var roundedDataPointEndTime = dataPointEndTime.RoundDownInTimeZone(config.Increment, config.ExchangeTimeZone, config.DataTimeZone);
-            return dataPointEndTime == roundedDataPointEndTime;
         }
 
         /// <summary>

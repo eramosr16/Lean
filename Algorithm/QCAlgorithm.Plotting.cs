@@ -30,12 +30,13 @@ namespace QuantConnect.Algorithm
 
         private static readonly Dictionary<string, List<string>> ReservedChartSeriesNames = new Dictionary<string, List<string>>
         {
-            { "Strategy Equity", new List<string> { "Equity", "Daily Performance" } },
+            { "Strategy Equity", new List<string> { "Equity", "Return" } },
             { "Capacity", new List<string> { "Strategy Capacity" } },
             { "Drawdown", new List<string> { "Equity Drawdown" } },
             { "Benchmark", new List<string>() { "Benchmark" } },
             { "Assets Sales Volume", new List<string>() },
             { "Exposure", new List<string>() },
+            { "Portfolio Margin", new List<string>() },
             { "Portfolio Turnover", new List<string> { "Portfolio Turnover" } }
         };
 
@@ -496,6 +497,12 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(StatisticsTag)]
         public void SetSummaryStatistic(string name, string value)
         {
+            if (int.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intName) &&
+                intName >= 0 && intName <= 100)
+            {
+                throw new ArgumentException($"'{name}' is a reserved statistic name.");
+            }
+
             _statisticsService.SetSummaryStatistic(name, value);
         }
 
@@ -507,7 +514,7 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(StatisticsTag)]
         public void SetSummaryStatistic(string name, int value)
         {
-            _statisticsService.SetSummaryStatistic(name, value.ToStringInvariant());
+            SetSummaryStatistic(name, value.ToStringInvariant());
         }
 
         /// <summary>
@@ -518,7 +525,7 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(StatisticsTag)]
         public void SetSummaryStatistic(string name, double value)
         {
-            _statisticsService.SetSummaryStatistic(name, value.ToStringInvariant());
+            SetSummaryStatistic(name, value.ToStringInvariant());
         }
 
         /// <summary>
@@ -529,7 +536,7 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(StatisticsTag)]
         public void SetSummaryStatistic(string name, decimal value)
         {
-            _statisticsService.SetSummaryStatistic(name, value.ToStringInvariant());
+            SetSummaryStatistic(name, value.ToStringInvariant());
         }
 
         /// <summary>

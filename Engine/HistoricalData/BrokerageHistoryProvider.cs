@@ -55,6 +55,7 @@ namespace QuantConnect.Lean.Engine.HistoricalData
             }
             _initialized = true;
             _brokerage.Connect();
+            AlgorithmSettings = parameters.AlgorithmSettings;
             _dataPermissionManager = parameters.DataPermissionManager;
         }
 
@@ -71,13 +72,19 @@ namespace QuantConnect.Lean.Engine.HistoricalData
             foreach (var request in requests)
             {
                 var history = _brokerage.GetHistory(request);
+                if (history == null)
+                {
+                    // doesn't support this history request, that's okay
+                    continue;
+                }
                 var subscription = CreateSubscription(request, history);
-
-                _dataPermissionManager.AssertConfiguration(subscription.Configuration, request.StartTimeLocal, request.EndTimeLocal);
-
                 subscriptions.Add(subscription);
             }
 
+            if (subscriptions.Count == 0)
+            {
+                return null;
+            }
             return CreateSliceEnumerableFromSubscriptions(subscriptions, sliceTimeZone);
         }
     }

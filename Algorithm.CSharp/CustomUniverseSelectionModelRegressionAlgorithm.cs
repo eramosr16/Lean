@@ -40,7 +40,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetUniverseSelection(new CustomUniverseSelectionModel());
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -54,19 +54,15 @@ namespace QuantConnect.Algorithm.CSharp
         private class CustomUniverseSelectionModel : FundamentalUniverseSelectionModel
         {
             private bool _selected;
-            public CustomUniverseSelectionModel(): base(true, null)
+            public CustomUniverseSelectionModel(): base()
             {
             }
-            public override IEnumerable<Symbol> SelectCoarse(QCAlgorithm algorithm, IEnumerable<CoarseFundamental> coarse)
-            {
-                return new[] { QuantConnect.Symbol.Create("AAPL", SecurityType.Equity, Market.USA) };
-            }
-            public override IEnumerable<Symbol> SelectFine(QCAlgorithm algorithm, IEnumerable<FineFundamental> fine)
+            public override IEnumerable<Symbol> Select(QCAlgorithm algorithm, IEnumerable<Fundamental> fundamental)
             {
                 if (!_selected)
                 {
                     _selected = true;
-                    return fine.Select(x => x.Symbol);
+                    return new[] { QuantConnect.Symbol.Create("AAPL", SecurityType.Equity, Market.USA) };
                 }
                 return Data.UniverseSelection.Universe.Unchanged;
             }
@@ -80,12 +76,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 7208;
+        public long DataPoints => 78062;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -93,16 +89,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "-7.765%"},
             {"Drawdown", "0.400%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99668.37"},
             {"Net Profit", "-0.332%"},
             {"Sharpe Ratio", "-5.972"},
             {"Sortino Ratio", "-7.125"},
@@ -118,10 +121,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.087"},
             {"Treynor Ratio", "-0.653"},
             {"Total Fees", "$2.89"},
-            {"Estimated Strategy Capacity", "$1600000000.00"},
+            {"Estimated Strategy Capacity", "$2000000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.67%"},
-            {"OrderListHash", "9394c1690eb7ce0ff9ac8063294e7294"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "6198706fef1ce2a60e8f16e7ab1485c1"}
         };
     }
 }

@@ -33,6 +33,7 @@ namespace QuantConnect.Interfaces
         /// </summary>
         event EventHandler<BrokerageOrderIdChangedEvent> OrderIdChanged;
 
+        /// <summary>
         /// Event that fires each time the status for a list of orders change
         /// </summary>
         event EventHandler<List<OrderEvent>> OrdersStatusChanged;
@@ -151,5 +152,10 @@ namespace QuantConnect.Interfaces
         /// <param name="request">The historical data request</param>
         /// <returns>An enumerable of bars covering the span specified in the request</returns>
         IEnumerable<BaseData> GetHistory(HistoryRequest request);
+
+        /// <summary>
+        /// Enables or disables concurrent processing of messages to and from the brokerage.
+        /// </summary>
+        bool ConcurrencyEnabled { get; set; }
     }
 }

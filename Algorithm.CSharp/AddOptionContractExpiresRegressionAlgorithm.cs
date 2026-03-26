@@ -42,12 +42,12 @@ namespace QuantConnect.Algorithm.CSharp
             AddUniverse("my-daily-universe-name", time => new List<string> { "AAPL" });
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (_option == null)
             {
-                var option = OptionChainProvider.GetOptionContractList(_twx, Time)
-                    .OrderBy(symbol => symbol.ID.Symbol)
+                var option = OptionChain(_twx)
+                    .OrderBy(x => x.ID.Symbol)
                     .FirstOrDefault(optionContract => optionContract.ID.Date == _expiration
                                                       && optionContract.ID.OptionRight == OptionRight.Call
                                                       && optionContract.ID.OptionStyle == OptionStyle.American);
@@ -68,11 +68,11 @@ namespace QuantConnect.Algorithm.CSharp
 
                     if (!config.Any())
                     {
-                        throw new Exception($"Was expecting configurations for {symbol}");
+                        throw new RegressionTestException($"Was expecting configurations for {symbol}");
                     }
                     if (config.Any(dataConfig => dataConfig.DataNormalizationMode != DataNormalizationMode.Raw))
                     {
-                        throw new Exception($"Was expecting DataNormalizationMode.Raw configurations for {symbol}");
+                        throw new RegressionTestException($"Was expecting DataNormalizationMode.Raw configurations for {symbol}");
                     }
                 }
             }
@@ -81,14 +81,14 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (SubscriptionManager.SubscriptionDataConfigService.GetSubscriptionDataConfigs(_option).Any())
                 {
-                    throw new Exception($"Unexpected configurations for {_option} after it has been delisted");
+                    throw new RegressionTestException($"Unexpected configurations for {_option} after it has been delisted");
                 }
 
                 if (Securities[_twx].Invested)
                 {
                     if (!SubscriptionManager.SubscriptionDataConfigService.GetSubscriptionDataConfigs(_twx).Any())
                     {
-                        throw new Exception($"Was expecting configurations for {_twx}");
+                        throw new RegressionTestException($"Was expecting configurations for {_twx}");
                     }
 
                     // first we liquidate the option exercised position
@@ -99,7 +99,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (SubscriptionManager.SubscriptionDataConfigService.GetSubscriptionDataConfigs(_twx).Any())
                 {
-                    throw new Exception($"Unexpected configurations for {_twx} after it has been liquidated");
+                    throw new RegressionTestException($"Unexpected configurations for {_twx} after it has been liquidated");
                 }
             }
         }
@@ -112,29 +112,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 37597;
+        public long DataPoints => 37598;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 1;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "3"},
+            {"Total Orders", "3"},
             {"Average Win", "2.73%"},
             {"Average Loss", "-2.98%"},
             {"Compounding Annual Return", "-4.619%"},
             {"Drawdown", "0.300%"},
             {"Expectancy", "-0.042"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99668"},
             {"Net Profit", "-0.332%"},
             {"Sharpe Ratio", "-4.614"},
             {"Sortino Ratio", "0"},
@@ -151,9 +158,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "2.01"},
             {"Total Fees", "$2.00"},
             {"Estimated Strategy Capacity", "$5700000.00"},
-            {"Lowest Capacity Asset", "AOL VRKS95ENLBYE|AOL R735QTJ8XC9X"},
+            {"Lowest Capacity Asset", "AOL VRKS95ENPM9Y|AOL R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.55%"},
-            {"OrderListHash", "402c66beb5c96b2f2ae357c49e890dc5"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "d314aef81752b6583fd58f9e49054cd4"}
         };
     }
 }

@@ -47,7 +47,7 @@ namespace QuantConnect.Algorithm.CSharp
             });
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -58,7 +58,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (Portfolio.MarginRemaining <= 0)
             {
-                throw new Exception($"Unexpected margin remaining value {Portfolio.MarginRemaining}");
+                throw new RegressionTestException($"Unexpected margin remaining value {Portfolio.MarginRemaining}");
             }
 
             // in the 2009 dip buy AAPL
@@ -78,7 +78,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -91,35 +91,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "7.042%"},
-            {"Drawdown", "40.400%"},
+            {"Compounding Annual Return", "6.056%"},
+            {"Drawdown", "42.100%"},
             {"Expectancy", "0"},
-            {"Net Profit", "22.672%"},
-            {"Sharpe Ratio", "0.2"},
-            {"Sortino Ratio", "0.227"},
-            {"Probabilistic Sharpe Ratio", "8.886%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "119303.75"},
+            {"Net Profit", "19.304%"},
+            {"Sharpe Ratio", "0.162"},
+            {"Sortino Ratio", "0.183"},
+            {"Probabilistic Sharpe Ratio", "7.738%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.064"},
-            {"Beta", "0.707"},
+            {"Alpha", "0.057"},
+            {"Beta", "0.708"},
             {"Annual Standard Deviation", "0.177"},
             {"Annual Variance", "0.031"},
-            {"Information Ratio", "0.872"},
+            {"Information Ratio", "0.8"},
             {"Tracking Error", "0.087"},
-            {"Treynor Ratio", "0.05"},
-            {"Total Fees", "$47.03"},
-            {"Estimated Strategy Capacity", "$100000000.00"},
+            {"Treynor Ratio", "0.04"},
+            {"Total Fees", "$45.18"},
+            {"Estimated Strategy Capacity", "$410000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.09%"},
-            {"OrderListHash", "2280ca383544dd04a40d6f975a83bb26"}
+            {"Drawdown Recovery", "707"},
+            {"OrderListHash", "39bdab2dcde5bed30c6fc3200d39e83c"}
         };
     }
 }

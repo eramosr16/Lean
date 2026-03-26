@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 
@@ -28,7 +29,8 @@ namespace QuantConnect.Tests.Brokerages
     public class OrderProvider : IOrderProvider
     {
         private int _orderId;
-        private readonly IList<Order> _orders;
+        private int _groupOrderManagerId;
+        private protected readonly IList<Order> _orders;
         private readonly object _lock = new object();
 
         public OrderProvider(IList<Order> orders)
@@ -44,6 +46,12 @@ namespace QuantConnect.Tests.Brokerages
         public void Add(Order order)
         {
             order.Id = Interlocked.Increment(ref _orderId);
+
+            if (order.GroupOrderManager != null && order.GroupOrderManager.Id == 0)
+            {
+                order.GroupOrderManager.Id = Interlocked.Increment(ref _groupOrderManagerId);
+            }
+
             lock (_lock)
             {
                 _orders.Add(order);
@@ -60,7 +68,7 @@ namespace QuantConnect.Tests.Brokerages
                 order = _orders.FirstOrDefault(x => x.Id == orderId);
             }
 
-            return order?.Clone();
+            return order;
         }
 
         public List<Order> GetOrdersByBrokerageId(string brokerageId)
@@ -94,6 +102,31 @@ namespace QuantConnect.Tests.Brokerages
         public List<Order> GetOpenOrders(Func<Order, bool> filter = null)
         {
             return _orders.Where(x => x.Status.IsOpen() && (filter == null || filter(x))).Select(x => x.Clone()).ToList();
+        }
+
+        /// <summary>
+        /// Brokerage order id change is applied to the target order
+        /// </summary>
+        internal void HandlerBrokerageOrderIdChangedEvent(BrokerageOrderIdChangedEvent brokerageOrderIdChangedEvent)
+        {
+            lock (_lock)
+            {
+                var originalOrder = _orders.FirstOrDefault(x => x.Id == brokerageOrderIdChangedEvent.OrderId);
+
+                if (originalOrder == null)
+                {
+                    // shouldn't happen but let's be careful
+                    Log.Error($"OrderProvider.HandlerBrokerageOrderIdChangedEvent(): Lean order id {brokerageOrderIdChangedEvent.OrderId} not found");
+                    return;
+                }
+
+                originalOrder.BrokerId = brokerageOrderIdChangedEvent.BrokerId;
+            }
+        }
+
+        public ProjectedHoldings GetProjectedHoldings(Security security)
+        {
+            throw new NotImplementedException();
         }
     }
 }

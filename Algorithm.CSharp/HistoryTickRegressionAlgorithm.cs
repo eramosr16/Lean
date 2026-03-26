@@ -13,10 +13,8 @@
  * limitations under the License.
 */
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 
@@ -31,22 +29,38 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void Initialize()
         {
-            SetStartDate(2013, 10, 11);
-            SetEndDate(2013, 10, 11);
+            SetStartDate(2013, 10, 12);
+            SetEndDate(2013, 10, 13);
 
             _symbol = AddEquity("SPY", Resolution.Tick).Symbol;
-        }
 
-        public override void OnEndOfAlgorithm()
-        {
-            var history = History<Tick>(_symbol, StartDate, EndDate, Resolution.Tick);
-            var quotes = history.Where(x => x.TickType == TickType.Quote).ToList();
-            var trades = history.Where(x => x.TickType == TickType.Trade).ToList();
+            var tradesCount = 0;
+            var quotesCount = 0;
 
-            if (quotes.Count == 0 || trades.Count == 0)
+            foreach (var point in History<Tick>(_symbol, StartDate.AddDays(-1), StartDate, Resolution.Tick))
             {
-                throw new Exception("Expected to find at least one tick of each type (quote and trade)");
+                if (point.TickType == TickType.Trade)
+                {
+                    tradesCount++;
+                }
+                else if (point.TickType == TickType.Quote)
+                {
+                    quotesCount++;
+                }
+
+                if (tradesCount > 0 && quotesCount > 0)
+                {
+                    // We already found at least one tick of each type, we can exit the loop
+                    break;
+                }
             }
+
+            if (quotesCount == 0 || tradesCount == 0)
+            {
+                throw new RegressionTestException("Expected to find at least one tick of each type (quote and trade)");
+            }
+
+            Quit();
         }
 
         /// <summary>
@@ -57,29 +71,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 2741747;
+        public long DataPoints => 0;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 2741732;
+        public int AlgorithmHistoryDataPoints => 9;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -98,6 +119,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

@@ -17,6 +17,8 @@
 using System;
 using NUnit.Framework;
 using QuantConnect.Securities;
+using Python.Runtime;
+using System.Globalization;
 
 namespace QuantConnect.Tests.Common
 {
@@ -31,13 +33,37 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(expected, result);
         }
 
-        [Test]
-        public void ParseOptionTickerOSI()
+        [TestCase("SPXW  230111C02400000", SecurityType.IndexOption, OptionStyle.European, "SPXW", "SPX", "SPX", 2400.00, "2023-01-11")]
+        [TestCase("SPY   230111C02400000", SecurityType.Option, OptionStyle.American, "SPY", "SPY", "SPY", 2400.00, "2023-01-11")]
+        [TestCase("GOOG  160318C00320000", SecurityType.Option, OptionStyle.American, "GOOCV", "GOOCV", "GOOG", 320.00, "2016-03-18")]
+        [TestCase("AAPL240614C00100000", SecurityType.Option, OptionStyle.American, "AAPL", "AAPL", "AAPL", 100.00, "2024-06-14")]
+        [TestCase("MSFT240614C00150000", SecurityType.Option, OptionStyle.American, "MSFT", "MSFT", "MSFT", 150.00, "2024-06-14")]
+        [TestCase("AMZN  220630C01000000", SecurityType.Option, OptionStyle.American, "AMZN", "AMZN", "AMZN", 1000.00, "2022-06-30")]
+        [TestCase("NFLX  230122P00250000", SecurityType.Option, OptionStyle.American, "NFLX", "NFLX", "NFLX", 250.00, "2023-01-22")]
+        [TestCase("TSLA  240815C00775000", SecurityType.Option, OptionStyle.American, "TSLA", "TSLA", "TSLA", 775.00, "2024-08-15")]
+        [TestCase("V     231211P00220000", SecurityType.Option, OptionStyle.American, "V", "V", "V", 220.00, "2023-12-11")]
+        [TestCase("JPM   240501C00130750", SecurityType.Option, OptionStyle.American, "JPM", "JPM", "JPM", 130.75, "2024-05-01")]
+        [TestCase("IBM   250212P00145000", SecurityType.Option, OptionStyle.American, "IBM", "IBM", "IBM", 145.00, "2025-02-12")]
+        [TestCase("DIS   230630C00075000", SecurityType.Option, OptionStyle.American, "DIS", "DIS", "DIS", 75.00, "2023-06-30")]
+        [TestCase("ORCL  231030C00065000", SecurityType.Option, OptionStyle.American, "ORCL", "ORCL", "ORCL", 65.00, "2023-10-30")]
+        [TestCase("CSCO  230501P00045000", SecurityType.Option, OptionStyle.American, "CSCO", "CSCO", "CSCO", 45.00, "2023-05-01")]
+        [TestCase("DAX   250715C01000000", SecurityType.IndexOption, OptionStyle.European, "DAX", "DAX", "DAX", 1000.00, "2025-07-15")]
+        [TestCase("FTSE  230122C00750000", SecurityType.IndexOption, OptionStyle.European, "FTSE", "FTSE", "FTSE", 750.00, "2023-01-22")]
+        [TestCase("ES20H20  200320P03290000", SecurityType.FutureOption, OptionStyle.American, "ES20H20", "ES", "ES20H20", 3290.00, "2020-03-20")]
+        public void ParseOptionTickerOSI(string optionStr, SecurityType securityType, OptionStyle optionStyle,
+            string expectedTargetOptionTicker, string expectedUnderlyingTicker, string expectedUnderlyingMappedTicker,
+            decimal expectedStrikePrice, string expectedDate)
         {
-            var result = SymbolRepresentation.ParseOptionTickerOSI("SPXW  230111C02400000", SecurityType.IndexOption);
+            var result = SymbolRepresentation.ParseOptionTickerOSI(optionStr, securityType, optionStyle, Market.USA);
 
-            Assert.AreEqual("SPXW", result.ID.Symbol);
-            Assert.AreEqual("SPX", result.Underlying.ID.Symbol);
+            Assert.AreEqual(expectedTargetOptionTicker, result.ID.Symbol);
+            Assert.AreEqual(optionStr, result.Value);
+            Assert.AreEqual(expectedUnderlyingTicker, result.Underlying.ID.Symbol);
+            Assert.AreEqual(expectedUnderlyingMappedTicker, result.Underlying.Value);
+            Assert.AreEqual(securityType, result.ID.SecurityType);
+            Assert.AreEqual(optionStyle, result.ID.OptionStyle);
+            Assert.AreEqual(expectedStrikePrice, result.ID.StrikePrice);
+            Assert.AreEqual(DateTime.ParseExact(expectedDate, "yyyy-MM-dd", CultureInfo.InvariantCulture), result.ID.Date);
         }
 
         [Test]
@@ -48,34 +74,23 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(expected, symbol);
         }
 
-        [Test]
-        public void ParseOptionIQFeedTicker()
+        [TestCase("SPXW", OptionRight.Call, 2400.00, "230111", "SPXW230111C02400000")]
+        [TestCase("SPY", OptionRight.Put, 250.00, "230615", "SPY230615P00250000")]
+        [TestCase("AAPL", OptionRight.Call, 100.00, "240614", "AAPL240614C00100000")]
+        [TestCase("MSFT", OptionRight.Put, 150.00, "240614", "MSFT240614P00150000")]
+        [TestCase("GOOG", OptionRight.Call, 2000.00, "211231", "GOOG211231C02000000")]
+        [TestCase("AMZN", OptionRight.Put, 3500.50, "250101", "AMZN250101P03500500")]
+        [TestCase("NFLX", OptionRight.Call, 500.25, "221201", "NFLX221201C00500250")]
+        [TestCase("TSLA", OptionRight.Put, 725.00, "241231", "TSLA241231P00725000")]
+        [TestCase("V", OptionRight.Call, 220.00, "230420", "V230420C00220000")]
+        [TestCase("JPM", OptionRight.Put, 130.75, "230710", "JPM230710P00130750")]
+        [TestCase("IBM", OptionRight.Call, 145.00, "250212", "IBM250212C00145000")]
+        [TestCase("BABA", OptionRight.Put, 88.88, "240508", "BABA240508P00088880")]
+        public void GenerateOptionTickerOSICompact_ValidInputs(string underlying, OptionRight right, decimal strikePrice, string date, string expected)
         {
-            // ticker contains two digits year of expiration
-            var result = SymbolRepresentation.ParseOptionTickerIQFeed("MSFT1615D30");
-
-            Assert.AreEqual(result.Underlying, "MSFT");
-            Assert.AreEqual(result.OptionRight, OptionRight.Call);
-            Assert.AreEqual(result.OptionStrike, 30m);
-            Assert.AreEqual(result.ExpirationDate, new DateTime(2016, 4, 15));
-        }
-
-        [TestCase("MSFT1615D30.5", "MSFT", OptionRight.Call, "30.5", "20160415")]
-        [TestCase("GOOG1415D30.5", "GOOG", OptionRight.Call, "30.5", "20140415")]
-        [TestCase("GOOCV1415C30.5", "GOOCV", OptionRight.Call, "30.5", "20140315")]
-        public void IQFeedTickerRoundTrip(string encodedOption, string underlying, OptionRight optionRight, decimal strike, string expiration)
-        {
-            var parsedOption = SymbolRepresentation.ParseOptionTickerIQFeed(encodedOption);
-
-            Assert.AreEqual(underlying, parsedOption.Underlying);
-            Assert.AreEqual(optionRight, parsedOption.OptionRight);
-            Assert.AreEqual(strike, parsedOption.OptionStrike);
-            Assert.AreEqual(Time.ParseDate(expiration), parsedOption.ExpirationDate);
-
-            var option = Symbol.CreateOption(parsedOption.Underlying, Market.USA, OptionStyle.American, parsedOption.OptionRight, parsedOption.OptionStrike, parsedOption.ExpirationDate);
-            var result = SymbolRepresentation.GenerateOptionTicker(option);
-
-            Assert.AreEqual(encodedOption, result);
+            DateTime expiration = DateTime.ParseExact(date, "yyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+            string result = SymbolRepresentation.GenerateOptionTickerOSICompact(underlying, right, strikePrice, expiration);
+            Assert.AreEqual(expected, result);
         }
 
         [Test]
@@ -141,19 +156,43 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(result, null);
         }
 
-        [TestCase(Futures.Energies.ArgusLLSvsWTIArgusTradeMonth, 2017, 1, 29, "AE529G7", false)] // Previous month
-        [TestCase(Futures.Energies.ArgusPropaneSaudiAramco, 2017, 1, 29, "A9N29G7", false)] // Previous month
-        [TestCase(Futures.Energies.BrentCrude, 2017, 1, 29, "B29H7", false)] // Second prior month
-        [TestCase(Futures.Energies.BrentLastDayFinancial, 2017, 1, 29, "BZ29H7", false)] // Second prior month
-        [TestCase(Futures.Energies.CrudeOilWTI, 2017, 11, 20, "CL20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.Gasoline, 2017, 11, 20, "RB20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.HeatingOil, 2017, 11, 20, "HO20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.MarsArgusVsWTITradeMonth, 2017, 11, 20, "AYV20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.NaturalGas, 2017, 11, 20, "NG20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.NaturalGasHenryHubLastDayFinancial, 2017, 11, 20, "HH20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.NaturalGasHenryHubPenultimateFinancial, 2017, 11, 20, "HP20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.WTIHoustonArgusVsWTITradeMonth, 2017, 11, 20, "HTT20Z17", true)] // Prior month
-        [TestCase(Futures.Energies.WTIHoustonCrudeOil, 2017, 11, 20, "HCL20Z17", true)] // Prior month
+        [Test]
+        public void GenerateOptionTickerWithIndexOptionReturnsCorrectTicker()
+        {
+            // Expected ticker for the option contract
+            var expected = "SPXW2104A3800";
+
+            var underlying = Symbols.SPX;
+
+            // Create the option contract (IndexOption) with specific parameters
+            var option = Symbol.CreateOption(
+                underlying,
+                "SPXW",
+                Market.USA,
+                OptionStyle.European,
+                OptionRight.Call,
+                3800m,
+                new DateTime(2021, 1, 04));
+
+            var result = SymbolRepresentation.GenerateOptionTicker(option);
+
+            // Assert that the result matches the expected ticker
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestCase(Futures.Energy.ArgusLLSvsWTIArgusTradeMonth, 2017, 1, 29, "AE529G7", false)] // Previous month
+        [TestCase(Futures.Energy.ArgusPropaneSaudiAramco, 2017, 1, 29, "A9N29G7", false)] // Previous month
+        [TestCase(Futures.Energy.BrentCrude, 2017, 1, 29, "B29H7", false)] // Second prior month
+        [TestCase(Futures.Energy.BrentLastDayFinancial, 2017, 1, 29, "BZ29H7", false)] // Second prior month
+        [TestCase(Futures.Energy.CrudeOilWTI, 2017, 11, 20, "CL20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.Gasoline, 2017, 11, 20, "RB20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.HeatingOil, 2017, 11, 20, "HO20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.MarsArgusVsWTITradeMonth, 2017, 11, 20, "AYV20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.NaturalGas, 2017, 11, 20, "NG20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.NaturalGasHenryHubLastDayFinancial, 2017, 11, 20, "HH20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.NaturalGasHenryHubPenultimateFinancial, 2017, 11, 20, "HP20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.WTIHoustonArgusVsWTITradeMonth, 2017, 11, 20, "HTT20Z17", true)] // Prior month
+        [TestCase(Futures.Energy.WTIHoustonCrudeOil, 2017, 11, 20, "HCL20Z17", true)] // Prior month
         [TestCase(Futures.Softs.Sugar11, 2017, 11, 20, "SB20Z17", true)] // Prior month
         [TestCase(Futures.Softs.Sugar11CME, 2017, 11, 20, "YO20Z17", true)] // Prior month
         public void GenerateFutureTickerExpiringInPreviousMonth(string underlying, int year, int month, int day, string ticker, bool doubleDigitsYear)
@@ -164,21 +203,21 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(ticker, result);
         }
 
-        [TestCase(Futures.Energies.ArgusLLSvsWTIArgusTradeMonth, 2016, 12, 29, "AE529F7", false, true)] // Previous month
-        [TestCase(Futures.Energies.ArgusPropaneSaudiAramco, 2016, 12, 29, "A9N29F7", false, true)] // Previous month
-        [TestCase(Futures.Energies.BrentCrude, 2016, 11, 29, "B29F7", false, true)] // Second prior month
-        [TestCase(Futures.Energies.BrentCrude, 2016, 12, 29, "B29G7", false, true)] // Second prior month
-        [TestCase(Futures.Energies.BrentLastDayFinancial, 2016, 11, 29, "BZ29F7", false, true)] // Second prior month
-        [TestCase(Futures.Energies.BrentLastDayFinancial, 2016, 12, 29, "BZ29G7", false, true)] // Second prior month
-        [TestCase(Futures.Energies.CrudeOilWTI, 2016, 12, 20, "CL20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.Gasoline, 2016, 12, 20, "RB20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.HeatingOil, 2016, 12, 20, "HO20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.MarsArgusVsWTITradeMonth, 2016, 12, 20, "AYV20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.NaturalGas, 2016, 12, 20, "NG20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.NaturalGasHenryHubLastDayFinancial, 2016, 12, 20, "HH20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.NaturalGasHenryHubPenultimateFinancial, 2016, 12, 20, "HP20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.WTIHoustonArgusVsWTITradeMonth, 2016, 12, 20, "HTT20F17", true, true)] // Prior month
-        [TestCase(Futures.Energies.WTIHoustonCrudeOil, 2016, 12, 20, "HCL20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.ArgusLLSvsWTIArgusTradeMonth, 2016, 12, 29, "AE529F7", false, true)] // Previous month
+        [TestCase(Futures.Energy.ArgusPropaneSaudiAramco, 2016, 12, 29, "A9N29F7", false, true)] // Previous month
+        [TestCase(Futures.Energy.BrentCrude, 2016, 11, 29, "B29F7", false, true)] // Second prior month
+        [TestCase(Futures.Energy.BrentCrude, 2016, 12, 29, "B29G7", false, true)] // Second prior month
+        [TestCase(Futures.Energy.BrentLastDayFinancial, 2016, 11, 29, "BZ29F7", false, true)] // Second prior month
+        [TestCase(Futures.Energy.BrentLastDayFinancial, 2016, 12, 29, "BZ29G7", false, true)] // Second prior month
+        [TestCase(Futures.Energy.CrudeOilWTI, 2016, 12, 20, "CL20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.Gasoline, 2016, 12, 20, "RB20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.HeatingOil, 2016, 12, 20, "HO20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.MarsArgusVsWTITradeMonth, 2016, 12, 20, "AYV20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.NaturalGas, 2016, 12, 20, "NG20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.NaturalGasHenryHubLastDayFinancial, 2016, 12, 20, "HH20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.NaturalGasHenryHubPenultimateFinancial, 2016, 12, 20, "HP20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.WTIHoustonArgusVsWTITradeMonth, 2016, 12, 20, "HTT20F17", true, true)] // Prior month
+        [TestCase(Futures.Energy.WTIHoustonCrudeOil, 2016, 12, 20, "HCL20F17", true, true)] // Prior month
         [TestCase(Futures.Softs.Sugar11, 2016, 12, 20, "SB20F17", true, true)] // Prior month
         [TestCase(Futures.Softs.Sugar11CME, 2016, 12, 20, "YO20F17", true, true)] // Prior month
         [TestCase(Futures.Softs.Sugar11CME, 2016, 12, 20, "YOF17", true, false)] // Prior month
@@ -201,23 +240,48 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(ticker, result);
         }
 
-        [TestCase("DC", 2023, 1, 4, "DC04Z22", true)] // Contract month is 2022-12, expires on 2023-01-04. Same situation with the rest of the test cases.
-        [TestCase("DY", 2022, 10, 4, "DY04U22", true)]
-        [TestCase("GDK", 2022, 11, 1, "GDK01V22", true)]
-        public void GenerateFutureTickerExpiringInNextMonth(string ticker, int year, int month, int day, string expectedValue, bool doubleDigitsYear)
-        {
-            var result = SymbolRepresentation.GenerateFutureTicker(ticker, new DateTime(year, month, day), doubleDigitsYear);
-
-            Assert.AreEqual(expectedValue, result);
-        }
-
-        [TestCase("VXZ2", 2012, 19)]
-        [TestCase("VXZ2", null, 21)]
-        public void GenerateFutureSymbolFromTickerMissingDecadeInfo(string ticker, int? futureYear, int day)
+        [TestCase("CLU0", 2008, "2010-08-20")]
+        [TestCase("CLU1", 2008, "2011-08-22")]
+        [TestCase("CLU2", 2008, "2012-08-21")]
+        [TestCase("CLU8", 2008, "2008-08-20")]
+        [TestCase("CLU9", 2008, "2009-08-20")]
+        public void GenerateFutureSymbolFromTickerKnownYearSingleDigit(string ticker, int futureYear, DateTime expectedExpiration)
         {
             var result = SymbolRepresentation.ParseFutureSymbol(ticker, futureYear);
-            // When the future year is not provided, we have an ambiguous case (2002, 2012, 1902, etc) and default current decade 2020
-            Assert.AreEqual(new DateTime(futureYear ?? 2022, 12, day), result.ID.Date.Date);
+            Assert.AreEqual(expectedExpiration, result.ID.Date.Date);
+        }
+
+        [TestCase("CLU20", 2020, "2020-08-20")]
+        [TestCase("CLU21", 2020, "2021-08-20")]
+        [TestCase("CLU22", 2020, "2022-08-22")]
+        [TestCase("CLU28", 2020, "2028-08-22")]
+        [TestCase("CLU29", 2020, "2029-08-21")]
+        public void GenerateFutureSymbolFromTickerUnknownYearSingleDigit(string ticker, int futureYear, DateTime expectedExpiration)
+        {
+            var result = SymbolRepresentation.ParseFutureSymbol(ticker, futureYear);
+            Assert.AreEqual(expectedExpiration, result.ID.Date.Date);
+        }
+
+        [TestCase("CLU20", "2020-08-20")]
+        [TestCase("CLU21", "2021-08-20")]
+        [TestCase("CLU22", "2022-08-22")]
+        [TestCase("CLU28", "2028-08-22")]
+        [TestCase("CLU29", "2029-08-21")]
+        public void GenerateFutureSymbolFromTickerUnknownYearSingleDigit(string ticker, DateTime expectedExpiration)
+        {
+            var result = SymbolRepresentation.ParseFutureSymbol(ticker);
+            Assert.AreEqual(expectedExpiration, result.ID.Date.Date);
+        }
+
+        [TestCase("CLU0", "2030-08-20")]
+        [TestCase("CLU1", "2031-08-20")]
+        [TestCase("CLU2", "2032-08-20")]
+        [TestCase("CLU8", "2028-08-22")]
+        [TestCase("CLU9", "2029-08-21")]
+        public void GenerateFutureSymbolFromTickerUnknownYearDoubleDigit(string ticker, DateTime expectedExpiration)
+        {
+            var result = SymbolRepresentation.ParseFutureSymbol(ticker);
+            Assert.AreEqual(expectedExpiration, result.ID.Date.Date);
         }
 
         [TestCase("NQZ23")]
@@ -234,5 +298,26 @@ namespace QuantConnect.Tests.Common
             var result = SymbolRepresentation.ParseFutureSymbol(ticker, 1999);
             Assert.AreEqual(new DateTime(1999, 12, 17), result.ID.Date.Date);
         }
+
+        [TestCase("PROPANE_NON_LDH_MONT_BELVIEU", QuantConnect.Securities.Futures.Energy.PropaneNonLDHMontBelvieu)]
+        [TestCase("ARGUS_PROPANE_FAR_EAST_INDEX_BALMO", QuantConnect.Securities.Futures.Energy.ArgusPropaneFarEastIndexBALMO)]
+        [TestCase("GASOLINE", QuantConnect.Securities.Futures.Energy.Gasoline)]
+        [TestCase("NATURAL_GAS", QuantConnect.Securities.Futures.Energy.NaturalGas)]
+        public void FutureEnergySymbolsWorkInPythonWithPEP8(string FutureEnergyName, string expectedFutureEnergyValue)
+        {
+            using (Py.GIL())
+            {
+                var pythonModule = PyModule.FromString("testModule", @$"
+from AlgorithmImports import *
+
+def return_futures_energy():
+    return Futures.Energy.{FutureEnergyName};
+");
+                dynamic pythonFunction = pythonModule.GetAttr("return_futures_energy");
+                var futureEnergyValue = pythonFunction();
+                Assert.AreEqual(expectedFutureEnergyValue, (futureEnergyValue as PyObject).GetAndDispose<string>());
+            }
+        }
+
     }
 }

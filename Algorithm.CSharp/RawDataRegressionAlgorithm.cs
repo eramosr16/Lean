@@ -33,8 +33,8 @@ namespace QuantConnect.Algorithm.CSharp
     {
         private const string Ticker = "GOOGL";
         private CorporateFactorProvider _factorFile;
-        private readonly IEnumerator<decimal> _expectedRawPrices = new List<decimal> { 1157.93m, 1158.72m,
-            1131.97m, 1114.28m, 1120.15m, 1114.51m, 1134.89m, 567.55m, 571.50m, 545.25m, 540.63m }.GetEnumerator();
+        private readonly IEnumerator<decimal> _expectedRawPrices = new List<decimal> { 1158.72m,
+            1131.97m, 1114.28m, 1120.15m, 1114.51m, 1134.89m, 1135.1m, 571.50m, 545.25m, 540.63m }.GetEnumerator();
         private Symbol _googl;
 
         public override void Initialize()
@@ -66,16 +66,16 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
                 SetHoldings(_googl, 1);
             }
 
-            if (data.Bars.ContainsKey(_googl))
+            if (slice.Bars.ContainsKey(_googl))
             {
-                var googlData = data.Bars[_googl];
+                var googlData = slice.Bars[_googl];
 
                 // Assert our volume matches what we expected
                 if (_expectedRawPrices.Current != googlData.Close)
@@ -86,11 +86,11 @@ namespace QuantConnect.Algorithm.CSharp
 
                     if (_expectedRawPrices.Current == probableRawPrice)
                     {
-                        throw new Exception($"Close price was incorrect; it appears to be the adjusted value");
+                        throw new RegressionTestException($"Close price was incorrect; it appears to be the adjusted value");
                     }
                     else
                     {
-                        throw new Exception($"Close price was incorrect; Data may have changed.");
+                        throw new RegressionTestException($"Close price was incorrect; Data may have changed.");
                     }
                 }
 
@@ -107,12 +107,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 92;
+        public long DataPoints => 91;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -120,35 +120,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-86.060%"},
-            {"Drawdown", "7.300%"},
+            {"Compounding Annual Return", "-85.376%"},
+            {"Drawdown", "6.900%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-7.279%"},
-            {"Sharpe Ratio", "-2.914"},
-            {"Sortino Ratio", "-2.855"},
-            {"Probabilistic Sharpe Ratio", "4.001%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "93054.5"},
+            {"Net Profit", "-6.946%"},
+            {"Sharpe Ratio", "-2.925"},
+            {"Sortino Ratio", "-2.881"},
+            {"Probabilistic Sharpe Ratio", "3.662%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.373"},
-            {"Beta", "1.927"},
-            {"Annual Standard Deviation", "0.254"},
-            {"Annual Variance", "0.064"},
-            {"Information Ratio", "-2.852"},
-            {"Tracking Error", "0.192"},
+            {"Alpha", "-0.379"},
+            {"Beta", "1.959"},
+            {"Annual Standard Deviation", "0.257"},
+            {"Annual Variance", "0.066"},
+            {"Information Ratio", "-2.874"},
+            {"Tracking Error", "0.195"},
             {"Treynor Ratio", "-0.384"},
             {"Total Fees", "$1.00"},
-            {"Estimated Strategy Capacity", "$110000000.00"},
+            {"Estimated Strategy Capacity", "$140000000.00"},
             {"Lowest Capacity Asset", "GOOG T1AZ164W5VTX"},
-            {"Portfolio Turnover", "7.21%"},
-            {"OrderListHash", "b95a9276912af804b0ec97f4262c3ce6"}
+            {"Portfolio Turnover", "7.33%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "2284e1b9e7d44577d77987dfe56d3e8d"}
         };
     }
 }

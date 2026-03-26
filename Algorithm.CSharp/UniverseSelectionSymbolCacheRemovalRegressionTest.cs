@@ -1,4 +1,4 @@
- 
+
 /*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
@@ -43,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp
             AddEquity("AAPL", Resolution.Daily);
             _equitySymbol = AddEquity("TWX", Resolution.Minute).Symbol;
 
-            var contracts = OptionChainProvider.GetOptionContractList(_equitySymbol, UtcTime).ToList();
+            var contracts = OptionChain(_equitySymbol).ToList();
 
             var callOptionSymbol = contracts
                 .Where(c => c.ID.OptionRight == OptionRight.Call)
@@ -55,20 +55,20 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        /// <param name="slice">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
             var symbol = SymbolCache.GetSymbol("TWX");
             if (symbol == null)
             {
-                throw new Exception("Unexpected removal of symbol from cache!");
+                throw new RegressionTestException("Unexpected removal of symbol from cache!");
             }
 
-            foreach (var dataDelisting in data.Delistings.Where(pair => pair.Value.Type == DelistingType.Delisted))
+            foreach (var dataDelisting in slice.Delistings.Where(pair => pair.Value.Type == DelistingType.Delisted))
             {
                 if (dataDelisting.Key != _optionContract)
                 {
-                    throw new Exception("Unexpected delisting event!");
+                    throw new RegressionTestException("Unexpected delisting event!");
                 }
                 _optionWasRemoved = true;
             }
@@ -83,7 +83,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!_optionWasRemoved)
             {
-                throw new Exception("Option contract was not removed!");
+                throw new RegressionTestException("Option contract was not removed!");
             }
         }
 
@@ -95,48 +95,56 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 24691;
+        public long DataPoints => 24289;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 1;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-3.098%"},
+            {"Compounding Annual Return", "-4.228%"},
             {"Drawdown", "0.400%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-0.164%"},
-            {"Sharpe Ratio", "-2.736"},
-            {"Sortino Ratio", "-3.496"},
-            {"Probabilistic Sharpe Ratio", "21.013%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99779.30"},
+            {"Net Profit", "-0.221%"},
+            {"Sharpe Ratio", "-3.185"},
+            {"Sortino Ratio", "-4.277"},
+            {"Probabilistic Sharpe Ratio", "17.836%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.044"},
-            {"Beta", "0.065"},
+            {"Alpha", "-0.047"},
+            {"Beta", "0.053"},
             {"Annual Standard Deviation", "0.012"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-4.529"},
-            {"Tracking Error", "0.046"},
-            {"Treynor Ratio", "-0.494"},
-            {"Total Fees", "$2.40"},
-            {"Estimated Strategy Capacity", "$2100000000.00"},
+            {"Information Ratio", "-4.592"},
+            {"Tracking Error", "0.047"},
+            {"Treynor Ratio", "-0.714"},
+            {"Total Fees", "$2.39"},
+            {"Estimated Strategy Capacity", "$2900000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.53%"},
-            {"OrderListHash", "9b268f0883baf4d515a88a30057a4a74"}
+            {"Drawdown Recovery", "3"},
+            {"OrderListHash", "ff4e9e05d7a60c96ccc6e7541d200168"}
         };
     }
 }

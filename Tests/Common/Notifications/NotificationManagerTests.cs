@@ -15,6 +15,7 @@
 
 using System;
 using System.Linq;
+using System.Text;
 using NUnit.Framework;
 using Python.Runtime;
 using QuantConnect.Notifications;
@@ -73,45 +74,35 @@ namespace QuantConnect.Tests.Common.Notifications
         }
 
         [Test]
-        [TestCase("email")]
-        [TestCase("sms")]
-        [TestCase("web")]
-        public void RateLimits_Notifications_AfterThirtyCalls(string method)
+        public void TelegramAddsNotificationToMessagesWhenLiveModeIsTrue()
         {
-            for (var invocationNumber = 1; invocationNumber <= 31; invocationNumber++)
+            Assert.AreEqual(_liveMode, _notify.Telegram("pepe", "ImAMessage", "botToken"));
+            Assert.AreEqual(_liveMode ? 1 : 0, _notify.Messages.Count);
+            if (_liveMode)
             {
-                bool result;
-                switch (method)
-                {
-                    case "email":
-                        result = _notify.Email("address@domain.com", "subject", "message", "data");
-                        break;
+                Assert.IsInstanceOf<NotificationTelegram>(_notify.Messages.Single());
+            }
+        }
 
-                    case "sms":
-                        result = _notify.Sms("phone-number", "message");
-                        break;
+        [Test]
+        public void FtpAddsNotificationToMessagesWhenLiveModeIsTrue()
+        {
+            Assert.AreEqual(_liveMode, _notify.Ftp("qc.com", "username", "password", "path/to/file.json", Encoding.ASCII.GetBytes("{}")));
+            Assert.AreEqual(_liveMode ? 1 : 0, _notify.Messages.Count);
+            if (_liveMode)
+            {
+                Assert.IsInstanceOf<NotificationFtp>(_notify.Messages.Single());
+            }
+        }
 
-                    case "web":
-                        result = _notify.Web("address", "data");
-                        break;
-
-                    default:
-                        throw new ArgumentException($"Invalid method: {method}");
-                }
-
-                if (_liveMode && invocationNumber <= 30)
-                {
-                    Assert.IsTrue(result);
-                }
-                else
-                {
-                    Assert.IsFalse(result);
-                    if (!_liveMode)
-                    {
-                        // no need to test further
-                        Assert.Pass();
-                    }
-                }
+        [Test]
+        public void FtpAddsNotificationToMessagesWhenLiveModeIsTrueFromStringContents()
+        {
+            Assert.AreEqual(_liveMode, _notify.Ftp("qc.com", "username", "password", "path/to/file.json", "{}"));
+            Assert.AreEqual(_liveMode ? 1 : 0, _notify.Messages.Count);
+            if (_liveMode)
+            {
+                Assert.IsInstanceOf<NotificationFtp>(_notify.Messages.Single());
             }
         }
 

@@ -17,6 +17,7 @@ using Fasterflect;
 using Newtonsoft.Json;
 using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
+using QuantConnect.Data;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
@@ -42,12 +43,7 @@ namespace QuantConnect.Queues
         private const string DefaultHistoryProvider = "SubscriptionDataReaderHistoryProvider";
         private const string DefaultDataQueueHandler = "LiveDataQueue";
         private const string DefaultDataChannelProvider = "DataChannelProvider";
-        private bool _liveMode = Config.GetBool("live-mode");
-        private static readonly string AccessToken = Config.Get("api-access-token");
         private static readonly string Channel = Config.Get("data-channel");
-        private static readonly string OrganizationId = Config.Get("job-organization-id");
-        private static readonly int UserId = Config.GetInt("job-user-id", 0);
-        private static readonly int ProjectId = Config.GetInt("job-project-id", 0);
         private readonly string AlgorithmTypeName = Config.Get("algorithm-type-name");
         private Language? _language;
 
@@ -89,21 +85,15 @@ namespace QuantConnect.Queues
         /// <summary>
         /// Physical location of Algorithm DLL.
         /// </summary>
-        private string AlgorithmLocation
-        {
-            get
-            {
-                // we expect this dll to be copied into the output directory
-                return Config.Get("algorithm-location", "QuantConnect.Algorithm.CSharp.dll");
-            }
-        }
+        /// <remarks>We expect this dll to be copied into the output directory</remarks>
+        private string AlgorithmLocation { get; } = Config.Get("algorithm-location", "QuantConnect.Algorithm.CSharp.dll");
 
         /// <summary>
         /// Initialize the job queue:
         /// </summary>
-        public void Initialize(IApi api)
+        public void Initialize(IApi api, IMessagingHandler messagingHandler)
         {
-            //
+            api.Initialize(Globals.UserId, Globals.UserToken, Globals.DataFolder);
         }
 
         /// <summary>
@@ -132,17 +122,17 @@ namespace QuantConnect.Queues
         /// Desktop/Local Get Next Task - Get task from the Algorithm folder of VS Solution.
         /// </summary>
         /// <returns></returns>
-        public AlgorithmNodePacket NextJob(out string location)
+        public AlgorithmNodePacket NextJob(out string algorithmPath)
         {
-            location = GetAlgorithmLocation();
+            algorithmPath = GetAlgorithmLocation();
 
-            Log.Trace($"JobQueue.NextJob(): Selected {location}");
+            Log.Trace($"JobQueue.NextJob(): Selected {algorithmPath}");
 
             // check for parameters in the config
             var parameters = new Dictionary<string, string>();
 
             var parametersConfigString = Config.Get("parameters");
-            if (parametersConfigString != string.Empty)
+            if (!string.IsNullOrEmpty(parametersConfigString))
             {
                 parameters = JsonConvert.DeserializeObject<Dictionary<string, string>>(parametersConfigString);
             }
@@ -157,13 +147,13 @@ namespace QuantConnect.Queues
                 MaximumChartSeries = Config.GetInt("maximum-chart-series", 30),
                 StorageLimit = Config.GetValue("storage-limit", 10737418240L),
                 StorageFileCount = Config.GetInt("storage-file-count", 10000),
-                StoragePermissions = (FileAccess)Config.GetInt("storage-permissions", (int)FileAccess.ReadWrite)
+                StorageAccess = Config.GetValue("storage-permissions", new Packets.StoragePermissions())
             };
 
             var algorithmId = Config.Get("algorithm-id", AlgorithmTypeName);
 
             //If this isn't a backtesting mode/request, attempt a live job.
-            if (_liveMode)
+            if (Globals.LiveMode)
             {
                 var dataHandlers = Config.Get("data-queue-handler", DefaultDataQueueHandler);
                 var liveJob = new LiveNodePacket
@@ -175,10 +165,10 @@ namespace QuantConnect.Queues
                     DataQueueHandler = dataHandlers,
                     DataChannelProvider = Config.Get("data-channel-provider", DefaultDataChannelProvider),
                     Channel = Channel,
-                    UserToken = AccessToken,
-                    UserId = UserId,
-                    ProjectId = ProjectId,
-                    OrganizationId = OrganizationId,
+                    UserToken = Globals.UserToken,
+                    UserId = Globals.UserId,
+                    ProjectId = Globals.ProjectId,
+                    OrganizationId = Globals.OrganizationID,
                     Version = Globals.Version,
                     DeployId = algorithmId,
                     Parameters = parameters,
@@ -201,17 +191,23 @@ namespace QuantConnect.Queues
                     Log.Error(err, $"Error resolving BrokerageData for live job for brokerage {liveJob.Brokerage}");
                 }
 
-                foreach (var dataHandlerName in dataHandlers.DeserializeList())
+                var brokerageBasedHistoryProvider = liveJob.HistoryProvider.DeserializeList().Select(x =>
+                {
+                    HistoryExtensions.TryGetBrokerageName(x, out var brokerageName);
+                    return brokerageName;
+                }).Where(x => x != null);
+
+                foreach (var dataHandlerName in dataHandlers.DeserializeList().Concat(brokerageBasedHistoryProvider).Distinct())
                 {
                     var brokerageFactoryForDataHandler = GetFactoryFromDataQueueHandler(dataHandlerName);
                     if (brokerageFactoryForDataHandler == null)
                     {
-                        Log.Trace($"JobQueue.NextJob(): Not able to fetch data handler factory with name: {dataHandlerName}");
+                        Log.Trace($"JobQueue.NextJob(): Not able to fetch brokerage factory with name: {dataHandlerName}");
                         continue;
                     }
                     if (brokerageFactoryForDataHandler.BrokerageType == brokerageName)
                     {
-                        //Don't need to add brokearageData again if added by brokerage
+                        //Don't need to add brokerageData again if added by brokerage
                         continue;
                     }
                     foreach (var data in brokerageFactoryForDataHandler.BrokerageData)
@@ -236,10 +232,10 @@ namespace QuantConnect.Queues
                 Algorithm = File.ReadAllBytes(AlgorithmLocation),
                 HistoryProvider = Config.Get("history-provider", DefaultHistoryProvider),
                 Channel = Channel,
-                UserToken = AccessToken,
-                UserId = UserId,
-                ProjectId = ProjectId,
-                OrganizationId = OrganizationId,
+                UserToken = Globals.UserToken,
+                UserId = Globals.UserId,
+                ProjectId = Globals.ProjectId,
+                OrganizationId = Globals.OrganizationID,
                 Version = Globals.Version,
                 BacktestId = algorithmId,
                 Language = Language,

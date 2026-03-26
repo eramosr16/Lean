@@ -76,9 +76,11 @@ namespace QuantConnect.Tests.API
                 new Symbol(SecurityIdentifier.GenerateForex(ticker, market), ticker),
                 date, resolution, tickType);
             var dataLink = ApiClient.ReadDataLink(path, TestOrganization);
+            var stringRepresentation = dataLink.ToString();
+            Assert.IsTrue(ApiTestBase.IsValidJson(stringRepresentation));
 
             Assert.IsTrue(dataLink.Success);
-            Assert.IsFalse(dataLink.Url.IsNullOrEmpty());
+            Assert.IsFalse(dataLink.Link.IsNullOrEmpty());
         }
 
         /// <summary>
@@ -86,13 +88,14 @@ namespace QuantConnect.Tests.API
         /// </summary>
         /// <param name="filePath"></param>
         [TestCase("forex/oanda/daily/eurusd.zip")]
-        [TestCase("crypto/gdax/daily/btcusd_quote.zip")]
-        [TestCase("\\index\\usa\\minute\\spx")]
+        [TestCase("crypto/coinbase/daily/btcusd_quote.zip")]
         public void GetPrices(string filePath)
         {
             if (_pricesCache == null)
             {
                 _pricesCache = ApiClient.ReadDataPrices(TestOrganization);
+                var stringRepresentation = _pricesCache.ToString();
+                Assert.IsTrue(ApiTestBase.IsValidJson(stringRepresentation));
             }
 
             // Make sure we actually have these prices for the test to work
@@ -100,7 +103,7 @@ namespace QuantConnect.Tests.API
 
             // Get the price
             int price = _pricesCache.GetPrice(filePath);
-            Assert.IsTrue(price != 0);
+            Assert.AreNotEqual(price, -1);
         }
 
         /// <summary>
@@ -130,7 +133,7 @@ namespace QuantConnect.Tests.API
         /// <param name="directory"></param>
         [TestCase("alternative/sec/aapl/")]
         [TestCase("cfd/oanda/daily/")]
-        [TestCase("crypto/gdax/minute/btcusd/")]
+        [TestCase("crypto/coinbase/minute/btcusd/")]
         [TestCase("equity/usa/shortable/")]
         [TestCase("forex/oanda/minute/eurusd/")]
         [TestCase("forex\\oanda\\minute\\eurusd\\")] //Windows path case
@@ -142,6 +145,8 @@ namespace QuantConnect.Tests.API
         public void GetDataListings(string directory)
         {
             var dataList = ApiClient.ReadDataDirectory(directory);
+            var stringRepresentation = dataList.ToString();
+            Assert.IsTrue(ApiTestBase.IsValidJson(stringRepresentation));
             Assert.IsTrue(dataList.Success);
             Assert.IsTrue(dataList.AvailableData.Count > 0);
         }

@@ -67,7 +67,7 @@ namespace QuantConnect.Algorithm.CSharp
             var expected = _selection.Dequeue();
             if (expected != Time && !LiveMode)
             {
-                throw new Exception($"Unexpected selection time: {Time}. Expected {expected}");
+                throw new RegressionTestException($"Unexpected selection time: {Time}. Expected {expected}");
             }
 
             // sort descending by daily dollar volume
@@ -83,10 +83,10 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        /// <param name="slice">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
-            Debug($"OnData({UtcTime:o}): {IsWarmingUp}. {string.Join(", ", data.Values.OrderBy(x => x.Symbol))}");
+            Debug($"OnData({UtcTime:o}): {IsWarmingUp}. {string.Join(", ", slice.Values.OrderBy(x => x.Symbol))}");
 
             // if we have no changes, do nothing
             if (_changes == SecurityChanges.None || IsWarmingUp)
@@ -119,9 +119,9 @@ namespace QuantConnect.Algorithm.CSharp
             Debug($"OnSecuritiesChanged({UtcTime:o}):: {changes}");
         }
 
-        public override void OnOrderEvent(OrderEvent fill)
+        public override void OnOrderEvent(OrderEvent orderEvent)
         {
-            Debug($"OnOrderEvent({UtcTime:o}):: {fill}");
+            Debug($"OnOrderEvent({UtcTime:o}):: {orderEvent}");
         }
 
         /// <summary>
@@ -132,12 +132,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 78071;
+        public virtual long DataPoints => 78067;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -145,35 +145,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "8"},
-            {"Average Win", "1.51%"},
-            {"Average Loss", "-0.26%"},
-            {"Compounding Annual Return", "15.928%"},
-            {"Drawdown", "0.700%"},
-            {"Expectancy", "1.231"},
-            {"Net Profit", "0.528%"},
-            {"Sharpe Ratio", "3.097"},
-            {"Sortino Ratio", "5.756"},
-            {"Probabilistic Sharpe Ratio", "67.783%"},
+            {"Total Orders", "8"},
+            {"Average Win", "0.64%"},
+            {"Average Loss", "-0.13%"},
+            {"Compounding Annual Return", "11.057%"},
+            {"Drawdown", "0.900%"},
+            {"Expectancy", "0.938"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100374.24"},
+            {"Net Profit", "0.374%"},
+            {"Sharpe Ratio", "1.048"},
+            {"Sortino Ratio", "1.627"},
+            {"Probabilistic Sharpe Ratio", "50.929%"},
             {"Loss Rate", "67%"},
             {"Win Rate", "33%"},
-            {"Profit-Loss Ratio", "5.69"},
-            {"Alpha", "0.248"},
-            {"Beta", "0.31"},
+            {"Profit-Loss Ratio", "4.81"},
+            {"Alpha", "0.088"},
+            {"Beta", "0.152"},
             {"Annual Standard Deviation", "0.073"},
             {"Annual Variance", "0.005"},
-            {"Information Ratio", "3.163"},
-            {"Tracking Error", "0.094"},
-            {"Treynor Ratio", "0.726"},
-            {"Total Fees", "$47.52"},
-            {"Estimated Strategy Capacity", "$150000000.00"},
-            {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
-            {"Portfolio Turnover", "20.51%"},
-            {"OrderListHash", "c5e580e93f65e6d5d2d03ecddac53e23"}
+            {"Information Ratio", "1.369"},
+            {"Tracking Error", "0.109"},
+            {"Treynor Ratio", "0.504"},
+            {"Total Fees", "$43.94"},
+            {"Estimated Strategy Capacity", "$620000000.00"},
+            {"Lowest Capacity Asset", "FB V6OIPNZEM8V9"},
+            {"Portfolio Turnover", "15.44%"},
+            {"Drawdown Recovery", "5"},
+            {"OrderListHash", "e401e24ad8c273d99611d79d59e804d7"}
         };
     }
 }

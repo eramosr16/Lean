@@ -60,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (dividend.ReferencePrice != 32.6m || dividend.Distribution != 3.82m)
                 {
-                    throw new Exception($"{Time} - Invalid dividend {dividend}");
+                    throw new RegressionTestException($"{Time} - Invalid dividend {dividend}");
                 }
             }
             if (!Portfolio.Invested)
@@ -87,7 +87,7 @@ namespace QuantConnect.Algorithm.CSharp
                             // checks
                             if (contract.AskPrice != 1.1m)
                             {
-                                throw new Exception("Regression test failed: current ask price was not loaded from NWSA backtest file and is not $1.1");
+                                throw new RegressionTestException("Regression test failed: current ask price was not loaded from NWSA backtest file and is not $1.1");
                             }
                         }
                     }
@@ -111,7 +111,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                         if (contract.BidPrice != 0.05m)
                         {
-                            throw new Exception("Regression test failed: current bid price was not loaded from FOXA file and is not $0.05");
+                            throw new RegressionTestException("Regression test failed: current bid price was not loaded from FOXA file and is not $0.05");
                         }
                     }
                 }
@@ -136,12 +136,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 265988;
+        public long DataPoints => 19290;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -149,16 +149,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
+            {"Total Orders", "4"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.02%"},
             {"Compounding Annual Return", "-0.492%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999937"},
             {"Net Profit", "-0.006%"},
             {"Sharpe Ratio", "-9.182"},
             {"Sortino Ratio", "0"},
@@ -174,10 +181,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.001"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$4.00"},
-            {"Estimated Strategy Capacity", "$620000.00"},
-            {"Lowest Capacity Asset", "NWSA VJ5IKAXU7WBQ|NWSA T3MO1488O0H1"},
+            {"Estimated Strategy Capacity", "$8600000.00"},
+            {"Lowest Capacity Asset", "NWSA VJ5IKAXUC6NA|NWSA T3MO1488O0H1"},
             {"Portfolio Turnover", "0.13%"},
-            {"OrderListHash", "44a47bffd88b3231bd4b9f74f597842a"}
+            {"Drawdown Recovery", "2"},
+            {"OrderListHash", "9e6589151844ae971e04a44a72fb80cd"}
         };
     }
 }

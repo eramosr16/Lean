@@ -30,13 +30,13 @@ namespace QuantConnect.Data
         /// <summary>
         /// Counter
         /// </summary>
-        protected ConcurrentDictionary<Channel, int> SubscribersByChannel = new ConcurrentDictionary<Channel, int>();
+        protected ConcurrentDictionary<Channel, int> SubscribersByChannel { get; init; } = new ConcurrentDictionary<Channel, int>();
 
         /// <summary>
         /// Increment number of subscribers for current <see cref="TickType"/>
         /// </summary>
         /// <param name="dataConfig">defines the subscription configuration data.</param>        
-        public void Subscribe(SubscriptionDataConfig dataConfig)
+        public virtual void Subscribe(SubscriptionDataConfig dataConfig)
         {
             try
             {
@@ -98,6 +98,21 @@ namespace QuantConnect.Data
         public IEnumerable<Symbol> GetSubscribedSymbols()
         {
             return SubscribersByChannel.Keys
+                .Select(c => c.Symbol)
+                .Distinct();
+        }
+
+        /// <summary>
+        /// Retrieves the list of unique <see cref="Symbol"/> instances that are currently subscribed for a specific <see cref="TickType"/>.
+        /// </summary>
+        /// <param name="tickType">The type of tick data to filter subscriptions by.</param>
+        /// <returns>A collection of unique <see cref="Symbol"/> objects that match the specified <paramref name="tickType"/>.</returns>
+        public IEnumerable<Symbol> GetSubscribedSymbols(TickType tickType)
+        {
+            var channelName = ChannelNameFromTickType(tickType);
+#pragma warning disable CA1309
+            return SubscribersByChannel.Keys.Where(x => x.Name.Equals(channelName, StringComparison.InvariantCultureIgnoreCase))
+#pragma warning restore CA1309
                 .Select(c => c.Symbol)
                 .Distinct();
         }

@@ -33,12 +33,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp };
+        public override List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 2143;
+        public override long DataPoints => 1269;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -46,16 +46,23 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "72"},
+            {"Total Orders", "81"},
             {"Average Win", "0.00%"},
             {"Average Loss", "0.00%"},
             {"Compounding Annual Return", "-0.006%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "-0.486"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999995"},
             {"Net Profit", "0.000%"},
             {"Sharpe Ratio", "-101.77"},
             {"Sortino Ratio", "-9053542.758"},
@@ -72,9 +79,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "116.921"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
-            {"Lowest Capacity Asset", "SPX XL80P59H5E6M|SPX 31"},
+            {"Lowest Capacity Asset", "SPX XL80P59H9OI6|SPX 31"},
             {"Portfolio Turnover", "0.00%"},
-            {"OrderListHash", "832944f7bfd8801bb37e5683a7510705"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "214026660a13ecaecc7074fa97f86ea1"}
         };
     }
 }

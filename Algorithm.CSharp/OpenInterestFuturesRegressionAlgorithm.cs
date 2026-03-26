@@ -64,7 +64,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var matched = slice.Keys.Where(s => !s.IsCanonical() && !ExpectedExpiryDates.Contains(s.ID.Date)).ToList();
                 if (matched.Count != 0)
                 {
-                    throw new Exception($"{matched.Count}/{slice.Keys.Count} were unexpected expiry date(s): " + string.Join(", ", matched.Select(x => x.ID.Date)));
+                    throw new RegressionTestException($"{matched.Count}/{slice.Keys.Count} were unexpected expiry date(s): " + string.Join(", ", matched.Select(x => x.ID.Date)));
                 }
 
                 foreach (var symbol in slice.Keys)
@@ -87,29 +87,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         ///     This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = {Language.CSharp, Language.Python};
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 2794075;
+        public long DataPoints => 526055;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 252;
+        public int AlgorithmHistoryDataPoints => 232;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
+            {"Total Orders", "4"},
             {"Average Win", "0%"},
             {"Average Loss", "0.00%"},
             {"Compounding Annual Return", "-0.020%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "10000000"},
+            {"End Equity", "9999980.12"},
             {"Net Profit", "0.000%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -126,9 +133,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$9.88"},
             {"Estimated Strategy Capacity", "$0"},
-            {"Lowest Capacity Asset", "GC VMRHKN2NLWV1"},
+            {"Lowest Capacity Asset", "GC VOFJUCDY9XNH"},
             {"Portfolio Turnover", "1.32%"},
-            {"OrderListHash", "f6dbbfadf7d1f7ee55f9666526497edd"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "4a7e699024771890b97c4ab74365e4b7"}
         };
     }
 }

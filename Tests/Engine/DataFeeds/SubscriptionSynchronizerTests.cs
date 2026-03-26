@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -59,11 +59,12 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 symbolPropertiesDataBase,
                 algorithm,
                 RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCacheProvider(algorithm.Portfolio));
+                new SecurityCacheProvider(algorithm.Portfolio),
+                algorithm: algorithm);
             algorithm.Securities.SetSecurityService(securityService);
             var dataPermissionManager = new DataPermissionManager();
             var dataManager = new DataManager(feed,
-                new UniverseSelection(algorithm, securityService, dataPermissionManager, new DefaultDataProvider()),
+                new UniverseSelection(algorithm, securityService, dataPermissionManager, TestGlobals.DataProvider),
                 algorithm,
                 algorithm.TimeKeeper,
                 marketHoursDatabase,
@@ -86,7 +87,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var startTimeUtc = algorithm.StartDate.ConvertToUtc(TimeZones.NewYork);
             var subscriptionBasedTimeProvider = new SubscriptionFrontierTimeProvider(startTimeUtc, dataManager);
             var timeSliceFactory = new TimeSliceFactory(algorithm.TimeZone);
-            var synchronizer = new SubscriptionSynchronizer(dataManager.UniverseSelection);
+            var synchronizer = new SubscriptionSynchronizer(dataManager.UniverseSelection, new());
             synchronizer.SetTimeProvider(subscriptionBasedTimeProvider);
             synchronizer.SetTimeSliceFactory(timeSliceFactory);
             var totalDataPoints = 0;
@@ -94,7 +95,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             foreach (var kvp in algorithm.Securities)
             {
                 int dataPointCount;
-                subscriptions.TryAdd(CreateSubscription(algorithm, kvp.Value, startTimeUtc, endTimeUtc, out dataPointCount));
+                # pragma warning disable CA2000
+                var subscription = CreateSubscription(algorithm, kvp.Value, startTimeUtc, endTimeUtc, out dataPointCount);
+                # pragma warning restore CA2000
+                subscriptions.TryAdd(subscription);
                 totalDataPoints += dataPointCount;
             }
 
@@ -137,7 +141,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 Time = time,
                 EndTime = time + config.Increment
             })
-            .Select(d => SubscriptionData.Create(config, security.Exchange.Hours, offsetProvider, d, config.DataNormalizationMode))
+            .Select(d => SubscriptionData.Create(false, config, security.Exchange.Hours, offsetProvider, d, config.DataNormalizationMode))
             .ToList();
 
             dataPointCount = data.Count;

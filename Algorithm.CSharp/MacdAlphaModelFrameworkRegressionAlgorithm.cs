@@ -35,42 +35,50 @@ namespace QuantConnect.Algorithm.CSharp
             const int expected = 4;
             if (Insights.TotalCount != expected)
             {
-                throw new Exception($"The total number of insights should be {expected}. Actual: {Insights.TotalCount}");
+                throw new RegressionTestException($"The total number of insights should be {expected}. Actual: {Insights.TotalCount}");
             }
         }
 
         public override int AlgorithmHistoryDataPoints => 136;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new()
         {
-            {"Total Trades", "30"},
-            {"Average Win", "0.38%"},
-            {"Average Loss", "-0.53%"},
-            {"Compounding Annual Return", "37.545%"},
+            {"Total Orders", "29"},
+            {"Average Win", "0.36%"},
+            {"Average Loss", "-0.49%"},
+            {"Compounding Annual Return", "30.410%"},
             {"Drawdown", "1.800%"},
-            {"Expectancy", "0.350"},
-            {"Net Profit", "2.655%"},
-            {"Sharpe Ratio", "3.915"},
-            {"Sortino Ratio", "6.702"},
-            {"Probabilistic Sharpe Ratio", "81.718%"},
-            {"Loss Rate", "21%"},
-            {"Win Rate", "79%"},
-            {"Profit-Loss Ratio", "0.72"},
-            {"Alpha", "0.334"},
-            {"Beta", "-0.438"},
-            {"Annual Standard Deviation", "0.064"},
+            {"Expectancy", "0.335"},
+            {"Start Equity", "100000"},
+            {"End Equity", "102206.31"},
+            {"Net Profit", "2.206%"},
+            {"Sharpe Ratio", "3.159"},
+            {"Sortino Ratio", "5.45"},
+            {"Probabilistic Sharpe Ratio", "75.413%"},
+            {"Loss Rate", "23%"},
+            {"Win Rate", "77%"},
+            {"Profit-Loss Ratio", "0.73"},
+            {"Alpha", "0.275"},
+            {"Beta", "-0.371"},
+            {"Annual Standard Deviation", "0.065"},
             {"Annual Variance", "0.004"},
-            {"Information Ratio", "0.649"},
-            {"Tracking Error", "0.092"},
-            {"Treynor Ratio", "-0.573"},
-            {"Total Fees", "$66.72"},
-            {"Estimated Strategy Capacity", "$7400000.00"},
+            {"Information Ratio", "0.14"},
+            {"Tracking Error", "0.091"},
+            {"Treynor Ratio", "-0.55"},
+            {"Total Fees", "$65.88"},
+            {"Estimated Strategy Capacity", "$7500000.00"},
             {"Lowest Capacity Asset", "AIG R735QTJ8XC9X"},
-            {"Portfolio Turnover", "16.13%"},
-            {"OrderListHash", "63673e299a6f16251111eea6147479ee"}
+            {"Portfolio Turnover", "16.15%"},
+            {"Drawdown Recovery", "9"},
+            {"OrderListHash", "028da9558692fed9991723beeb8eeb23"}
         };
     }
 }

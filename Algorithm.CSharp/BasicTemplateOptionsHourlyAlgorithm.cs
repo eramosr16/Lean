@@ -35,7 +35,7 @@ namespace QuantConnect.Algorithm.CSharp
     public class BasicTemplateOptionsHourlyAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
         private const string UnderlyingTicker = "AAPL";
-        public Symbol OptionSymbol;
+        private Symbol _optionSymbol;
 
         public override void Initialize()
         {
@@ -45,10 +45,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             var equity = AddEquity(UnderlyingTicker, Resolution.Hour);
             var option = AddOption(UnderlyingTicker, Resolution.Hour);
-            OptionSymbol = option.Symbol;
+            _optionSymbol = option.Symbol;
 
             // set our strike/expiry filter for this option chain
-            option.SetFilter(u => u.Strikes(-2, +2)
+            option.SetFilter(u => u.StandardsOnly().Strikes(-2, +2)
                                    // Expiration method accepts TimeSpan objects or integer for days.
                                    // The following statements yield the same filtering criteria
                                    .Expiration(0, 180));
@@ -64,10 +64,10 @@ namespace QuantConnect.Algorithm.CSharp
         /// <param name="slice">The current slice of data keyed by symbol string</param>
         public override void OnData(Slice slice)
         {
-            if (!Portfolio.Invested && IsMarketOpen(OptionSymbol))
+            if (!Portfolio.Invested && IsMarketOpen(_optionSymbol))
             {
                 OptionChain chain;
-                if (slice.OptionChains.TryGetValue(OptionSymbol, out chain))
+                if (slice.OptionChains.TryGetValue(_optionSymbol, out chain))
                 {
                     // we find at the money (ATM) put contract with farthest expiration
                     var atmContract = chain
@@ -104,12 +104,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 32351;
+        public long DataPoints => 9504;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -117,16 +117,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
+            {"Total Orders", "5"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.07%"},
-            {"Compounding Annual Return", "-12.496%"},
+            {"Compounding Annual Return", "-11.517%"},
             {"Drawdown", "0.200%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99866"},
             {"Net Profit", "-0.134%"},
             {"Sharpe Ratio", "-9.78"},
             {"Sortino Ratio", "0"},
@@ -143,9 +150,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "1.434"},
             {"Total Fees", "$4.00"},
             {"Estimated Strategy Capacity", "$1000.00"},
-            {"Lowest Capacity Asset", "AAPL 2ZTXYMUAHCIAU|AAPL R735QTJ8XC9X"},
+            {"Lowest Capacity Asset", "AAPL 2ZTXYMUAHGSME|AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "2.28%"},
-            {"OrderListHash", "3f6cce0fcc7b988ba378a357ede1af93"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "70bbc60c969f18e943e8e00cf0f7a0ea"}
         };
     }
 }

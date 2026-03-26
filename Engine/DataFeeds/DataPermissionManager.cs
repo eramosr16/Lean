@@ -20,6 +20,7 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
 using QuantConnect.Interfaces;
+using System.Diagnostics.CodeAnalysis;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -32,6 +33,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// The data channel provider instance
         /// </summary>
         public IDataChannelProvider DataChannelProvider { get; private set; }
+
+        [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(DataPermissionManager))]
+        public DataPermissionManager()
+        {
+        }
 
         /// <summary>
         /// Initialize the data permission manager
@@ -51,10 +57,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// Will assert the requested configuration is valid for the current job
         /// </summary>
-        /// <param name="subscriptionDataConfig">The data subscription configuration to assert</param>
+        /// <param name="subscriptionRequest">The data subscription configuration to assert</param>
         /// <param name="startTimeLocal">The start time of this request</param>
         /// <param name="endTimeLocal">The end time of this request</param>
-        public virtual void AssertConfiguration(SubscriptionDataConfig subscriptionDataConfig, DateTime startTimeLocal, DateTime endTimeLocal)
+        public virtual void AssertConfiguration(SubscriptionDataConfig subscriptionRequest, DateTime startTimeLocal, DateTime endTimeLocal)
         {
         }
     }

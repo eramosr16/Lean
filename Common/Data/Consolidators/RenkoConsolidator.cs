@@ -36,43 +36,43 @@ namespace QuantConnect.Data.Consolidators
         /// Time of consolidated close.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected DateTime CloseOn;
+        protected DateTime CloseOn { get; set; }
 
         /// <summary>
         /// Value of consolidated close.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected decimal CloseRate;
+        protected decimal CloseRate { get; set; }
 
         /// <summary>
         /// Value of consolidated high.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected decimal HighRate;
+        protected decimal HighRate { get; set; }
 
         /// <summary>
         /// Value of consolidated low.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected decimal LowRate;
+        protected decimal LowRate { get; set; }
 
         /// <summary>
         /// Time of consolidated open.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected DateTime OpenOn;
+        protected DateTime OpenOn { get; set; }
 
         /// <summary>
         /// Value of consolidate open.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected decimal OpenRate;
+        protected decimal OpenRate { get; set; }
 
         /// <summary>
         /// Size of the consolidated bar.
         /// </summary>
         /// <remarks>Protected for testing</remarks>
-        protected decimal BarSize;
+        protected decimal BarSize { get; set; }
 
         /// <summary>
         /// Gets the kind of the bar
@@ -239,6 +239,23 @@ namespace QuantConnect.Data.Consolidators
         {
             DataConsolidated = null;
             _dataConsolidatedHandler = null;
+        }
+
+        /// <summary>
+        /// Resets the consolidator
+        /// </summary>
+        public void Reset()
+        {
+            _firstTick = true;
+            _lastWicko = null;
+            _currentBar = null;
+            _consolidated = null;
+            CloseOn = default;
+            CloseRate = default;
+            HighRate = default;
+            LowRate = default;
+            OpenOn = default;
+            OpenRate = default;
         }
 
         /// <summary>

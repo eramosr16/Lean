@@ -40,7 +40,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>A new subscription instance ready to consume</returns>
         public static Subscription Create(
             SubscriptionRequest request,
-            IEnumerator<BaseData> enumerator)
+            IEnumerator<BaseData> enumerator,
+            bool dailyStrictEndTimeEnabled)
         {
             if (enumerator == null)
             {
@@ -53,7 +54,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 exchangeHours,
                 timeZoneOffsetProvider,
                 enumerator,
-                request.IsUniverseSubscription
+                request.IsUniverseSubscription,
+                dailyStrictEndTimeEnabled
             );
             return new Subscription(request, dataEnumerator, timeZoneOffsetProvider);
         }
@@ -71,7 +73,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             SubscriptionRequest request,
             IEnumerator<BaseData> enumerator,
             IFactorFileProvider factorFileProvider,
-            bool enablePriceScale)
+            bool enablePriceScale,
+            bool dailyStrictEndTimeEnabled)
         {
             if(enumerator == null)
             {
@@ -79,7 +82,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
             var exchangeHours = request.Security.Exchange.Hours;
             var enqueueable = new EnqueueableEnumerator<SubscriptionData>(true);
-            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
+            var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.ExchangeHours.TimeZone, request.StartTimeUtc, request.EndTimeUtc);
             var subscription = new Subscription(request, enqueueable, timeZoneOffsetProvider);
             var config = subscription.Configuration;
             enablePriceScale = enablePriceScale && config.PricesShouldBeScaled();
@@ -129,7 +132,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             request.Configuration.PriceScaleFactor = factorFile.GetPriceScale(lastTradableDate, requestMode, config.ContractDepthOffset, config.DataMappingMode);
                         }
 
-                        SubscriptionData subscriptionData = SubscriptionData.Create(
+                        SubscriptionData subscriptionData = SubscriptionData.Create(dailyStrictEndTimeEnabled,
                             config,
                             exchangeHours,
                             subscription.OffsetProvider,

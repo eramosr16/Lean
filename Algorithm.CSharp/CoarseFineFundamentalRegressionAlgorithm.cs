@@ -87,9 +87,24 @@ namespace QuantConnect.Algorithm.CSharp
             return topFine.Select(x => x.Symbol);
         }
 
-        //Data Event Handler: New data arrives here. "TradeBars" type is a dictionary of strings so you can access it by symbol.
-        public void OnData(TradeBars data)
+        /// <summary>
+        /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
+        /// </summary>
+        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
+            // verify we don't receive data for inactive securities
+            var inactiveSymbols = slice.Keys
+                .Where(sym => !UniverseManager.ActiveSecurities.ContainsKey(sym))
+                // on daily data we'll get the last data point and the delisting at the same time
+                .Where(sym => !slice.Delistings.ContainsKey(sym) || slice.Delistings[sym].Type != DelistingType.Delisted)
+                .ToList();
+            if (inactiveSymbols.Any())
+            {
+                var symbols = string.Join(", ", inactiveSymbols);
+                throw new RegressionTestException($"Received data for non-active security: {symbols}.");
+            }
+
             // if we have no changes, do nothing
             if (_changes == SecurityChanges.None) return;
 
@@ -116,21 +131,6 @@ namespace QuantConnect.Algorithm.CSharp
             _changes = SecurityChanges.None;
         }
 
-        public override void OnData(Slice data)
-        {
-            // verify we don't receive data for inactive securities
-            var inactiveSymbols = data.Keys
-                .Where(sym => !UniverseManager.ActiveSecurities.ContainsKey(sym))
-                // on daily data we'll get the last data point and the delisting at the same time
-                .Where(sym => !data.Delistings.ContainsKey(sym) || data.Delistings[sym].Type != DelistingType.Delisted)
-                .ToList();
-            if (inactiveSymbols.Any())
-            {
-                var symbols = string.Join(", ", inactiveSymbols);
-                throw new Exception($"Received data for non-active security: {symbols}.");
-            }
-        }
-
         // this event fires whenever we have changes to our universe
         public override void OnSecuritiesChanged(SecurityChanges changes)
         {
@@ -154,7 +154,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -167,35 +167,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
-            {"Average Win", "1.16%"},
+            {"Total Orders", "2"},
+            {"Average Win", "1.39%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "32.505%"},
+            {"Compounding Annual Return", "40.025%"},
             {"Drawdown", "1.400%"},
             {"Expectancy", "0"},
-            {"Net Profit", "1.163%"},
-            {"Sharpe Ratio", "2.666"},
-            {"Sortino Ratio", "19.179"},
-            {"Probabilistic Sharpe Ratio", "64.748%"},
+            {"Start Equity", "50000"},
+            {"End Equity", "50696.56"},
+            {"Net Profit", "1.393%"},
+            {"Sharpe Ratio", "3.192"},
+            {"Sortino Ratio", "4.952"},
+            {"Probabilistic Sharpe Ratio", "68.664%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.272"},
-            {"Beta", "0.436"},
-            {"Annual Standard Deviation", "0.086"},
-            {"Annual Variance", "0.007"},
-            {"Information Ratio", "3.572"},
-            {"Tracking Error", "0.092"},
-            {"Treynor Ratio", "0.523"},
+            {"Alpha", "0.328"},
+            {"Beta", "0.474"},
+            {"Annual Standard Deviation", "0.088"},
+            {"Annual Variance", "0.008"},
+            {"Information Ratio", "4.219"},
+            {"Tracking Error", "0.09"},
+            {"Treynor Ratio", "0.59"},
             {"Total Fees", "$2.00"},
-            {"Estimated Strategy Capacity", "$49000000.00"},
+            {"Estimated Strategy Capacity", "$81000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Portfolio Turnover", "6.64%"},
-            {"OrderListHash", "547783661a29f4cc71800be8f5ed4fc2"}
+            {"Portfolio Turnover", "6.65%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "4eaacdd341a5be0d04cb32647d931471"}
         };
     }
 }

@@ -17,35 +17,35 @@ from AlgorithmImports import *
 ### Example algorithm of how to use RangeConsolidator
 ### </summary>
 class RangeConsolidatorAlgorithm(QCAlgorithm):
-    def GetResolution(self):
-        return Resolution.Daily
+    def get_resolution(self) -> Resolution:
+        return Resolution.DAILY
 
-    def GetRange(self):
-        return 100;
+    def get_range(self) -> int:
+        return 100
 
-    def Initialize(self):        
-        self.SetStartAndEndDates();
-        self.AddEquity("SPY", self.GetResolution())
-        rangeConsolidator = self.CreateRangeConsolidator()
-        rangeConsolidator.DataConsolidated += self.OnDataConsolidated
-        self.firstDataConsolidated = None;
+    def initialize(self) -> None:
+        self.set_start_and_end_dates()
+        self.add_equity("SPY", self.get_resolution())
+        range_consolidator = self.create_range_consolidator()
+        range_consolidator.data_consolidated += self.on_data_consolidated
+        self._first_data_consolidated = None
 
-        self.SubscriptionManager.AddConsolidator("SPY", rangeConsolidator)
+        self.subscription_manager.add_consolidator("SPY", range_consolidator)
 
-    def SetStartAndEndDates(self):
-        self.SetStartDate(2013, 10, 7)
-        self.SetEndDate(2013, 10, 11)
+    def set_start_and_end_dates(self) -> None:
+        self.set_start_date(2013, 10, 7)
+        self.set_end_date(2013, 10, 11)
 
-    def OnEndOfAlgorithm(self):
-        if self.firstDataConsolidated == None:
-            raise Exception("The consolidator should have consolidated at least one RangeBar, but it did not consolidated any one")
+    def on_end_of_algorithm(self) -> None:
+        if not self._first_data_consolidated:
+            raise AssertionError("The consolidator should have consolidated at least one RangeBar, but it did not consolidated any one")
 
-    def CreateRangeConsolidator(self):
-        return RangeConsolidator(self.GetRange())
+    def create_range_consolidator(self) -> RangeConsolidator:
+        return RangeConsolidator(self.get_range())
 
-    def OnDataConsolidated(self, sender, rangeBar):
-        if (self.firstDataConsolidated is None):
-            self.firstDataConsolidated = rangeBar
+    def on_data_consolidated(self, sender: object, range_bar: RangeBar) -> None:
+        if not self._first_data_consolidated:
+            self._first_data_consolidated = range_bar
 
-        if round(rangeBar.High - rangeBar.Low, 2) != self.GetRange() * 0.01: # The minimum price change for SPY is 0.01, therefore the range size of each bar equals Range * 0.01
-            raise Exception(f"The difference between the High and Low for all RangeBar's should be {self.GetRange() * 0.01}, but for this RangeBar was {round(rangeBar.Low - rangeBar.High, 2)}")
+        if round(range_bar.high - range_bar.low, 2) != self.get_range() * 0.01: # The minimum price change for SPY is 0.01, therefore the range size of each bar equals Range * 0.01
+            raise AssertionError(f"The difference between the High and Low for all RangeBar's should be {self.get_range() * 0.01}, but for this RangeBar was {round(range_bar.low - range_bar.high, 2)}")

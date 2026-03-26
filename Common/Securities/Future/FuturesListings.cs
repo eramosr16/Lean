@@ -31,8 +31,17 @@ namespace QuantConnect.Securities.Future
         private static readonly Symbol _zb = Symbol.Create("ZB", SecurityType.Future, Market.CBOT);
         private static readonly Symbol _zc = Symbol.Create("ZC", SecurityType.Future, Market.CBOT);
         private static readonly Symbol _zs = Symbol.Create("ZS", SecurityType.Future, Market.CBOT);
+        private static readonly Symbol _zm = Symbol.Create("ZM", SecurityType.Future, Market.CBOT);
         private static readonly Symbol _zt = Symbol.Create("ZT", SecurityType.Future, Market.CBOT);
+        private static readonly Symbol _zl = Symbol.Create("ZL", SecurityType.Future, Market.CBOT);
         private static readonly Symbol _zw = Symbol.Create("ZW", SecurityType.Future, Market.CBOT);
+        private static readonly Symbol _tn = Symbol.Create("TN", SecurityType.Future, Market.CBOT);
+        private static readonly Symbol _aud = Symbol.Create("6A", SecurityType.Future, Market.CME);
+        private static readonly Symbol _gbp = Symbol.Create("6B", SecurityType.Future, Market.CME);
+        private static readonly Symbol _mxn = Symbol.Create("6M", SecurityType.Future, Market.CME);
+        private static readonly Symbol _jpy = Symbol.Create("6J", SecurityType.Future, Market.CME);
+        private static readonly Symbol _eur = Symbol.Create("6E", SecurityType.Future, Market.CME);
+        private static readonly Symbol _cad = Symbol.Create("6C", SecurityType.Future, Market.CME);
 
         private static Dictionary<string, Func<DateTime, List<Symbol>>> _futuresListingRules = new Dictionary<string, Func<DateTime, List<Symbol>>>
         {
@@ -43,18 +52,38 @@ namespace QuantConnect.Securities.Future
                 12,
                 new FuturesListingCycles(new[] { 3, 5, 9 }, 9),
                 new FuturesListingCycles(new[] { 7, 12 }, 8)) },
+            { "ZN", t => QuarterlyContracts(_zt, t, 3) },
+            { "TN", t => QuarterlyContracts(_tn, t, 3) },
             { "ZS", t => MonthlyContractListings(
                 _zs,
                 t,
                 11,
                 new FuturesListingCycles(new[] { 1, 3, 5, 8, 9 }, 15),
                 new FuturesListingCycles(new[] { 7, 11 }, 8)) },
+            { "ZM", t => MonthlyContractListings(
+                _zm,
+                t,
+                12,
+                new FuturesListingCycles(new[] { 1, 3, 5, 8, 9 }, 15),
+                new FuturesListingCycles(new[] { 7, 10, 12 }, 12)) },
+            { "ZL", t => MonthlyContractListings(
+                _zl,
+                t,
+                12,
+                new FuturesListingCycles(new[] { 1, 3, 5, 8, 9 }, 15),
+                new FuturesListingCycles(new[] { 7, 10, 12 }, 12)) },
             { "ZT", t => QuarterlyContracts(_zt, t, 3) },
             { "ZW", t => MonthlyContractListings(
                 _zw,
                 t,
                 7,
-                new FuturesListingCycles(new[] { 3, 5, 7, 9, 12 }, 15)) }
+                new FuturesListingCycles(new[] { 3, 5, 7, 9, 12 }, 15)) },
+            { "6A", t => QuarterlyContracts(_aud, t, 8) },
+            { "6B", t => QuarterlyContracts(_gbp, t, 8) },
+            { "6M", t => QuarterlyContracts(_mxn, t, 8) },
+            { "6J", t => QuarterlyContracts(_jpy, t, 8) },
+            { "6E", t => QuarterlyContracts(_eur, t, 8) },
+            { "6C", t => QuarterlyContracts(_cad, t, 8) },
         };
 
         /// <summary>
@@ -92,7 +121,7 @@ namespace QuantConnect.Securities.Future
             // Skip any contracts that have already expired.
             while (futureExpiry < time)
             {
-                futureExpiry = FuturesExpiryFunctions.FuturesExpiryFunction(canonicalFuture)(contractMonth);
+                futureExpiry = expiryFunc(contractMonth);
                 contractMonth = contractMonth.AddMonths(1);
             }
 

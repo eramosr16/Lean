@@ -31,6 +31,7 @@ using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Util;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Tests.Algorithm
 {
@@ -59,7 +60,8 @@ namespace QuantConnect.Tests.Algorithm
         [TestCase(Resolution.Daily, SecurityType.Crypto)]
         public void WarmupDifferentResolutions(Resolution resolution, SecurityType securityType)
         {
-            _algorithm = TestSetupHandler.TestAlgorithm = new TestWarmupAlgorithm(resolution);
+            var warmupPeriod = resolution != Resolution.Tick ? TimeSpan.FromDays(2) : TimeSpan.FromHours(10);
+            _algorithm = TestSetupHandler.TestAlgorithm = new TestWarmupAlgorithm(resolution, warmupPeriod);
 
             _algorithm.SecurityType = securityType;
             if (securityType == SecurityType.Forex)
@@ -79,7 +81,7 @@ namespace QuantConnect.Tests.Algorithm
             }
 
             AlgorithmRunner.RunLocalBacktest(nameof(TestWarmupAlgorithm),
-                new Dictionary<string, string> { { "Total Trades", "1" } },
+                new Dictionary<string, string> { { PerformanceMetrics.TotalOrders, "1" } },
                 Language.CSharp,
                 AlgorithmStatus.Completed,
                 setupHandler: "TestSetupHandler");
@@ -119,6 +121,7 @@ namespace QuantConnect.Tests.Algorithm
             {
                 HistoryProvider = new SubscriptionDataReaderHistoryProvider()
             };
+            algo.Settings.SeedInitialPrices = false;
 
             algo.SetStartDate(2013, 10, 08);
             algo.AddCfd("DE30EUR", Resolution.Second, Market.Oanda);
@@ -164,7 +167,8 @@ namespace QuantConnect.Tests.Algorithm
                 null,
                 false,
                 new DataPermissionManager(),
-                algo.ObjectStore));
+                algo.ObjectStore,
+                algo.Settings));
             algo.SetStartDate(2013, 10, 08);
             algo.AddEquity("SPY", Resolution.Minute);
 
@@ -178,11 +182,11 @@ namespace QuantConnect.Tests.Algorithm
                 var sma = indicatorDataPoint.ToPython();
                 var atr = indicatorTradeBar.ToPython();
                 var vwapi = indicatorDataBar.ToPython();
-
+                #pragma warning disable CS0618
                 Assert.DoesNotThrow(() => algo.WarmUpIndicator("SPY", sma, Resolution.Minute));
                 Assert.DoesNotThrow(() => algo.WarmUpIndicator("SPY", atr, Resolution.Minute));
                 Assert.DoesNotThrow(() => algo.WarmUpIndicator("SPY", vwapi, Resolution.Minute));
-
+                #pragma warning restore CS0618
                 var smaIsReady = ((dynamic)sma).IsReady;
                 var atrIsReady = ((dynamic)atr).IsReady;
                 var vwapiIsReady = ((dynamic)vwapi).IsReady;
@@ -325,19 +329,19 @@ from AlgorithmImports import *
 from QuantConnect.Tests.Engine.DataFeeds import *
 
 class TestAlgo(AlgorithmStub):
-    def Initialize(self):
-        self.DataFeed.ShouldThrow = False
+    def initialize(self):
+        self.data_feed.should_throw = False
 
-        self.SetStartDate(2013, 10, 1)
-        self.AddEquity(""AAPL"")
-        self.SetWarmUp(60)
+        self.set_start_date(2013, 10, 1)
+        self.add_equity(""AAPL"")
+        self.set_warm_up(60)
 ").GetAttr("TestAlgo").Invoke();
 
-                algo.Initialize();
-                algo.PostInitialize();
+                algo.initialize();
+                algo.post_initialize();
 
                 // the last trading hour of the previous day
-                Assert.AreEqual(new DateTime(2013, 09, 30, 15, 0, 0), (DateTime)algo.Time);
+                Assert.AreEqual(new DateTime(2013, 09, 30, 15, 0, 0), (DateTime)algo.time);
             }
         }
 
@@ -353,27 +357,27 @@ from AlgorithmImports import *
 from QuantConnect.Tests.Engine.DataFeeds import *
 
 class TestAlgo(AlgorithmStub):
-    def __init__(self, passThrough):
-        self.passThrough = passThrough
+    def __init__(self, pass_through):
+        self.pass_through = pass_through
 
-    def Initialize(self):
-        self.DataFeed.ShouldThrow = False
+    def initialize(self):
+        self.data_feed.should_throw = False
 
-        self.SetStartDate(2013, 10, 1)
-        self.AddEquity(""AAPL"")
-        self.SetWarmUp(10)
-        if self.passThrough:
-            self.Settings.WarmUpResolution = Resolution.Daily
+        self.set_start_date(2013, 10, 1)
+        self.add_equity(""AAPL"")
+        self.set_warm_up(10)
+        if self.pass_through:
+            self.settings.warm_up_resolution = Resolution.DAILY
         else:
-            self.Settings.WarmupResolution = Resolution.Daily
+            self.settings.warmup_resolution = Resolution.DAILY
 ").GetAttr("TestAlgo").Invoke(passThrough.ToPython());
 
-                algo.Initialize();
-                algo.PostInitialize();
+                algo.initialize();
+                algo.post_initialize();
 
-                Assert.AreEqual(passThrough, (bool)algo.passThrough);
+                Assert.AreEqual(passThrough, (bool)algo.pass_through);
                 // 10 daily bars including 2 weekends
-                Assert.AreEqual(new DateTime(2013, 09, 17), (DateTime)algo.Time);
+                Assert.AreEqual(new DateTime(2013, 09, 17), (DateTime)algo.time);
             }
         }
 
@@ -391,6 +395,7 @@ class TestAlgo(AlgorithmStub):
         private class TestWarmupAlgorithm : QCAlgorithm
         {
             private readonly Resolution _resolution;
+            private readonly TimeSpan _warmupPeriod;
             private Symbol _symbol;
             public SecurityType SecurityType { get; set; }
 
@@ -400,9 +405,10 @@ class TestAlgo(AlgorithmStub):
 
             public int WarmUpDataCount { get; set; }
 
-            public TestWarmupAlgorithm(Resolution resolution)
+            public TestWarmupAlgorithm(Resolution resolution, TimeSpan warmupPeriod)
             {
                 _resolution = resolution;
+                _warmupPeriod = warmupPeriod;
             }
 
             public override void Initialize()
@@ -423,7 +429,7 @@ class TestAlgo(AlgorithmStub):
                 {
                     _symbol = AddCrypto("BTCUSD", _resolution).Symbol;
                 }
-                SetWarmUp(TimeSpan.FromDays(2));
+                SetWarmUp(_warmupPeriod);
             }
 
             public override void OnData(Slice data)
@@ -437,6 +443,7 @@ class TestAlgo(AlgorithmStub):
                     if (!Portfolio.Invested)
                     {
                         SetHoldings(_symbol, 1);
+                        Quit();
                     }
                 }
             }

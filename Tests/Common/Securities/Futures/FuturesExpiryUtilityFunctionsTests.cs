@@ -25,10 +25,7 @@ namespace QuantConnect.Tests.Common.Securities.Futures
     [TestFixture, Parallelizable(ParallelScope.All)]
     public class FuturesExpiryUtilityFunctionsTests
     {
-        private HashSet<DateTime> _holidays = MarketHoursDatabase.FromDataFolder()
-                        .GetEntry(Market.CME, (string)null, SecurityType.Future)
-                        .ExchangeHours
-                        .Holidays;
+        private HashSet<DateTime> _holidays = FuturesExpiryUtilityFunctions.GetExpirationHolidays(Market.CME, null);
 
         [TestCase("08/05/2017 00:00:01", 4, "12/05/2017 00:00:01")]
         [TestCase("10/05/2017 00:00:01", 5, "17/05/2017 00:00:01")]
@@ -264,22 +261,6 @@ namespace QuantConnect.Tests.Common.Securities.Futures
             Assert.AreEqual(calculatedOutput, false);
         }
 
-        [TestCase("01/05/2019", "01/30/2019", "17:10:00")]
-        [TestCase("01/31/2019", "01/30/2019", "12:00:00")]
-        [TestCase("03/01/2012", "04/02/2012", "17:10:00")]
-        public void DairyReportDates_ShouldNormalizeDateTimeAndReturnCorrectReportDate(string contractMonth, string reportDate, string lastTradeTime)
-        {
-            var actual = FuturesExpiryUtilityFunctions.DairyLastTradeDate(
-                Parse.DateTimeExact(contractMonth, "MM/dd/yyyy"),
-                _holidays,
-                lastTradeTime: Parse.TimeSpan(lastTradeTime));
-
-            var expected = Parse.DateTimeExact(reportDate, "MM/dd/yyyy")
-                .AddDays(-1).Add(Parse.TimeSpan(lastTradeTime));
-
-            Assert.AreEqual(expected, actual);
-        }
-
         [TestCase("17/06/2020 00:00:01", DayOfWeek.Friday, 1, "05/06/2020 00:00:00")]
         [TestCase("30/08/2017 00:00:01", DayOfWeek.Monday, 2, "14/08/2017 00:00:00")]
         public void Nth_WeekDay_ShouldReturnCorrectDate(string contractDate, DayOfWeek dayOfWeek, int n, string expectedOutput)
@@ -320,28 +301,6 @@ namespace QuantConnect.Tests.Common.Securities.Futures
             var expected = Parse.DateTimeExact(expectedOutput, "dd/MM/yyyy HH:mm:ss");
 
             Assert.AreEqual(expected, calculated);
-        }
-
-        //source: https://www.timeanddate.com/holidays/us/good-friday
-        [TestCase(2017, 4, 14)]
-        [TestCase(2018, 3, 30)]
-        [TestCase(2019, 4, 19)]
-        [TestCase(2020, 4, 10)]
-        [TestCase(2021, 4, 2)]
-        [TestCase(2022, 4, 15)]
-        [TestCase(2023, 4, 7)]
-        [TestCase(2024, 3, 29)]
-        [TestCase(2025, 4, 18)]
-        public void GetGoodFriday_ForYear_ShouldReturnGoodFridayDate(int year, int expectedMonth, int expectedDay)
-        {
-            // Arrange
-            var expected = new DateTime(year, expectedMonth, expectedDay);
-
-            // Act
-            var actual = FuturesExpiryUtilityFunctions.GetGoodFriday(year);
-
-            // Assert
-            Assert.AreEqual(expected, actual);
         }
     }
 }

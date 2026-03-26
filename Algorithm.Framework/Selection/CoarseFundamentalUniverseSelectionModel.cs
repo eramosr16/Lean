@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -17,7 +17,6 @@ using System;
 using System.Collections.Generic;
 using Python.Runtime;
 using QuantConnect.Data.UniverseSelection;
-using QuantConnect.Securities;
 
 namespace QuantConnect.Algorithm.Framework.Selection
 {
@@ -52,8 +51,7 @@ namespace QuantConnect.Algorithm.Framework.Selection
             )
             : base(false, universeSettings)
         {
-            Func<IEnumerable<CoarseFundamental>, object> func;
-            if (coarseSelector.TryConvertToDelegate(out func))
+            if (coarseSelector.TrySafeAs<Func<IEnumerable<CoarseFundamental>, object>>(out var func))
             {
                 _coarseSelector = func.ConvertToUniverseSelectionSymbolDelegate();
             }
@@ -62,6 +60,11 @@ namespace QuantConnect.Algorithm.Framework.Selection
         /// <inheritdoc />
         public override IEnumerable<Symbol> SelectCoarse(QCAlgorithm algorithm, IEnumerable<CoarseFundamental> coarse)
         {
+            // Check if this method was overridden in Python
+            if (TryInvokePythonOverride(nameof(SelectCoarse), out IEnumerable<Symbol> result, algorithm, coarse))
+            {
+                return result;
+            }
             return _coarseSelector(coarse);
         }
     }

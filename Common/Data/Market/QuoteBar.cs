@@ -19,6 +19,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using ProtoBuf;
 using QuantConnect.Logging;
+using QuantConnect.Python;
 using QuantConnect.Util;
 using static QuantConnect.StringExtensions;
 
@@ -38,12 +39,14 @@ namespace QuantConnect.Data.Market
         /// Average bid size
         /// </summary>
         [ProtoMember(201)]
+        [PandasColumn("bidsize")]
         public decimal LastBidSize { get; set; }
 
         /// <summary>
         /// Average ask size
         /// </summary>
         [ProtoMember(202)]
+        [PandasColumn("asksize")]
         public decimal LastAskSize { get; set; }
 
         /// <summary>
@@ -189,6 +192,7 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// The closing time of this bar, computed via the Time and Period
         /// </summary>
+        [PandasIgnore]
         public override DateTime EndTime
         {
             get { return Time + Period; }
@@ -199,6 +203,7 @@ namespace QuantConnect.Data.Market
         /// The period of this quote bar, (second, minute, daily, ect...)
         /// </summary>
         [ProtoMember(205)]
+        [PandasIgnore]
         public TimeSpan Period { get; set; }
 
         /// <summary>
@@ -281,6 +286,7 @@ namespace QuantConnect.Data.Market
         /// <param name="date">Date of this reader request</param>
         /// <param name="isLiveMode">true if we're in live mode, false for backtesting mode</param>
         /// <returns>Enumerable iterator for returning each line of the required data.</returns>
+        [StubsIgnore]
         public override BaseData Reader(SubscriptionDataConfig config, StreamReader stream, DateTime date, bool isLiveMode)
         {
             try
@@ -368,59 +374,6 @@ namespace QuantConnect.Data.Market
             return new QuoteBar { Symbol = config.Symbol, Period = config.Increment };
         }
 
-        private static bool HasShownWarning;
-
-        /// <summary>
-        /// "Scaffold" code - If the data being read is formatted as a TradeBar, use this method to deserialize it
-        /// TODO: Once all Forex data refactored to use QuoteBar formatted data, remove this method
-        /// </summary>
-        /// <param name="config">Symbols, Resolution, DataType, </param>
-        /// <param name="line">Line from the data file requested</param>
-        /// <param name="date">Date of this reader request</param>
-        /// <returns><see cref="QuoteBar"/> with the bid/ask prices set to same values</returns>
-        [Obsolete("All Forex data should use Quotes instead of Trades.")]
-        private QuoteBar ParseTradeAsQuoteBar(SubscriptionDataConfig config, DateTime date, string line)
-        {
-            if (!HasShownWarning)
-            {
-                Logging.Log.Error("QuoteBar.ParseTradeAsQuoteBar(): Data formatted as Trade when Quote format was expected.  Support for this will disappear June 2017.");
-                HasShownWarning = true;
-            }
-
-            var quoteBar = new QuoteBar
-            {
-                Period = config.Increment,
-                Symbol = config.Symbol
-            };
-
-            var csv = line.ToCsv(5);
-            if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
-            {
-                // hourly and daily have different time format, and can use slow, robust c# parser.
-                quoteBar.Time = DateTime.ParseExact(csv[0], DateFormat.TwelveCharacter, CultureInfo.InvariantCulture).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-            else
-            {
-                //Fast decimal conversion
-                quoteBar.Time = date.Date.AddMilliseconds(csv[0].ToInt32()).ConvertTo(config.DataTimeZone, config.ExchangeTimeZone);
-            }
-
-            // the Bid/Ask bars were already create above, we don't need to recreate them but just set their values
-            quoteBar.Bid.Open = csv[1].ToDecimal();
-            quoteBar.Bid.High = csv[2].ToDecimal();
-            quoteBar.Bid.Low = csv[3].ToDecimal();
-            quoteBar.Bid.Close = csv[4].ToDecimal();
-
-            quoteBar.Ask.Open = csv[1].ToDecimal();
-            quoteBar.Ask.High = csv[2].ToDecimal();
-            quoteBar.Ask.Low = csv[3].ToDecimal();
-            quoteBar.Ask.Close = csv[4].ToDecimal();
-
-            quoteBar.Value = quoteBar.Close;
-
-            return quoteBar;
-        }
-
         /// <summary>
         /// Parse a quotebar representing a future with a scaling factor
         /// </summary>
@@ -454,7 +407,7 @@ namespace QuantConnect.Data.Market
         /// <returns><see cref="QuoteBar"/> with the bid/ask set to same values</returns>
         public QuoteBar ParseOption(SubscriptionDataConfig config, string line, DateTime date)
         {
-            return ParseQuote(config, date, line, OptionUseScaleFactor(config.Symbol));
+            return ParseQuote(config, date, line, LeanData.OptionUseScaleFactor(config.Symbol));
         }
 
         /// <summary>
@@ -467,18 +420,7 @@ namespace QuantConnect.Data.Market
         public QuoteBar ParseOption(SubscriptionDataConfig config, StreamReader streamReader, DateTime date)
         {
             // scale factor only applies for equity and index options
-            return ParseQuote(config, date, streamReader, useScaleFactor: OptionUseScaleFactor(config.Symbol));
-        }
-        
-        /// <summary>
-        /// Helper method that defines the types of options that should use scale factor
-        /// </summary>
-        /// <param name="symbol"></param>
-        /// <returns></returns>
-        private static bool OptionUseScaleFactor(Symbol symbol)
-        {
-            return symbol.SecurityType == SecurityType.Option ||
-                   symbol.SecurityType == SecurityType.IndexOption;
+            return ParseQuote(config, date, streamReader, useScaleFactor: LeanData.OptionUseScaleFactor(config.Symbol));
         }
 
         /// <summary>
@@ -626,7 +568,6 @@ namespace QuantConnect.Data.Market
             }
 
             quoteBar.Value = quoteBar.Close;
-
             return quoteBar;
         }
 
@@ -651,7 +592,7 @@ namespace QuantConnect.Data.Market
                 Symbol = config.Symbol
             };
 
-            var csv = line.ToCsv(10);
+            var csv = line.ToCsv(11);
             if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
             {
                 // hourly and daily have different time format, and can use slow, robust c# parser.
@@ -694,7 +635,6 @@ namespace QuantConnect.Data.Market
             }
 
             quoteBar.Value = quoteBar.Close;
-
             return quoteBar;
         }
 

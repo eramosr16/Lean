@@ -92,7 +92,7 @@ namespace QuantConnect.Algorithm.CSharp
             Debug(orderEvent.ToString());
             if (orderEvent.Symbol.ID.Symbol != "SPXW")
             {
-                throw new Exception("Unexpected order event symbol!");
+                throw new RegressionTestException("Unexpected order event symbol!");
             }
         }
 
@@ -104,12 +104,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 40893;
+        public virtual long DataPoints => 16680;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -117,35 +117,43 @@ namespace QuantConnect.Algorithm.CSharp
         public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "10"},
-            {"Average Win", "0.47%"},
+            {"Total Orders", "10"},
+            {"Average Win", "0.46%"},
             {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "99.729%"},
+            {"Compounding Annual Return", "101.998%"},
             {"Drawdown", "0.100%"},
-            {"Expectancy", "24.484"},
-            {"Net Profit", "0.890%"},
-            {"Sharpe Ratio", "8.078"},
+            {"Expectancy", "24.137"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "1009050"},
+            {"Net Profit", "0.905%"},
+            {"Sharpe Ratio", "8.44"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "93.697%"},
+            {"Probabilistic Sharpe Ratio", "95.546%"},
             {"Loss Rate", "50%"},
             {"Win Rate", "50%"},
-            {"Profit-Loss Ratio", "49.97"},
-            {"Alpha", "-1.975"},
-            {"Beta", "0.301"},
+            {"Profit-Loss Ratio", "49.27"},
+            {"Alpha", "-2.01"},
+            {"Beta", "0.307"},
             {"Annual Standard Deviation", "0.021"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-143.477"},
-            {"Tracking Error", "0.049"},
-            {"Treynor Ratio", "0.566"},
+            {"Information Ratio", "-144.654"},
+            {"Tracking Error", "0.048"},
+            {"Treynor Ratio", "0.589"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$13000000.00"},
-            {"Lowest Capacity Asset", "SPXW XKX6S2GM9PGU|SPX 31"},
+            {"Lowest Capacity Asset", "SPXW XKX6S2GMDZSE|SPX 31"},
             {"Portfolio Turnover", "0.28%"},
-            {"OrderListHash", "69b28e4f5b33ff54f173c14ea1e00c50"}
+            {"Drawdown Recovery", "2"},
+            {"OrderListHash", "9d03f85003416861df07ccb31a18af9a"}
         };
     }
 }

@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import timedelta
 from AlgorithmImports import *
 
 # <summary>
@@ -22,31 +23,37 @@ from AlgorithmImports import *
 # <meta name="tag" content="ticks event" />
 class TickDataFilteringAlgorithm(QCAlgorithm):
 
-    def Initialize(self):
-        self.SetStartDate(2013, 10, 7)
-        self.SetEndDate(2013, 10, 7)
-        self.SetCash(25000)
-        spy = self.AddEquity("SPY", Resolution.Tick)
+    def initialize(self):
+        self.set_start_date(2013, 10, 7)
+        self.set_end_date(2013, 10, 7)
+        self.set_cash(25000)
+        spy = self.add_equity("SPY", Resolution.TICK)
 
         #Add our custom data filter.
-        spy.SetDataFilter(TickExchangeDataFilter(self))
+        spy.set_data_filter(TickExchangeDataFilter(self))
+
+        self._order_time = None
 
     # <summary>
     # Data arriving here will now be filtered.
     # </summary>
     # <param name="data">Ticks data array</param>
-    def OnData(self, data):
-        if not data.ContainsKey("SPY"): 
+    def on_data(self, data):
+        if not data.contains_key("SPY"):
             return
-        
-        spyTickList = data["SPY"]
+
+        spy_tick_list = data["SPY"]
 
         # Ticks return a list of ticks this second
-        for tick in spyTickList:
-            self.Debug(tick.Exchange)
+        for tick in spy_tick_list:
+            self.debug(tick.exchange)
 
-        if not self.Portfolio.Invested:
-            self.SetHoldings("SPY", 1)
+        if not self.portfolio.invested:
+            self.set_holdings("SPY", 1)
+            self._order_time = self.time
+        # Let's shortcut to reduce regression test duration
+        elif self.time - self._order_time > timedelta(minutes=5):
+            self.quit()
 
 # <summary>
 # Exchange filter class
@@ -66,12 +73,12 @@ class TickExchangeDataFilter(SecurityDataFilter):
     # </summary>
     # <param name="data">New data packet:</param>
     # <param name="asset">Vehicle of this filter.</param>
-    def Filter(self, asset: Security, data: BaseData):
+    def filter(self, asset: Security, data: BaseData):
         # TRUE -->  Accept Tick
         # FALSE --> Reject Tick
 
         if isinstance(data, Tick):
-            if data.Exchange == str(Exchange.ARCA):
+            if data.exchange == str(Exchange.ARCA):
                 return True
-        
+
         return False

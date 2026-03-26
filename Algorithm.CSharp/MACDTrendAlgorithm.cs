@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
@@ -50,8 +51,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">TradeBars IDictionary object with your stock data</param>
-        public void OnData(TradeBars data)
+        /// <param name="slice">TradeBars IDictionary object with your stock data</param>
+        public override void OnData(Slice slice)
         {
             // only once per day
             if (_previous.Date == Time.Date) return;
@@ -77,7 +78,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             // plot both lines
             Plot("MACD", _macd, _macd.Signal);
-            Plot(_symbol, "Open", data[_symbol].Open);
+            if (slice.Bars.ContainsKey(_symbol))
+            {
+                Plot(_symbol, "Open", slice[_symbol].Open);
+            }
             Plot(_symbol, _macd.Fast, _macd.Slow);
 
             _previous = Time;
@@ -91,12 +95,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 22137;
+        public long DataPoints => 22136;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -104,16 +108,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "84"},
+            {"Total Orders", "85"},
             {"Average Win", "4.78%"},
             {"Average Loss", "-4.16%"},
             {"Compounding Annual Return", "2.952%"},
             {"Drawdown", "34.900%"},
             {"Expectancy", "0.228"},
+            {"Start Equity", "100000"},
+            {"End Equity", "137751.04"},
             {"Net Profit", "37.751%"},
             {"Sharpe Ratio", "0.029"},
             {"Sortino Ratio", "0.022"},
@@ -129,10 +140,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.123"},
             {"Treynor Ratio", "0.007"},
             {"Total Fees", "$468.54"},
-            {"Estimated Strategy Capacity", "$600000000.00"},
+            {"Estimated Strategy Capacity", "$950000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "2.09%"},
-            {"OrderListHash", "7fba0039ce56cb793981a1ca92280d6c"}
+            {"Drawdown Recovery", "1931"},
+            {"OrderListHash", "0257edfddd889d6fe3779883138aebc5"}
         };
     }
 }

@@ -19,71 +19,76 @@ from AlgorithmImports import *
 ### </summary>
 class CoarseFineOptionUniverseChainRegressionAlgorithm(QCAlgorithm):
 
-    def Initialize(self):
+    def initialize(self) -> None:
         '''Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.'''
 
-        self.SetStartDate(2014,6,4)  #Set Start Date
-        self.SetEndDate(2014,6,6)    #Set End Date
+        self.set_start_date(2014,6,4)
+        # TWX is selected the 4th and 5th and aapl after that.
+        # If the algo ends on the 6th, TWX subscriptions will not be removed before OnEndOfAlgorithm is called:
+        #   - 6th: AAPL is selected, TWX is removed but subscriptions are not removed because the securities are invested.
+        #      - TWX and its options are liquidated.
+        #   - 7th: Since options universe selection is daily now, TWX subscriptions are removed the next day (7th)
+        self.set_end_date(2014,6,7)
 
-        self.UniverseSettings.Resolution = Resolution.Minute
-        self._twx = Symbol.Create("TWX", SecurityType.Equity, Market.USA)
-        self._aapl = Symbol.Create("AAPL", SecurityType.Equity, Market.USA)
-        self._lastEquityAdded = None
-        self._changes = None
-        self._optionCount = 0
+        self.universe_settings.resolution = Resolution.MINUTE
+        self._twx = Symbol.create("TWX", SecurityType.EQUITY, Market.USA)
+        self._aapl = Symbol.create("AAPL", SecurityType.EQUITY, Market.USA)
+        self._last_equity_added = None
+        self._changes = SecurityChanges.NONE
+        self._option_count = 0
 
-        universe = self.AddUniverse(self.CoarseSelectionFunction, self.FineSelectionFunction)
-        
-        self.AddUniverseOptions(universe, self.OptionFilterFunction)
+        universe = self.add_universe(self.coarse_selection_function, self.fine_selection_function)
 
-    def OptionFilterFunction(self, universe):
-        universe.IncludeWeeklys().FrontMonth()
+        self.add_universe_options(universe, self.option_filter_function)
+
+    def option_filter_function(self, universe: OptionFilterUniverse) -> OptionFilterUniverse:
+        universe.include_weeklys().front_month()
 
         contracts = list()
-        for symbol in universe:
+        for contract in universe:
             if len(contracts) == 5:
                 break
-            contracts.append(symbol)
-        return universe.Contracts(contracts)
+            contracts.append(contract)
+        return universe.contracts(contracts)
 
-    def CoarseSelectionFunction(self, coarse):
-        if self.Time <= datetime(2014,6,5):
+    def coarse_selection_function(self, coarse: list[CoarseFundamental]) -> list[Symbol]:
+        if self.time <= datetime(2014,6,5):
             return [ self._twx ]
         return [ self._aapl ]
 
-    def FineSelectionFunction(self, fine):
-        if self.Time <= datetime(2014,6,5):
+    def fine_selection_function(self, fine: list[FineFundamental]) -> list[Symbol]:
+        if self.time <= datetime(2014,6,5):
             return [ self._twx ]
         return [ self._aapl ]
 
-    def OnData(self, data):
-        if self._changes == None or any(security.Price == 0 for security in self._changes.AddedSecurities):
+    def on_data(self, data: Slice) -> None:
+        if self._changes == SecurityChanges.NONE or any(security.price == 0 for security in self._changes.added_securities):
             return
 
         # liquidate removed securities
-        for security in self._changes.RemovedSecurities:
-            if security.Invested:
-                self.Liquidate(security.Symbol)
+        for security in self._changes.removed_securities:
+            if security.invested:
+                self.liquidate(security.symbol)
 
-        for security in self._changes.AddedSecurities:
-            if not security.Symbol.HasUnderlying:
-                self._lastEquityAdded = security.Symbol
+        for security in self._changes.added_securities:
+            if not security.symbol.has_underlying:
+                self._last_equity_added = security.symbol
             else:
                 # options added should all match prev added security
-                if security.Symbol.Underlying != self._lastEquityAdded:
-                    raise ValueError(f"Unexpected symbol added {security.Symbol}")
-                self._optionCount += 1
+                if security.symbol.underlying != self._last_equity_added:
+                    raise ValueError(f"Unexpected symbol added {security.symbol}")
+                self._option_count += 1
 
-            self.SetHoldings(security.Symbol, 0.05)
-        self._changes = None
+            self.set_holdings(security.symbol, 0.05)
+        self._changes = SecurityChanges.NONE
 
     # this event fires whenever we have changes to our universe
-    def OnSecuritiesChanged(self, changes):
-        if self._changes == None:
+    def on_securities_changed(self, changes: SecurityChanges) -> None:
+        if self._changes == SecurityChanges.NONE:
             self._changes = changes
             return
-        self._changes = self._changes.op_Addition(self._changes, changes)
+        self._changes = self._changes + changes
 
-    def OnEndOfAlgorithm(self):
-        if self._optionCount == 0:
+    def on_end_of_algorithm(self) -> None:
+        if self._option_count == 0:
             raise ValueError("Option universe chain did not add any option!")

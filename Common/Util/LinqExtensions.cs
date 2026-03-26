@@ -18,6 +18,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Common.Util;
+using QuantConnect.Data.Market;
 
 namespace QuantConnect.Util
 {
@@ -26,18 +28,6 @@ namespace QuantConnect.Util
     /// </summary>
     public static class LinqExtensions
     {
-        /// <summary>
-        /// Creates a dictionary enumerable of key value pairs
-        /// </summary>
-        /// <typeparam name="K">The key type</typeparam>
-        /// <typeparam name="V">The value type</typeparam>
-        /// <param name="enumerable">The IEnumerable of KeyValuePair instances to convert to a dictionary</param>
-        /// <returns>A dictionary holding the same data as the enumerable</returns>
-        public static Dictionary<K, V> ToDictionary<K, V>(this IEnumerable<KeyValuePair<K, V>> enumerable)
-        {
-            return enumerable.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-        }
-
         /// <summary>
         /// Creates a new read-only dictionary from the key value pairs
         /// </summary>
@@ -103,18 +93,6 @@ namespace QuantConnect.Util
         }
 
         /// <summary>
-        /// Produces the set difference of two sequences by using the default equality comparer to compare values.
-        /// </summary>
-        /// <typeparam name="T">The type of the elements of the input sequences.</typeparam>
-        /// <param name="enumerable">An <see cref="T:System.Collections.Generic.IEnumerable`1"/> whose elements that are not also in <paramref name="set"/> will be returned.</param>
-        /// <param name="set">An <see cref="T:System.Collections.Generic.IEnumerable`1"/> whose elements that also occur in the first sequence will cause those elements to be removed from the returned sequence.</param>
-        /// <returns>A sequence that contains the set difference of the elements of two sequences.</returns>
-        public static IEnumerable<T> Except<T>(this IEnumerable<T> enumerable, ISet<T> set)
-        {
-            return enumerable.Where(item => !set.Contains(item));
-        }
-
-        /// <summary>
         /// Returns true if the specified enumerable is null or has no elements
         /// </summary>
         /// <typeparam name="T">The enumerable's item type</typeparam>
@@ -134,7 +112,7 @@ namespace QuantConnect.Util
         public static T Median<T>(this IEnumerable<T> enumerable)
         {
             var collection = enumerable.ToList();
-            return collection.OrderBy(x => x).Skip(collection.Count/2).First();
+            return collection.OrderBy(x => x).Skip(collection.Count / 2).First();
         }
 
         /// <summary>
@@ -278,7 +256,7 @@ namespace QuantConnect.Util
             {
                 if (e.MoveNext())
                 {
-                    var list = new List<T> {e.Current};
+                    var list = new List<T> { e.Current };
                     var pred = e.Current;
                     while (e.MoveNext())
                     {
@@ -289,7 +267,7 @@ namespace QuantConnect.Util
                         else
                         {
                             yield return list;
-                            list = new List<T> {e.Current};
+                            list = new List<T> { e.Current };
                         }
                         pred = e.Current;
                     }
@@ -309,7 +287,7 @@ namespace QuantConnect.Util
         /// <returns>True if there are any differences between the two sets, false otherwise</returns>
         public static bool AreDifferent<T>(this ISet<T> left, ISet<T> right)
         {
-            if(ReferenceEquals(left, right))
+            if (ReferenceEquals(left, right))
             {
                 return false;
             }
@@ -360,6 +338,41 @@ namespace QuantConnect.Util
             {
                 action(element);
             }
+        }
+
+        /// <summary>
+        /// Converts a dictionary to a ReadOnlyExtendedDictionary
+        /// </summary>
+        public static ReadOnlyExtendedDictionary<TKey, TValue> ToReadOnlyExtendedDictionary<TKey, TValue>(
+            this IDictionary<TKey, TValue> dictionary)
+        {
+            return new ReadOnlyExtendedDictionary<TKey, TValue>(dictionary);
+        }
+
+        /// <summary>
+        /// Creates a ReadOnlyExtendedDictionary from an IEnumerable according to specified key selector
+        /// </summary>
+        public static ReadOnlyExtendedDictionary<TKey, TValue> ToReadOnlyExtendedDictionary<TValue, TKey>(
+            this IEnumerable<TValue> source,
+            Func<TValue, TKey> keySelector)
+        {
+            return new ReadOnlyExtendedDictionary<TKey, TValue>(source, keySelector);
+        }
+
+        /// <summary>
+        /// Creates a DataDictionary from an IEnumerable according to specified key and value selectors
+        /// </summary>
+        public static DataDictionary<TValue> ToDataDictionary<TSource, TValue>(
+            this IEnumerable<TSource> source,
+            Func<TSource, Symbol> keySelector,
+            Func<TSource, TValue> valueSelector)
+        {
+            var result = new DataDictionary<TValue>();
+            foreach (var item in source)
+            {
+                result.Add(keySelector(item), valueSelector(item));
+            }
+            return result;
         }
     }
 }

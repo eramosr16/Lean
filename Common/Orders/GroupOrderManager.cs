@@ -27,32 +27,38 @@ namespace QuantConnect.Orders
         /// <summary>
         /// The unique order group Id
         /// </summary>
-        public long Id { get; }
+        [JsonProperty(PropertyName = "id")]
+        public int Id { get; internal set; }
 
         /// <summary>
         /// The group order quantity
         /// </summary>
+        [JsonProperty(PropertyName = "quantity")]
         public decimal Quantity { get; internal set; }
 
         /// <summary>
         /// The total order count associated with this order group
         /// </summary>
+        [JsonProperty(PropertyName = "count")]
         public int Count { get; }
 
         /// <summary>
         /// The limit price associated with this order group if any
         /// </summary>
+        [JsonProperty(PropertyName = "limitPrice")]
         public decimal LimitPrice { get; set; }
 
         /// <summary>
         /// The order Ids in this group
         /// </summary>
         /// <remarks>In live trading we process orders in a dedicated thread so we need to be thread safe</remarks>
+        [JsonProperty(PropertyName = "orderIds")]
         public HashSet<int> OrderIds { get; }
 
         /// <summary>
         /// Order Direction Property based off Quantity.
         /// </summary>
+        [JsonProperty(PropertyName = "direction")]
         public OrderDirection Direction
         {
             get
@@ -83,19 +89,29 @@ namespace QuantConnect.Orders
         }
 
         /// <summary>
-        /// Creates a new instance
+        /// Creates a new instance of <see cref="GroupOrderManager"/>
         /// </summary>
         /// <param name="id">This order group unique Id</param>
         /// <param name="legCount">The order leg count</param>
         /// <param name="quantity">The group order quantity</param>
         /// <param name="limitPrice">The limit price associated with this order group if any</param>
-        public GroupOrderManager(int id, int legCount, decimal quantity, decimal limitPrice = 0)
+        public GroupOrderManager(int id, int legCount, decimal quantity, decimal limitPrice = 0) : this(legCount, quantity, limitPrice)
         {
             Id = id;
+        }
+
+        /// <summary>
+        /// Creates a new instance of <see cref="GroupOrderManager"/>
+        /// </summary>
+        /// <param name="legCount">The order leg count</param>
+        /// <param name="quantity">The group order quantity</param>
+        /// <param name="limitPrice">The limit price associated with this order group if any</param>
+        public GroupOrderManager(int legCount, decimal quantity, decimal limitPrice = 0)
+        {
             Count = legCount;
             Quantity = quantity;
             LimitPrice = limitPrice;
-            OrderIds = new (capacity: legCount);
+            OrderIds = new(capacity: legCount);
         }
     }
 }

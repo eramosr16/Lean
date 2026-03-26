@@ -15,16 +15,16 @@ from AlgorithmImports import *
 from BasicTemplateIndexAlgorithm import BasicTemplateIndexAlgorithm
 
 class BasicTemplateTradableIndexAlgorithm(BasicTemplateIndexAlgorithm):
-    ticket = None
-    def Initialize(self) -> None:
-        super().Initialize()
-        self.Securities[self.spx].IsTradable = True;
+    ticket: OrderTicket | None = None
+    def initialize(self) -> None:
+        super().initialize()
+        self.securities[self.spx].is_tradable = True
         
-    def OnData(self, data: Slice):
-        super().OnData(data)
+    def on_data(self, data: Slice):
+        super().on_data(data)
         if not self.ticket:
-            self.ticket = self.MarketOrder(self.spx, 1)
+            self.ticket = self.market_order(self.spx, 1)
 
-    def OnEndOfAlgorithm(self) -> None:
-        if self.ticket.Status != OrderStatus.Filled:
-            raise Exception("Index is tradable.")
+    def on_end_of_algorithm(self) -> None:
+        if self.ticket and self.ticket.status != OrderStatus.FILLED:
+            raise AssertionError("Index is tradable.")

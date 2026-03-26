@@ -18,6 +18,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Data.UniverseSelection;
+using Python.Runtime;
 
 namespace QuantConnect.Algorithm.Framework.Selection
 {
@@ -27,7 +28,6 @@ namespace QuantConnect.Algorithm.Framework.Selection
     public class FutureUniverseSelectionModel : UniverseSelectionModel
     {
         private DateTime _nextRefreshTimeUtc;
-
         private readonly TimeSpan _refreshInterval;
         private readonly UniverseSettings _universeSettings;
         private readonly Func<DateTime, IEnumerable<Symbol>> _futureChainSymbolSelector;
@@ -44,6 +44,27 @@ namespace QuantConnect.Algorithm.Framework.Selection
         /// <param name="futureChainSymbolSelector">Selects symbols from the provided future chain</param>
         public FutureUniverseSelectionModel(TimeSpan refreshInterval, Func<DateTime, IEnumerable<Symbol>> futureChainSymbolSelector)
             : this(refreshInterval, futureChainSymbolSelector, null)
+        {
+        }
+
+        /// <summary>
+        /// Creates a new instance of <see cref="FutureUniverseSelectionModel"/>
+        /// </summary>
+        /// <param name="refreshInterval">Time interval between universe refreshes</param>
+        /// <param name="futureChainSymbolSelector">Selects symbols from the provided future chain</param>\
+        public FutureUniverseSelectionModel(TimeSpan refreshInterval, PyObject futureChainSymbolSelector)
+            : this(refreshInterval, futureChainSymbolSelector.SafeAs<Func<DateTime, IEnumerable<Symbol>>>(), null)
+        {
+        }
+
+        /// <summary>
+        /// Creates a new instance of <see cref="FutureUniverseSelectionModel"/>
+        /// </summary>
+        /// <param name="refreshInterval">Time interval between universe refreshes</param>
+        /// <param name="futureChainSymbolSelector">Selects symbols from the provided future chain</param>\
+        /// <param name="universeSettings">Universe settings define attributes of created subscriptions, such as their resolution and the minimum time in universe before they can be removed</param>
+        public FutureUniverseSelectionModel(TimeSpan refreshInterval, PyObject futureChainSymbolSelector, UniverseSettings universeSettings)
+            : this(refreshInterval, futureChainSymbolSelector.SafeAs<Func<DateTime, IEnumerable<Symbol>>>(), universeSettings)
         {
         }
 
@@ -99,8 +120,41 @@ namespace QuantConnect.Algorithm.Framework.Selection
         /// </summary>
         protected virtual FutureFilterUniverse Filter(FutureFilterUniverse filter)
         {
+            // Check if this method was overridden in Python
+            if (TryInvokePythonOverride(nameof(Filter), out FutureFilterUniverse result, filter))
+            {
+                return result;
+            }
             // NOP
             return filter;
+        }
+    }
+
+    /// <summary>
+    /// Provides an implementation of <see cref="IUniverseSelectionModel"/> that subscribes to future chains
+    /// </summary>
+    public class FuturesUniverseSelectionModel : FutureUniverseSelectionModel
+    {
+        /// <summary>
+        /// Creates a new instance of <see cref="FutureUniverseSelectionModel"/>
+        /// </summary>
+        /// <param name="refreshInterval">Time interval between universe refreshes</param>
+        /// <param name="futureChainSymbolSelector">Selects symbols from the provided future chain</param>
+        public FuturesUniverseSelectionModel(TimeSpan refreshInterval, Func<DateTime, IEnumerable<Symbol>> futureChainSymbolSelector)
+            : base(refreshInterval, futureChainSymbolSelector)
+        {
+        }
+        /// <summary>
+        /// Creates a new instance of <see cref="FutureUniverseSelectionModel"/>
+        /// </summary>
+        /// <param name="refreshInterval">Time interval between universe refreshes</param>
+        /// <param name="futureChainSymbolSelector">Selects symbols from the provided future chain</param>
+        /// <param name="universeSettings">Universe settings define attributes of created subscriptions, such as their resolution and the minimum time in universe before they can be removed</param>
+        public FuturesUniverseSelectionModel(TimeSpan refreshInterval,
+            Func<DateTime, IEnumerable<Symbol>> futureChainSymbolSelector,
+            UniverseSettings universeSettings)
+            : base(refreshInterval, futureChainSymbolSelector, universeSettings)
+        {
         }
     }
 }

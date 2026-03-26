@@ -39,7 +39,7 @@ namespace QuantConnect.Algorithm.CSharp
             _aapl = AddEquity("AAPL", Resolution.Daily).Symbol;
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -63,13 +63,13 @@ namespace QuantConnect.Algorithm.CSharp
                 var orderTickets = Transactions.GetOpenOrderTickets(_aapl).ToList(ticket => ticket);
                 if (!orderTickets.IsNullOrEmpty())
                 {
-                    throw new Exception($"We don't expect any open order tickets: {orderTickets[0]}");
+                    throw new RegressionTestException($"We don't expect any open order tickets: {orderTickets[0]}");
                 }
             }
 
             if (orderEvent.OrderId > 1)
             {
-                throw new Exception($"We only expect 1 order to be placed: {orderEvent}");
+                throw new RegressionTestException($"We only expect 1 order to be placed: {orderEvent}");
             }
             Debug($"OnOrderEvent: {orderEvent}");
         }
@@ -82,12 +82,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 5508;
+        public long DataPoints => 5504;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -95,16 +95,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "61.726%"},
+            {"Compounding Annual Return", "67.376%"},
             {"Drawdown", "1.800%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100660.71"},
             {"Net Profit", "0.661%"},
             {"Sharpe Ratio", "2.515"},
             {"Sortino Ratio", "0"},
@@ -120,10 +127,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.17"},
             {"Treynor Ratio", "0.806"},
             {"Total Fees", "$32.32"},
-            {"Estimated Strategy Capacity", "$190000000.00"},
+            {"Estimated Strategy Capacity", "$240000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "20.39%"},
-            {"OrderListHash", "881378baadad2abc46f98bfe4f87db21"}
+            {"Drawdown Recovery", "2"},
+            {"OrderListHash", "9d9883e51ef7e9f15062e368cb60617c"}
         };
     }
 }

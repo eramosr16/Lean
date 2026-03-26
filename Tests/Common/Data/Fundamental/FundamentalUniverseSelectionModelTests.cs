@@ -14,6 +14,7 @@
 */
 
 using NUnit.Framework;
+using QuantConnect.Statistics;
 using System.Collections.Generic;
 
 namespace QuantConnect.Tests.Common.Data.Fundamental
@@ -26,30 +27,30 @@ namespace QuantConnect.Tests.Common.Data.Fundamental
         {
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("FundamentalUniverseSelectionAlgorithm",
                 new Dictionary<string, string> {
-                    {"Total Trades", "2"},
+                    {PerformanceMetrics.TotalOrders, "3"},
                     {"Average Win", "0%"},
                     {"Average Loss", "0%"},
-                    {"Compounding Annual Return", "-0.223%"},
+                    {"Compounding Annual Return", "-3.123%"},
                     {"Drawdown", "0.100%"},
                     {"Expectancy", "0"},
-                    {"Net Profit", "-0.009%"},
-                    {"Sharpe Ratio", "-6.313"},
-                    {"Probabilistic Sharpe Ratio", "12.055%"},
+                    {"Net Profit", "-0.122%"},
+                    {"Sharpe Ratio", "-5.568"},
+                    {"Probabilistic Sharpe Ratio", "11.594%"},
                     {"Loss Rate", "0%"},
                     {"Win Rate", "0%"},
                     {"Profit-Loss Ratio", "0"},
-                    {"Alpha", "-0.019"},
-                    {"Beta", "0.027"},
-                    {"Annual Standard Deviation", "0.004"},
+                    {"Alpha", "-0.022"},
+                    {"Beta", "0.048"},
+                    {"Annual Standard Deviation", "0.006"},
                     {"Annual Variance", "0"},
-                    {"Information Ratio", "1.749"},
-                    {"Tracking Error", "0.095"},
-                    {"Treynor Ratio", "-0.876"},
-                    {"Total Fees", "$2.00"},
-                    {"Estimated Strategy Capacity", "$2200000000.00"},
+                    {"Information Ratio", "1.712"},
+                    {"Tracking Error", "0.093"},
+                    {"Treynor Ratio", "-0.636"},
+                    {"Total Fees", "$3.00"},
+                    {"Estimated Strategy Capacity", "$2300000000.00"},
                     {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-                    {"Portfolio Turnover", "0.28%"},
-                    {"OrderListHash", "490a9beb7a7b09c88db446e4fbd392cc"}
+                    {"Portfolio Turnover", "0.42%"},
+                    {"OrderListHash", "9bd2017fdcf8f503e86dfa3bf6e33520"}
                 },
                 Language.Python,
                 AlgorithmStatus.Completed);

@@ -32,15 +32,18 @@ namespace QuantConnect.Orders.Fees
         private readonly Dictionary<string, Func<decimal, decimal, CashAmount>> _optionFee =
             new Dictionary<string, Func<decimal, decimal, CashAmount>>();
 
+        #pragma warning disable CS1570
         /// <summary>
         /// Reference at https://www.interactivebrokers.com/en/index.php?f=commission&p=futures1
         /// </summary>
+        #pragma warning restore CS1570
         private readonly Dictionary<string, Func<Security, CashAmount>> _futureFee =
             //                                                               IB fee + exchange fee
             new()
             {
                 { Market.USA, UnitedStatesFutureFees },
-                { Market.HKFE, HongKongFutureFees }
+                { Market.HKFE, HongKongFutureFees },
+                { Market.EUREX, EUREXFutureFees }
             };
 
         /// <summary>
@@ -165,6 +168,20 @@ namespace QuantConnect.Orders.Fees
                     feeCurrency = equityFee.Currency;
                     //Always return a positive fee.
                     feeResult = Math.Abs(tradeFee);
+                    break;
+
+                case SecurityType.Cfd:
+                    var value = Math.Abs(order.GetValue(security));
+                    feeResult = 0.00002m * value; // 0.002%
+                    feeCurrency = security.QuoteCurrency.Symbol;
+
+                    var minimumFee = security.QuoteCurrency.Symbol switch
+                    {
+                        "JPY" => 40.0m,
+                        "HKD" => 10.0m,
+                        _ => 1.0m
+                    };
+                    feeResult = Math.Max(feeResult, minimumFee);
                     break;
 
                 default:
@@ -361,6 +378,37 @@ namespace QuantConnect.Orders.Fees
             return new CashAmount(ibFeePerContract * 1.5m, security.QuoteCurrency.Symbol);
         }
 
+        private static CashAmount EUREXFutureFees(Security security)
+        {
+            IDictionary<string, decimal> fees, exchangeFees;
+            decimal ibFeePerContract, exchangeFeePerContract;
+            string symbol;
+
+            switch (security.Symbol.SecurityType)
+            {
+                case SecurityType.Future:
+                    fees = _eurexFuturesFees;
+                    exchangeFees = _eurexFuturesExchangeFees;
+                    symbol = security.Symbol.ID.Symbol;
+                    break;
+                default:
+                    throw new ArgumentException(Messages.InteractiveBrokersFeeModel.EUREXFutureFeesUnsupportedSecurityType(security));
+            }
+
+            if (!fees.TryGetValue(symbol, out ibFeePerContract))
+            {
+                ibFeePerContract = 1.00m;
+            }
+
+            if (!exchangeFees.TryGetValue(symbol, out exchangeFeePerContract))
+            {
+                exchangeFeePerContract = 0.00m;
+            }
+
+            // Add exchange fees + IBKR regulatory fee (0.02)
+            return new CashAmount(ibFeePerContract + exchangeFeePerContract + 0.02m, Currencies.EUR);
+        }
+
         /// <summary>
         /// Reference at https://www.interactivebrokers.com/en/pricing/commissions-futures.php?re=amer
         /// </summary>
@@ -370,12 +418,21 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.25m }, { "M2K", 0.25m }, { "MES", 0.25m }, { "MNQ", 0.25m }, { "2YY", 0.25m }, { "5YY", 0.25m }, { "10Y", 0.25m },
             { "30Y", 0.25m }, { "MCL", 0.25m }, { "MGC", 0.25m }, { "SIL", 0.25m },
             // Cryptocurrency Futures
-            { "BTC", 5m }, { "MBT", 2.25m }, { "ETH", 3m }, { "MET", 0.20m },
+            { "BTC", 5m }, { "MBT", 2.25m }, { "ETH", 3m }, { "MET", 0.20m }, { "MIB", 2.25m }, { "MRB", 0.20m },
             // E-mini FX (currencies) Futures
             { "E7", 0.50m }, { "J7", 0.50m },
             // Micro E-mini FX (currencies) Futures
             { "M6E", 0.15m }, { "M6A", 0.15m }, { "M6B", 0.15m }, { "MCD", 0.15m }, { "MJY", 0.15m }, { "MSF", 0.15m }, { "M6J", 0.15m },
             { "MIR", 0.15m }, { "M6C", 0.15m }, { "M6S", 0.15m }, { "MNH", 0.15m },
+        };
+
+        /// <summary>
+        /// Reference at https://www.interactivebrokers.com/en/pricing/commissions-futures-europe.php?re=europe
+        /// </summary>
+        private static readonly Dictionary<string, decimal> _eurexFuturesFees = new()
+        {
+            // Futures
+            { "FESX", 1.00m },
         };
 
         private static readonly Dictionary<string, decimal> _usaFutureOptionsFees = new()
@@ -384,7 +441,7 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.25m }, { "M2K", 0.25m }, { "MES", 0.25m }, { "MNQ", 0.25m }, { "2YY", 0.25m }, { "5YY", 0.25m }, { "10Y", 0.25m },
             { "30Y", 0.25m }, { "MCL", 0.25m }, { "MGC", 0.25m }, { "SIL", 0.25m },
             // Cryptocurrency Future Options
-            { "BTC", 5m }, { "MBT", 1.25m }, { "ETH", 3m }, { "MET", 0.10m },
+            { "BTC", 5m }, { "MBT", 1.25m }, { "ETH", 3m }, { "MET", 0.10m }, { "MIB", 1.25m }, { "MRB", 0.10m }
         };
 
         private static readonly Dictionary<string, decimal> _usaFuturesExchangeFees = new()
@@ -395,12 +452,18 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.30m }, { "M2K", 0.30m }, { "MES", 0.30m }, { "MNQ", 0.30m }, { "2YY", 0.30m }, { "5YY", 0.30m }, { "10Y", 0.30m },
             { "30Y", 0.30m }, { "MCL", 0.30m }, { "MGC", 0.30m }, { "SIL", 0.30m },
             // Cryptocurrency Futures
-            { "BTC", 6m }, { "MBT", 2.5m }, { "ETH", 4m }, { "MET", 0.20m },
+            { "BTC", 6m }, { "MBT", 2.5m }, { "ETH", 4m }, { "MET", 0.20m }, { "MIB", 2.5m }, { "MRB", 0.20m },
             // E-mini FX (currencies) Futures
             { "E7", 0.85m }, { "J7", 0.85m },
             // Micro E-mini FX (currencies) Futures
             { "M6E", 0.24m }, { "M6A", 0.24m }, { "M6B", 0.24m }, { "MCD", 0.24m }, { "MJY", 0.24m }, { "MSF", 0.24m }, { "M6J", 0.24m },
             { "MIR", 0.24m }, { "M6C", 0.24m }, { "M6S", 0.24m }, { "MNH", 0.24m },
+        };
+
+        private static readonly Dictionary<string, decimal> _eurexFuturesExchangeFees = new()
+        {
+            // Futures
+            { "FESX", 0.00m },
         };
 
         private static readonly Dictionary<string, decimal> _usaFutureOptionsExchangeFees = new()
@@ -411,7 +474,7 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.20m }, { "M2K", 0.20m }, { "MES", 0.20m }, { "MNQ", 0.20m }, { "2YY", 0.20m }, { "5YY", 0.20m }, { "10Y", 0.20m },
             { "30Y", 0.20m }, { "MCL", 0.20m }, { "MGC", 0.20m }, { "SIL", 0.20m },
             // Cryptocurrency Future Options
-            { "BTC", 5m }, { "MBT", 2.5m }, { "ETH", 4m }, { "MET", 0.20m },
+            { "BTC", 5m }, { "MBT", 2.5m }, { "ETH", 4m }, { "MET", 0.20m }, { "MIB", 2.5m }, { "MRB", 0.20m },
         };
 
         /// <summary>

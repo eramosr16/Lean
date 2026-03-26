@@ -108,7 +108,11 @@ namespace QuantConnect
             y = yValue;
         }
 
-        ///Constructor for datetime-value arguments:
+        /// <summary>
+        /// Constructor that takes both x, y value pairs
+        /// </summary>
+        /// <param name="time">This point time</param>
+        /// <param name="value">Y value</param>
         public ChartPoint(DateTime time, decimal? value)
             : this()
         {
@@ -136,7 +140,7 @@ namespace QuantConnect
         /// Clones this instance
         /// </summary>
         /// <returns>Clone of this instance</returns>
-        public ISeriesPoint Clone()
+        public virtual ISeriesPoint Clone()
         {
             return new ChartPoint(this);
         }

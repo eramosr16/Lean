@@ -154,12 +154,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 5291;
+        public long DataPoints => 5278;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -167,35 +167,43 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "5059"},
+            {"Total Orders", "5059"},
             {"Average Win", "0.08%"},
-            {"Average Loss", "-0.08%"},
-            {"Compounding Annual Return", "15.960%"},
-            {"Drawdown", "10.400%"},
-            {"Expectancy", "0.079"},
-            {"Net Profit", "15.960%"},
-            {"Sharpe Ratio", "0.865"},
-            {"Sortino Ratio", "0.809"},
-            {"Probabilistic Sharpe Ratio", "49.486%"},
-            {"Loss Rate", "45%"},
-            {"Win Rate", "55%"},
-            {"Profit-Loss Ratio", "0.96"},
-            {"Alpha", "0.015"},
-            {"Beta", "0.985"},
+            {"Average Loss", "-0.07%"},
+            {"Compounding Annual Return", "16.423%"},
+            {"Drawdown", "10.500%"},
+            {"Expectancy", "0.081"},
+            {"Start Equity", "100000"},
+            {"End Equity", "116400.57"},
+            {"Net Profit", "16.401%"},
+            {"Sharpe Ratio", "0.891"},
+            {"Sortino Ratio", "0.831"},
+            {"Probabilistic Sharpe Ratio", "50.543%"},
+            {"Loss Rate", "47%"},
+            {"Win Rate", "53%"},
+            {"Profit-Loss Ratio", "1.03"},
+            {"Alpha", "0.018"},
+            {"Beta", "0.984"},
             {"Annual Standard Deviation", "0.11"},
             {"Annual Variance", "0.012"},
-            {"Information Ratio", "0.348"},
+            {"Information Ratio", "0.416"},
             {"Tracking Error", "0.041"},
-            {"Treynor Ratio", "0.096"},
-            {"Total Fees", "$5870.38"},
-            {"Estimated Strategy Capacity", "$320000.00"},
+            {"Treynor Ratio", "0.099"},
+            {"Total Fees", "$5848.25"},
+            {"Estimated Strategy Capacity", "$510000.00"},
             {"Lowest Capacity Asset", "BNO UN3IMQ2JU1YD"},
-            {"Portfolio Turnover", "107.21%"},
-            {"OrderListHash", "e4ccfcf8e3dec570413a939cd3838177"}
+            {"Portfolio Turnover", "106.75%"},
+            {"Drawdown Recovery", "36"},
+            {"OrderListHash", "5499e61404d453274cee78904d4c0e92"}
         };
     }
 }

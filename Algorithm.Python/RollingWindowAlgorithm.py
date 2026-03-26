@@ -24,45 +24,45 @@ from AlgorithmImports import *
 ### <meta name="tag" content="rolling windows" />
 class RollingWindowAlgorithm(QCAlgorithm):
 
-    def Initialize(self):
+    def initialize(self):
         '''Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.'''
 
-        self.SetStartDate(2013,10,1)  #Set Start Date
-        self.SetEndDate(2013,11,1)    #Set End Date
-        self.SetCash(100000)           #Set Strategy Cash
+        self.set_start_date(2013,10,1)  #Set Start Date
+        self.set_end_date(2013,11,1)    #Set End Date
+        self.set_cash(100000)           #Set Strategy Cash
         # Find more symbols here: http://quantconnect.com/data
-        self.AddEquity("SPY", Resolution.Daily)
+        self.add_equity("SPY", Resolution.DAILY)
 
         # Creates a Rolling Window indicator to keep the 2 TradeBar
-        self.window = RollingWindow[TradeBar](2)    # For other security types, use QuoteBar
+        self._window = RollingWindow(2)    # For other security types, use QuoteBar
 
         # Creates an indicator and adds to a rolling window when it is updated
-        self.sma = self.SMA("SPY", 5)
-        self.sma.Updated += self.SmaUpdated
-        self.smaWin = RollingWindow[IndicatorDataPoint](5)
+        self._sma = self.sma("SPY", 5)
+        self._sma.updated += self._sma_updated
+        self._sma_win = RollingWindow(5)
 
 
-    def SmaUpdated(self, sender, updated):
+    def _sma_updated(self, sender, updated):
         '''Adds updated values to rolling window'''
-        self.smaWin.Add(updated)
+        self._sma_win.add(updated)
 
 
-    def OnData(self, data):
+    def on_data(self, data):
         '''OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.'''
 
         # Add SPY TradeBar in rollling window
-        self.window.Add(data["SPY"])
+        self._window.add(data["SPY"])
 
         # Wait for windows to be ready.
-        if not (self.window.IsReady and self.smaWin.IsReady): return
+        if not (self._window.is_ready and self._sma_win.is_ready): return
 
-        currBar = self.window[0]                     # Current bar had index zero.
-        pastBar = self.window[1]                     # Past bar has index one.
-        self.Log("Price: {0} -> {1} ... {2} -> {3}".format(pastBar.Time, pastBar.Close, currBar.Time, currBar.Close))
+        curr_bar = self._window[0]                        # Current bar had index zero.
+        past_bar = self._window[1]                        # Past bar has index one.
+        self.log(f"Price: {past_bar.time} -> {past_bar.close} ... {curr_bar.time} -> {curr_bar.close}")
 
-        currSma = self.smaWin[0]                     # Current SMA had index zero.
-        pastSma = self.smaWin[self.smaWin.Count-1]   # Oldest SMA has index of window count minus 1.
-        self.Log("SMA:   {0} -> {1} ... {2} -> {3}".format(pastSma.Time, pastSma.Value, currSma.Time, currSma.Value))
+        curr_sma = self._sma_win[0]                       # Current SMA had index zero.
+        past_sma = self._sma_win[self._sma_win.count-1]   # Oldest SMA has index of window count minus 1.
+        self.log(f"SMA:   {past_sma.time} -> {past_sma.value} ... {curr_sma.time} -> {curr_sma.value}")
 
-        if not self.Portfolio.Invested and currSma.Value > pastSma.Value:
-            self.SetHoldings("SPY", 1)
+        if not self.portfolio.invested and curr_sma.value > past_sma.value:
+            self.set_holdings("SPY", 1)

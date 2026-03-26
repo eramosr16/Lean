@@ -24,6 +24,10 @@ namespace QuantConnect.Data.Consolidators
     /// </summary>
     public class OpenInterestConsolidator : PeriodCountConsolidatorBase<Tick, OpenInterest>
     {
+        private bool _hourOrDailyConsolidation;
+        // Keep track of the last input to detect hour or date change
+        private Tick _lastInput;
+
         /// <summary>
         /// Create a new OpenInterestConsolidator for the desired resolution
         /// </summary>
@@ -38,9 +42,11 @@ namespace QuantConnect.Data.Consolidators
         /// Creates a consolidator to produce a new 'OpenInterest' representing the period
         /// </summary>
         /// <param name="period">The minimum span of time before emitting a consolidated bar</param>
-        public OpenInterestConsolidator(TimeSpan period)
-            : base(period)
+        /// <param name="startTime">Optionally the bar start time anchor to use</param>
+        public OpenInterestConsolidator(TimeSpan period, TimeSpan? startTime = null)
+            : base(period, startTime)
         {
+            _hourOrDailyConsolidation = period >= Time.OneHour;
         }
 
         /// <summary>
@@ -84,11 +90,11 @@ namespace QuantConnect.Data.Consolidators
         /// <summary>
         /// Determines whether or not the specified data should be processed
         /// </summary>
-        /// <param name="tick">The data to check</param>
+        /// <param name="data">The data to check</param>
         /// <returns>True if the consolidator should process this data, false otherwise</returns>
-        protected override bool ShouldProcess(Tick tick)
+        protected override bool ShouldProcess(Tick data)
         {
-            return tick.TickType == TickType.OpenInterest;
+            return data.TickType == TickType.OpenInterest;
         }
 
         /// <summary>
@@ -96,24 +102,54 @@ namespace QuantConnect.Data.Consolidators
         /// null following the event firing
         /// </summary>
         /// <param name="workingBar">The bar we're building, null if the event was just fired and we're starting a new OI bar</param>
-        /// <param name="tick">The new data</param>
-        protected override void AggregateBar(ref OpenInterest workingBar, Tick tick)
+        /// <param name="data">The new data</param>
+        protected override void AggregateBar(ref OpenInterest workingBar, Tick data)
         {
             if (workingBar == null)
             {
                 workingBar = new OpenInterest
                 {
-                    Symbol = tick.Symbol,
-                    Time = GetRoundedBarTime(tick),
-                    Value = tick.Value
+                    Symbol = data.Symbol,
+                    Time = _hourOrDailyConsolidation ? data.EndTime : GetRoundedBarTime(data),
+                    Value = data.Value
                 };
 
             }
             else
             {
                 //Update the working bar
-                workingBar.Value = tick.Value;
+                workingBar.Value = data.Value;
+
+                // If we are consolidating hourly or daily, we need to update the time of the working bar
+                // for the end time to match the last data point time
+                if (_hourOrDailyConsolidation)
+                {
+                    workingBar.Time = data.EndTime;
+                }
             }
+        }
+
+        /// <summary>
+        /// Updates this consolidator with the specified data. This method is
+        /// responsible for raising the DataConsolidated event.
+        /// It will check for date or hour change and force consolidation if needed.
+        /// </summary>
+        /// <param name="data">The new data for the consolidator</param>
+        public override void Update(Tick data)
+        {
+            if (_lastInput != null &&
+                _hourOrDailyConsolidation &&
+                // Detect hour or date change
+                ((Period == Time.OneHour && data.EndTime.Hour != _lastInput.EndTime.Hour) ||
+                 (Period == Time.OneDay && data.EndTime.Date != _lastInput.EndTime.Date)))
+            {
+                // Date or hour change, force consolidation, no need to wait for the whole period to pass.
+                // Force consolidation by scanning at a time after the end of the period
+                Scan(_lastInput.EndTime.Add(Period.Value + Time.OneSecond));
+            }
+
+            base.Update(data);
+            _lastInput = data;
         }
     }
 }

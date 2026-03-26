@@ -15,10 +15,10 @@
 
 using Python.Runtime;
 using QuantConnect.Data;
-using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Util;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -27,25 +27,22 @@ namespace QuantConnect.Python
     /// <summary>
     /// Collection of methods that converts lists of objects in pandas.DataFrame
     /// </summary>
-    public class PandasConverter
+    public partial class PandasConverter
     {
         private static dynamic _pandas;
         private static PyObject _concat;
 
         /// <summary>
-        /// Creates an instance of <see cref="PandasConverter"/>.
+        /// Initializes the <see cref="PandasConverter"/> class
         /// </summary>
-        public PandasConverter()
+        static PandasConverter()
         {
-            if (_pandas == null)
+            using (Py.GIL())
             {
-                using (Py.GIL())
-                {
-                    var pandas = Py.Import("pandas");
-                    _pandas = pandas;
-                    // keep it so we don't need to ask for it each time
-                    _concat = pandas.GetAttr("concat");
-                }
+                var pandas = Py.Import("pandas");
+                _pandas = pandas;
+                // keep it so we don't need to ask for it each time
+                _concat = pandas.GetAttr("concat");
             }
         }
 
@@ -53,87 +50,62 @@ namespace QuantConnect.Python
         /// Converts an enumerable of <see cref="Slice"/> in a pandas.DataFrame
         /// </summary>
         /// <param name="data">Enumerable of <see cref="Slice"/></param>
-        /// <param name="dataType">Optional type of bars to add to the data frame</param>
+        /// <param name="flatten">Whether to flatten collections into rows and columns</param>
+        /// <param name="dataType">Optional type of bars to add to the data frame
+        /// If true, the base data items time will be ignored and only the base data collection time will be used in the index</param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
-        public PyObject GetDataFrame(IEnumerable<Slice> data, Type dataType = null)
+        public PyObject GetDataFrame(IEnumerable<Slice> data, bool flatten = false, Type dataType = null)
         {
-            var maxLevels = 0;
-            var sliceDataDict = new Dictionary<SecurityIdentifier, PandasData>();
-
-            // if no data type is requested we check all
-            var requestedTick = dataType == null || dataType == typeof(Tick) || dataType == typeof(OpenInterest);
-            var requestedTradeBar = dataType == null || dataType == typeof(TradeBar);
-            var requestedQuoteBar = dataType == null || dataType == typeof(QuoteBar);
-
-            foreach (var slice in data)
-            {
-                AddSliceDataTypeDataToDict(slice, requestedTick, requestedTradeBar, requestedQuoteBar, sliceDataDict, ref maxLevels);
-            }
-
-            using (Py.GIL())
-            {
-                if (sliceDataDict.Count == 0)
-                {
-                    return _pandas.DataFrame();
-                }
-                using var dataFrames = sliceDataDict.Select(x => x.Value.ToPandasDataFrame(maxLevels)).ToPyListUnSafe();
-                using var sortDic = Py.kw("sort", true);
-                var result = _concat.Invoke(new[] { dataFrames }, sortDic);
-
-                foreach (var df in dataFrames)
-                {
-                    df.Dispose();
-                }
-                return result;
-            }
+            var generator = new DataFrameGenerator(data, flatten, dataType);
+            return generator.GenerateDataFrame();
         }
 
         /// <summary>
         /// Converts an enumerable of <see cref="IBaseData"/> in a pandas.DataFrame
         /// </summary>
         /// <param name="data">Enumerable of <see cref="Slice"/></param>
+        /// <param name="symbolOnlyIndex">Whether to make the index only the symbol, without time or any other index levels</param>
+        /// <param name="forceMultiValueSymbol">Useful when the data contains points for multiple symbols.
+        /// If false and <paramref name="symbolOnlyIndex"/> is true, it will assume there is a single point for each symbol,
+        /// and will apply performance improvements for the data frame generation.</param>
+        /// <param name="flatten">Whether to flatten collections into rows and columns</param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
         /// <remarks>Helper method for testing</remarks>
-        public PyObject GetDataFrame<T>(IEnumerable<T> data)
-            where T : IBaseData
+        public PyObject GetDataFrame<T>(IEnumerable<T> data, bool symbolOnlyIndex = false, bool forceMultiValueSymbol = false, bool flatten = false)
+            where T : ISymbolProvider
         {
-            PandasData sliceData = null;
-            foreach (var datum in data)
-            {
-                if (sliceData == null)
-                {
-                    sliceData = new PandasData(datum);
-                }
-
-                sliceData.Add(datum);
-            }
-
-            using (Py.GIL())
-            {
-                // If sliceData is still null, data is an empty enumerable
-                // returns an empty pandas.DataFrame
-                if (sliceData == null)
-                {
-                    return _pandas.DataFrame();
-                }
-                return sliceData.ToPandasDataFrame();
-            }
+            var generator = new DataFrameGenerator<T>(data, flatten);
+            return generator.GenerateDataFrame(
+                // Use 2 instead of maxLevels for backwards compatibility
+                levels: symbolOnlyIndex ? 1 : 2,
+                sort: false,
+                symbolOnlyIndex: symbolOnlyIndex,
+                forceMultiValueSymbol: forceMultiValueSymbol);
         }
 
         /// <summary>
         /// Converts a dictionary with a list of <see cref="IndicatorDataPoint"/> in a pandas.DataFrame
         /// </summary>
         /// <param name="data">Dictionary with a list of <see cref="IndicatorDataPoint"/></param>
+        /// <param name="extraData">Optional dynamic properties to include in the DataFrame.</param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
-        public PyObject GetIndicatorDataFrame(IDictionary<string, List<IndicatorDataPoint>> data)
+        public PyObject GetIndicatorDataFrame(IEnumerable<KeyValuePair<string, List<IndicatorDataPoint>>> data, IEnumerable<KeyValuePair<string, List<(DateTime, object)>>> extraData = null)
         {
             using (Py.GIL())
             {
-                var pyDict = new PyDict();
+                using var pyDict = new PyDict();
 
                 foreach (var kvp in data)
                 {
                     AddSeriesToPyDict(kvp.Key, kvp.Value, pyDict);
+                }
+
+                if (extraData != null)
+                {
+                    foreach (var kvp in extraData)
+                    {
+                        AddDynamicSeriesToPyDict(kvp.Key, kvp.Value, pyDict);
+                    }
                 }
 
                 return MakeIndicatorDataFrame(pyDict);
@@ -187,9 +159,114 @@ namespace QuantConnect.Python
         /// <returns></returns>
         public override string ToString()
         {
-            return _pandas == null
-                ? Messages.PandasConverter.PandasModuleNotImported
-                : _pandas.Repr();
+            if (_pandas == null)
+            {
+                return Messages.PandasConverter.PandasModuleNotImported;
+            }
+
+            using (Py.GIL())
+            {
+                return _pandas.Repr();
+            }
+        }
+
+        /// <summary>
+        /// Concatenates multiple data frames
+        /// </summary>
+        /// <param name="dataFrames">The data frames to concatenate</param>
+        /// <param name="keys">
+        /// Optional new keys for a new multi-index level that would be added
+        /// to index each individual data frame in the resulting one
+        /// </param>
+        /// <param name="names">The optional names of the new index level (and the existing ones if they need to be changed)</param>
+        /// <param name="sort">Whether to sort the resulting data frame</param>
+        /// <param name="dropna">Whether to drop columns containing NA values only (Nan, None, etc)</param>
+        /// <returns>A new data frame result from concatenating the input</returns>
+        public static PyObject ConcatDataFrames<T>(IEnumerable<PyObject> dataFrames, IEnumerable<T> keys, IEnumerable<string> names,
+            bool sort = true, bool dropna = true)
+        {
+            using (Py.GIL())
+            {
+                using var pyDataFrames = dataFrames.ToPyListUnSafe();
+
+                if (pyDataFrames.Length() == 0)
+                {
+                    return _pandas.DataFrame();
+                }
+
+                using var kwargs = Py.kw("sort", sort);
+                PyList pyKeys = null;
+                PyList pyNames = null;
+
+                try
+                {
+                    if (keys != null && names != null)
+                    {
+                        pyNames = names.ToPyListUnSafe();
+                        pyKeys = ConvertConcatKeys(keys);
+                        using var pyFalse = false.ToPython();
+
+                        kwargs.SetItem("keys", pyKeys);
+                        kwargs.SetItem("names", pyNames);
+                        kwargs.SetItem("copy", pyFalse);
+                    }
+
+                    var result = _concat.Invoke(new[] { pyDataFrames }, kwargs);
+
+                    // Drop columns with only NaN or None values
+                    if (dropna)
+                    {
+                        using var dropnaKwargs = Py.kw("axis", 1, "inplace", true, "how", "all");
+                        result.GetAttr("dropna").Invoke(Array.Empty<PyObject>(), dropnaKwargs);
+                    }
+
+                    return result;
+                }
+                finally
+                {
+                    pyKeys?.Dispose();
+                    pyNames?.Dispose();
+                }
+            }
+        }
+
+        public static PyObject ConcatDataFrames(IEnumerable<PyObject> dataFrames, bool sort = true, bool dropna = true)
+        {
+            return ConcatDataFrames<string>(dataFrames, null, null, sort, dropna);
+        }
+
+        /// <summary>
+        /// Creates the list of keys required for the pd.concat method, making sure that if the items are enumerables,
+        /// they are converted to Python tuples so that they are used as levels for a multi index
+        /// </summary>
+        private static PyList ConvertConcatKeys(IEnumerable<IEnumerable<object>> keys)
+        {
+            var keyTuples = keys.Select(x => new PyTuple(x.Select(y => y.ToPython()).ToArray()));
+            try
+            {
+                return keyTuples.ToPyListUnSafe();
+            }
+            finally
+            {
+                foreach (var tuple in keyTuples)
+                {
+                    foreach (var x in tuple)
+                    {
+                        x.DisposeSafely();
+                    }
+                    tuple.DisposeSafely();
+                }
+            }
+        }
+
+        private static PyList ConvertConcatKeys<T>(IEnumerable<T> keys)
+        {
+            if ((typeof(T).IsAssignableTo(typeof(IEnumerable)) && !typeof(T).IsAssignableTo(typeof(string))))
+            {
+                return ConvertConcatKeys(keys.Cast<IEnumerable<object>>());
+            }
+
+            return keys.ToPyListUnSafe();
         }
 
         /// <summary>
@@ -206,8 +283,35 @@ namespace QuantConnect.Python
 
             foreach (var point in points)
             {
-                index.Add(point.EndTime);
-                values.Add((double) point.Value);
+                if (point.EndTime != default)
+                {
+                    index.Add(point.EndTime);
+                    values.Add((double)point.Value);
+                }
+            }
+            pyDict.SetItem(key.ToLowerInvariant(), _pandas.Series(values, index));
+        }
+
+        /// <summary>
+        /// Builds a time‑indexed pandas <see cref="Series"/> from a collection of 
+        /// heterogeneous data (numbers, enums, strings, etc.) and inserts it into the
+        /// specified <see cref="PyDict"/> under the given <paramref name="key"/>.
+        /// </summary>
+        /// <param name="key">Key to insert in the <see cref="PyDict"/></param>
+        /// <param name="entries">A list of tuples whose first item is the timestamp and whose second item is the value associated with that timestamp.</param>
+        /// <param name="pyDict"><see cref="PyDict"/> where the resulting key-value pair will be inserted into</param>
+        private void AddDynamicSeriesToPyDict(string key, List<(DateTime Timestamp, object Value)> entries, PyDict pyDict)
+        {
+            var index = new List<DateTime>();
+            var values = new List<object>();
+
+            foreach (var (timestamp, value) in entries)
+            {
+                if (timestamp != default)
+                {
+                    index.Add(timestamp);
+                    values.Add(value is Enum e ? e.ToString() : value);
+                }
             }
             pyDict.SetItem(key.ToLowerInvariant(), _pandas.Series(values, index));
         }
@@ -220,78 +324,6 @@ namespace QuantConnect.Python
         private PyObject MakeIndicatorDataFrame(PyDict pyDict)
         {
             return _pandas.DataFrame(pyDict, columns: pyDict.Keys().Select(x => x.As<string>().ToLowerInvariant()).OrderBy(x => x));
-        }
-
-        /// <summary>
-        /// Gets the <see cref="PandasData"/> for the given symbol if it exists in the dictionary, otherwise it creates a new instance with the
-        /// given base data and adds it to the dictionary
-        /// </summary>
-        private PandasData GetPandasDataValue(IDictionary<SecurityIdentifier, PandasData> sliceDataDict, Symbol symbol, object data, ref int maxLevels)
-        {
-            PandasData value;
-            if (!sliceDataDict.TryGetValue(symbol.ID, out value))
-            {
-                sliceDataDict[symbol.ID] = value = new PandasData(data);
-                maxLevels = Math.Max(maxLevels, value.Levels);
-            }
-
-            return value;
-        }
-
-        /// <summary>
-        /// Adds each slice data corresponding to the requested data type to the pandas data dictionary
-        /// </summary>
-        private void AddSliceDataTypeDataToDict(Slice slice, bool requestedTick, bool requestedTradeBar, bool requestedQuoteBar, IDictionary<SecurityIdentifier, PandasData> sliceDataDict, ref int maxLevels)
-        {
-            HashSet<SecurityIdentifier> _addedData = null;
-
-            for (int i = 0; i < slice.AllData.Count; i++)
-            {
-                var baseData = slice.AllData[i];
-                var value = GetPandasDataValue(sliceDataDict, baseData.Symbol, baseData, ref maxLevels);
-
-                if (value.IsCustomData)
-                {
-                    value.Add(baseData);
-                }
-                else
-                {
-                    var tick = requestedTick ? baseData as Tick : null;
-                    if(tick == null)
-                    {
-                        // we add both quote and trade bars for each symbol at the same time, because they share the row in the data frame else it will generate 2 rows per series
-                        if (requestedTradeBar && requestedQuoteBar)
-                        {
-                            _addedData ??= new();
-                            if (!_addedData.Add(baseData.Symbol.ID))
-                            {
-                                continue;
-                            }
-                        }
-
-                        // the slice already has the data organized by symbol so let's take advantage of it using Bars/QuoteBars collections
-                        QuoteBar quoteBar = null;
-                        var tradeBar = requestedTradeBar ? baseData as TradeBar : null;
-                        if (tradeBar != null)
-                        {
-                            slice.QuoteBars.TryGetValue(tradeBar.Symbol, out quoteBar);
-                        }
-                        else
-                        {
-                            quoteBar = requestedQuoteBar ? baseData as QuoteBar : null;
-                            if (quoteBar != null)
-                            {
-                                slice.Bars.TryGetValue(quoteBar.Symbol, out tradeBar);
-                            }
-                        }
-                        value.Add(tradeBar, quoteBar);
-                    }
-                    else
-                    {
-                        value.AddTick(tick);
-                    }
-                }
-            }
         }
     }
 }

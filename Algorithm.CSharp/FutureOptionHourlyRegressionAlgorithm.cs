@@ -14,13 +14,8 @@
 */
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
 using QuantConnect.Data;
-using QuantConnect.Interfaces;
-using QuantConnect.Orders;
-using QuantConnect.Securities;
+using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -36,11 +31,11 @@ namespace QuantConnect.Algorithm.CSharp
             // Schedule a purchase of this contract at Noon
             Schedule.On(DateRules.Today, TimeRules.Noon, () =>
             {
-                Ticket = MarketOrder(DcOption, 1);
+                Ticket = MarketOrder(ESOption, 1);
             });
 
             // Schedule liquidation at 2PM when the market is open
-            Schedule.On(DateRules.Today, TimeRules.At(14,0,0), () =>
+            Schedule.On(DateRules.Today, TimeRules.At(17,0,0), () =>
             {
                 Liquidate();
             });
@@ -63,29 +58,36 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public override List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 86;
+        public override long DataPoints => 55;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public override int AlgorithmHistoryDataPoints => 0;
+        public override int AlgorithmHistoryDataPoints => 1;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99672.16"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -100,11 +102,12 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$4.94"},
-            {"Estimated Strategy Capacity", "$0"},
-            {"Lowest Capacity Asset", "DC V5E8P9VAH3IC|DC V5E8P9SH0U0X"},
-            {"Portfolio Turnover", "2.17%"},
-            {"OrderListHash", "68894fb075beb9f0e55b50379ab0d383"}
+            {"Total Fees", "$2.84"},
+            {"Estimated Strategy Capacity", "$3000.00"},
+            {"Lowest Capacity Asset", "ES XCZJLCEYO5XG|ES XCZJLC9NOB29"},
+            {"Portfolio Turnover", "4.90%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "10661c6d84f71ca7e07e2fdf5b79851b"}
         };
     }
 }

@@ -52,20 +52,20 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (positionGroup.Positions.Count() != 1)
             {
-                throw new Exception($"Expected position group to have 1 position. Actual: {positionGroup.Positions.Count()}");
+                throw new RegressionTestException($"Expected position group to have 1 position. Actual: {positionGroup.Positions.Count()}");
             }
 
             var optionPosition = positionGroup.Positions.Single(x => x.Symbol.SecurityType == SecurityType.Option);
             if (optionPosition.Symbol.ID.OptionRight != OptionRight.Put)
             {
-                throw new Exception($"Expected option position to be a put. Actual: {optionPosition.Symbol.ID.OptionRight}");
+                throw new RegressionTestException($"Expected option position to be a put. Actual: {optionPosition.Symbol.ID.OptionRight}");
             }
 
             var expectedOptionPositionQuantity = -2;
 
             if (optionPosition.Quantity != expectedOptionPositionQuantity)
             {
-                throw new Exception($@"Expected option position quantity to be {expectedOptionPositionQuantity}. Actual: {optionPosition.Quantity}");
+                throw new RegressionTestException($@"Expected option position quantity to be {expectedOptionPositionQuantity}. Actual: {optionPosition.Quantity}");
             }
         }
 
@@ -83,12 +83,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public override List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 4490;
+        public override long DataPoints => 2298;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -96,16 +96,23 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999377.4"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -122,9 +129,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$2.60"},
             {"Estimated Strategy Capacity", "$10000.00"},
-            {"Lowest Capacity Asset", "GOOCV 30AKMEIPOSS1Y|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV 30AKMEIPOX2DI|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "2.13%"},
-            {"OrderListHash", "27cefe3a419018bb6b0bd26735cad576"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "699eda4fdbcfa625cc7cb6c4ccbbd7ba"}
         };
     }
 }

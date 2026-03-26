@@ -29,42 +29,49 @@ namespace QuantConnect.Algorithm.CSharp
         protected override bool ExtendedMarketHours => true;
         protected override List<DateTime> ExpectedOpens => new List<DateTime>(){
             new DateTime(2013, 10, 06, 18, 0, 0), // Sunday
-            new DateTime(2013, 10, 07, 18, 0, 0),
-            new DateTime(2013, 10, 08, 18, 0, 0),
-            new DateTime(2013, 10, 09, 18, 0, 0),
-            new DateTime(2013, 10, 10, 18, 0, 0),
+            // market is open for the whole day, so goes from midnight to midnight
+            new DateTime(2013, 10, 07, 0, 0, 0),
+            new DateTime(2013, 10, 08, 0, 0, 0),
+            new DateTime(2013, 10, 09, 0, 0, 0),
+            new DateTime(2013, 10, 10, 0, 0, 0),
+            new DateTime(2013, 10, 11, 0, 0, 0),
             new DateTime(2013, 10, 13, 18, 0, 0),
+            new DateTime(2013, 10, 14, 0, 0, 0),
         };
         protected override List<DateTime> ExpectedCloses => new List<DateTime>(){
-            new DateTime(2013, 10, 07, 17, 0, 0),
-            new DateTime(2013, 10, 08, 17, 0, 0),
-            new DateTime(2013, 10, 09, 17, 0, 0),
-            new DateTime(2013, 10, 10, 17, 0, 0),
-            new DateTime(2013, 10, 11, 17, 0, 0),
-            new DateTime(2013, 10, 14, 17, 0, 0),
+            new DateTime(2013, 10, 07, 0, 0, 0),
+            new DateTime(2013, 10, 08, 0, 0, 0),
+            new DateTime(2013, 10, 09, 0, 0, 0),
+            new DateTime(2013, 10, 10, 0, 0, 0),
+            new DateTime(2013, 10, 11, 0, 0, 0),
+            new DateTime(2013, 10, 11, 17, 0, 0), // friday
+            new DateTime(2013, 10, 14, 0, 0, 0),
+            new DateTime(2013, 10, 15, 0, 0, 0),
         };
 
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp };
+        public override List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 103812;
+        public override long DataPoints => 51933;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -83,6 +90,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

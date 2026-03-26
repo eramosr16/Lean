@@ -17,18 +17,19 @@ using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using Python.Runtime;
+using QuantConnect.Data;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 
 namespace QuantConnect.Tests.Common.Data
 {
     [TestFixture]
-    public class VolumeRenkoConsolidatorTests
+    public class VolumeRenkoConsolidatorTests: BaseConsolidatorTests
     {
         [Test]
         public void OutputTypeIsVolumeRenkoBar()
         {
-            var consolidator = new VolumeRenkoConsolidator(10);
+            using var consolidator = new VolumeRenkoConsolidator(10);
             Assert.AreEqual(typeof(VolumeRenkoBar), consolidator.OutputType);
         }
 
@@ -36,7 +37,7 @@ namespace QuantConnect.Tests.Common.Data
         public void ConsolidatesOnTickVolumeReached()
         {
             VolumeRenkoBar bar = null;
-            var consolidator = new VolumeRenkoConsolidator(10);
+            using var consolidator = new VolumeRenkoConsolidator(10);
             consolidator.DataConsolidated += (sender, consolidated) =>
             {
                 bar = consolidated;
@@ -71,7 +72,7 @@ namespace QuantConnect.Tests.Common.Data
         public void ConsolidatesOnTraderBarVolumeReached()
         {
             VolumeRenkoBar bar = null;
-            var consolidator = new VolumeRenkoConsolidator(10);
+            using var consolidator = new VolumeRenkoConsolidator(10);
             consolidator.DataConsolidated += (sender, consolidated) => 
             {
                 bar = consolidated;
@@ -105,7 +106,7 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void ConsolidatesOnQuoteBar()
         {
-            var consolidator = new VolumeRenkoConsolidator(10);
+            using var consolidator = new VolumeRenkoConsolidator(10);
 
             var reference = new DateTime(2013, 10, 1);
             Assert.Throws<ArgumentException>(() => 
@@ -165,7 +166,7 @@ namespace QuantConnect.Tests.Common.Data
         public void MultipleConsoldation()
         {
             VolumeRenkoBar bar = null;
-            var consolidator = new VolumeRenkoConsolidator(10m);
+            using var consolidator = new VolumeRenkoConsolidator(10m);
             consolidator.DataConsolidated += (sender, consolidated) =>
             {
                 bar = consolidated;
@@ -225,6 +226,32 @@ namespace QuantConnect.Tests.Common.Data
             Assert.AreEqual(reference.AddHours(3), bar.Start);
             Assert.AreEqual(reference.AddHours(6), bar.EndTime);
             Assert.IsTrue(bar.IsClosed);
+        }
+
+        protected override IEnumerable<IBaseData> GetTestValues()
+        {
+            var time = new DateTime(2016, 3, 1);
+            return new List<Tick>()
+            {
+                new Tick(time, Symbol.Empty, String.Empty, String.Empty, 5m, 5m),
+                new Tick(time.AddSeconds(1), Symbol.Empty, String.Empty, String.Empty, 5m, 3m),
+                new Tick(time.AddSeconds(2), Symbol.Empty, String.Empty, String.Empty, 5m, 7m),
+                new Tick(time.AddSeconds(3), Symbol.Empty, String.Empty, String.Empty, 5m, 6m),
+                new Tick(time.AddSeconds(4), Symbol.Empty, String.Empty, String.Empty, 5m, 5m),
+                new Tick(time.AddSeconds(5), Symbol.Empty, String.Empty, String.Empty, 5m, 3m),
+                new Tick(time.AddSeconds(6), Symbol.Empty, String.Empty, String.Empty, 5m, 7m),
+                new Tick(time.AddSeconds(7), Symbol.Empty, String.Empty, String.Empty, 5m, 6m),
+                new Tick(time.AddSeconds(8), Symbol.Empty, String.Empty, String.Empty, 5m, 5m),
+                new Tick(time.AddSeconds(9), Symbol.Empty, String.Empty, String.Empty, 5m, 6m),
+                new Tick(time.AddSeconds(10), Symbol.Empty, String.Empty, String.Empty, 5m, 7m),
+                new Tick(time.AddSeconds(11), Symbol.Empty, String.Empty, String.Empty, 5m, 8m),
+                new Tick(time.AddSeconds(12), Symbol.Empty, String.Empty, String.Empty, 5m, 9m)
+            };
+        }
+
+        protected override IDataConsolidator CreateConsolidator()
+        {
+            return new VolumeRenkoConsolidator(10m);
         }
     }
 }

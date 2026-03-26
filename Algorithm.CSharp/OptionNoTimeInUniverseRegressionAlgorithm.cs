@@ -42,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp
             _optionSymbol = option.Symbol;
 
             // set our strike/expiry filter for this option chain
-            option.SetFilter(u => u.Strikes(-1, +1)
+            option.SetFilter(u => u.StandardsOnly().Strikes(-1, +1)
                                    // Expiration method accepts TimeSpan objects or integer for days.
                                    // The following statements yield the same filtering criteria
                                    .Expiration(0, 60));
@@ -63,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (strikes.Count > 2)
             {
-                throw new Exception($"At {Time} found {strikes.Count}. Underlying: {underlyingPrice}. Strikes: [{string.Join(",", strikes)}]");
+                throw new RegressionTestException($"At {Time} found {strikes.Count}. Underlying: {underlyingPrice}. Strikes: [{string.Join(",", strikes)}]");
             }
         }
 
@@ -75,12 +75,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 464263;
+        public long DataPoints => 8151;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -88,16 +88,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -116,6 +123,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

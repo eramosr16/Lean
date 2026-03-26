@@ -69,7 +69,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (positionGroup.Positions.Count() != 3)
             {
-                throw new Exception($"Expected position group to have 3 positions. Actual: {positionGroup.Positions.Count()}");
+                throw new RegressionTestException($"Expected position group to have 3 positions. Actual: {positionGroup.Positions.Count()}");
             }
 
             var higherStrike = _butterflyCall.OptionLegs.Max(leg => leg.Strike);
@@ -78,7 +78,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (higherStrikePosition.Quantity != 2)
             {
-                throw new Exception($"Expected higher strike position quantity to be 2. Actual: {higherStrikePosition.Quantity}");
+                throw new RegressionTestException($"Expected higher strike position quantity to be 2. Actual: {higherStrikePosition.Quantity}");
             }
 
             var lowerStrike = _butterflyCall.OptionLegs.Min(leg => leg.Strike);
@@ -87,7 +87,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (lowerStrikePosition.Quantity != 2)
             {
-                throw new Exception($"Expected lower strike position quantity to be 2. Actual: {lowerStrikePosition.Quantity}");
+                throw new RegressionTestException($"Expected lower strike position quantity to be 2. Actual: {lowerStrikePosition.Quantity}");
             }
 
             var middleStrike = _butterflyCall.OptionLegs.Single(leg => leg.Strike < higherStrike && leg.Strike > lowerStrike).Strike;
@@ -96,7 +96,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (middleStrikePosition.Quantity != -4)
             {
-                throw new Exception($"Expected middle strike position quantity to be -4. Actual: {middleStrikePosition.Quantity}");
+                throw new RegressionTestException($"Expected middle strike position quantity to be -4. Actual: {middleStrikePosition.Quantity}");
             }
         }
 
@@ -114,12 +114,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public override List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 4490;
+        public override long DataPoints => 2298;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -127,16 +127,23 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "6"},
+            {"Total Orders", "6"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999229.6"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -153,9 +160,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$10.40"},
             {"Estimated Strategy Capacity", "$7000.00"},
-            {"Lowest Capacity Asset", "GOOCV W78ZFMEBBB2E|GOOCV VP83T1ZUHROL"},
+            {"Lowest Capacity Asset", "GOOCV W78ZFMEBFLDY|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "2.17%"},
-            {"OrderListHash", "d03d3bf7e0247f8c41fb58639d0bcd03"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "819b008b902a1a0013646a12d31f4ae4"}
         };
     }
 }

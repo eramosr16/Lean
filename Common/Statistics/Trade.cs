@@ -13,7 +13,9 @@
  * limitations under the License.
 */
 
+using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 
 namespace QuantConnect.Statistics
 {
@@ -22,10 +24,44 @@ namespace QuantConnect.Statistics
     /// </summary>
     public class Trade
     {
+        private List<Symbol> _symbols;
+
+        /// <summary>
+        /// A unique identifier for the trade
+        /// </summary>
+        public string Id { get; set; }
+
         /// <summary>
         /// The symbol of the traded instrument
         /// </summary>
-        public Symbol Symbol { get; set; }
+        [Obsolete("Use Symbols property instead")]
+        [JsonIgnore]
+        public Symbol Symbol
+        {
+            get
+            {
+                return _symbols != null && _symbols.Count > 0 ? _symbols[0] : Symbol.Empty;
+            }
+            private set
+            {
+                _symbols = new List<Symbol>() { value };
+            }
+        }
+
+        /// <summary>
+        /// Just needed so that "Symbol" is never serialized but can be deserialized, if present, for backward compatibility
+        /// </summary>
+        [JsonProperty("Symbol")]
+        private Symbol SymbolForDeserialization { set => Symbol = value; }
+
+        /// <summary>
+        /// The symbol associated to the traded instruments
+        /// </summary>
+        public List<Symbol> Symbols
+        {
+            get { return _symbols; }
+            set { _symbols = value; }
+        }
 
         /// <summary>
         /// The date and time the trade was opened
@@ -88,10 +124,7 @@ namespace QuantConnect.Statistics
         /// <summary>
         /// Returns the amount of profit given back before the trade was closed
         /// </summary>
-        public decimal EndTradeDrawdown
-        {
-            get { return ProfitLoss - MFE; }
-        }
+        public decimal EndTradeDrawdown { get; set; }
 
         /// <summary>
         /// Returns whether the trade was profitable (is a win) or not (a loss)
@@ -105,5 +138,40 @@ namespace QuantConnect.Statistics
         ///       but it might count as a loss if the ITM amount is less than the amount received for the option.
         /// </remarks>
         public bool IsWin { get; set; }
+
+        /// <summary>
+        /// The IDs of the orders related to this trade
+        /// </summary>
+        public HashSet<int> OrderIds { get; init; } = new HashSet<int>();
+
+        /// <summary>
+        /// Creates a new instance of the <see cref="Trade"/> class
+        /// </summary>
+        public Trade()
+        {
+        }
+
+        /// <summary>
+        /// Creates a new instance of the <see cref="Trade"/> class by copying another trade
+        /// </summary>
+        /// <param name="other">The trade to copy</param>
+        public Trade(Trade other)
+        {
+            Id = other.Id;
+            _symbols = other._symbols != null ? [.. other._symbols] : null;
+            EntryTime = other.EntryTime;
+            EntryPrice = other.EntryPrice;
+            Direction = other.Direction;
+            Quantity = other.Quantity;
+            ExitTime = other.ExitTime;
+            ExitPrice = other.ExitPrice;
+            ProfitLoss = other.ProfitLoss;
+            TotalFees = other.TotalFees;
+            MAE = other.MAE;
+            MFE = other.MFE;
+            EndTradeDrawdown = other.EndTradeDrawdown;
+            IsWin = other.IsWin;
+            OrderIds = [.. other.OrderIds];
+        }
     }
 }

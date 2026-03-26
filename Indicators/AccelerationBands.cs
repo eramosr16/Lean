@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -69,8 +69,10 @@ namespace QuantConnect.Indicators
         /// </summary>
         /// <param name="period">The period of the three moving average (middle, upper and lower band).</param>
         /// <param name="width">A coefficient specifying the distance between the middle band and upper or lower bands.</param>
-        public AccelerationBands(int period, decimal width)
-            : this($"ABANDS({period},{width})", period, width)
+        /// <param name="movingAverageType">Type of the moving average.</param>
+        public AccelerationBands(int period, decimal width,
+            MovingAverageType movingAverageType = MovingAverageType.Simple)
+            : this($"ABANDS({period},{width},{movingAverageType})", period, width, movingAverageType)
         {
         }
 
@@ -113,11 +115,11 @@ namespace QuantConnect.Indicators
         /// </returns>
         protected override decimal ComputeNextValue(IBaseDataBar input)
         {
-            var coefficient = _width * (input.High - input.Low) / (input.High + input.Low);
+            var coefficient = _width * (input.High - input.Low).SafeDivision(input.High + input.Low);
 
-            LowerBand.Update(input.Time, input.Low * (1 - coefficient));
-            UpperBand.Update(input.Time, input.High * (1 + coefficient));
-            MiddleBand.Update(input.Time, input.Close);
+            LowerBand.Update(input.EndTime, input.Low * (1 - coefficient));
+            UpperBand.Update(input.EndTime, input.High * (1 + coefficient));
+            MiddleBand.Update(input.EndTime, input.Close);
 
             return MiddleBand.Current.Value;
         }

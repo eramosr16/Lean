@@ -20,6 +20,8 @@ using QuantConnect.Util;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
+using QuantConnect.Data.Market;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Securities
 {
@@ -35,6 +37,7 @@ namespace QuantConnect.Securities
         private readonly ISecurityInitializerProvider _securityInitializerProvider;
         private readonly SecurityCacheProvider _cacheProvider;
         private readonly IPrimaryExchangeProvider _primaryExchangeProvider;
+        private readonly IOptionPriceModelProvider _optionPriceModelProvider;
         private readonly IAlgorithm _algorithm;
         private bool _isLiveMode;
         private bool _modelsMismatchWarningSent;
@@ -49,7 +52,8 @@ namespace QuantConnect.Securities
             IRegisteredSecurityDataTypesProvider registeredTypes,
             SecurityCacheProvider cacheProvider,
             IPrimaryExchangeProvider primaryExchangeProvider = null,
-            IAlgorithm algorithm = null)
+            IAlgorithm algorithm = null,
+            IOptionPriceModelProvider optionPriceModelProvider = null)
         {
             _cashBook = cashBook;
             _registeredTypes = registeredTypes;
@@ -59,6 +63,8 @@ namespace QuantConnect.Securities
             _cacheProvider = cacheProvider;
             _primaryExchangeProvider = primaryExchangeProvider;
             _algorithm = algorithm;
+            _optionPriceModelProvider = optionPriceModelProvider;
+            OptionPriceModels.DefaultPriceModelProvider = _optionPriceModelProvider;
         }
 
         /// <summary>
@@ -66,17 +72,38 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <remarks>Following the obsoletion of Security.Subscriptions,
         /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
-        public Security CreateSecurity(Symbol symbol,
+        private Security CreateSecurity(Symbol symbol,
             List<SubscriptionDataConfig> subscriptionDataConfigList,
-            decimal leverage = 0,
-            bool addToSymbolCache = true,
-            Security underlying = null)
+            decimal leverage,
+            bool addToSymbolCache,
+            Security underlying,
+            bool initializeSecurity,
+            bool reCreateSecurity,
+            bool seedSecurity)
         {
             var configList = new SubscriptionDataConfigList(symbol);
-            configList.AddRange(subscriptionDataConfigList);
+            if (subscriptionDataConfigList != null)
+            {
+                configList.AddRange(subscriptionDataConfigList);
+            }
+
+            if (!reCreateSecurity && _algorithm != null && _algorithm.Securities.TryGetValue(symbol, out var existingSecurity))
+            {
+                existingSecurity.AddData(configList);
+
+                // If non-internal, mark as tradable if it was not already since this is an existing security but might include new subscriptions
+                if (!configList.IsInternalFeed)
+                {
+                    existingSecurity.MakeTradable();
+                }
+
+                InitializeSecurity(initializeSecurity, existingSecurity, seedSecurity);
+
+                return existingSecurity;
+            }
 
             var dataTypes = Enumerable.Empty<Type>();
-            if(symbol.SecurityType == SecurityType.Base && SecurityIdentifier.TryGetCustomDataTypeInstance(symbol.ID.Symbol, out var type))
+            if (symbol.SecurityType == SecurityType.Base && SecurityIdentifier.TryGetCustomDataTypeInstance(symbol.ID.Symbol, out var type))
             {
                 dataTypes = new[] { type };
             }
@@ -116,16 +143,31 @@ namespace QuantConnect.Securities
 
             Cash baseCash = null;
             // we skip cfd because we don't need to add the base cash
-            if (symbol.SecurityType != SecurityType.Cfd && CurrencyPairUtil.TryDecomposeCurrencyPair(symbol, out var baseCurrencySymbol, out _))
+            if (symbol.SecurityType != SecurityType.Cfd)
             {
-                if (!_cashBook.TryGetValue(baseCurrencySymbol, out baseCash))
+                if (CurrencyPairUtil.TryDecomposeCurrencyPair(symbol, out var baseCurrencySymbol, out _))
                 {
-                    // since we have none it's safe to say the conversion is zero
-                    baseCash = _cashBook.Add(baseCurrencySymbol, 0, 0);
+                    if (!_cashBook.TryGetValue(baseCurrencySymbol, out baseCash))
+                    {
+                        // since we have none it's safe to say the conversion is zero
+                        baseCash = _cashBook.Add(baseCurrencySymbol, 0, 0);
+                    }
+                }
+                else if (CurrencyPairUtil.IsValidSecurityType(symbol.SecurityType, false))
+                {
+                    throw new ArgumentException($"Failed to resolve base currency for '{symbol.ID.Symbol}', it might be missing from the Symbol database or market '{symbol.ID.Market}' could be wrong");
                 }
             }
 
             var cache = _cacheProvider.GetSecurityCache(symbol);
+
+            List<TickType> sessionDataTypes = null;
+            bool hasDataTypes = _algorithm != null && _algorithm.SubscriptionManager.AvailableDataTypes?.TryGetValue(symbol.SecurityType, out sessionDataTypes) == true;
+            if (!hasDataTypes || sessionDataTypes.Count == 0)
+            {
+                sessionDataTypes = SubscriptionManager.DefaultDataTypes()[symbol.SecurityType];
+            }
+            cache.Session = new Session(sessionDataTypes.First(), exchangeHours, symbol);
 
             Security security;
             switch (symbol.ID.SecurityType)
@@ -139,12 +181,12 @@ namespace QuantConnect.Securities
 
                 case SecurityType.Option:
                     if (addToSymbolCache) SymbolCache.Set(symbol.Underlying.Value, symbol.Underlying);
-                    security = new Option.Option(symbol, exchangeHours, quoteCash, new Option.OptionSymbolProperties(symbolProperties), _cashBook, _registeredTypes, cache, underlying);
+                    security = new Option.Option(symbol, exchangeHours, quoteCash, new Option.OptionSymbolProperties(symbolProperties), _cashBook, _registeredTypes, cache, underlying, _optionPriceModelProvider);
                     break;
 
                 case SecurityType.IndexOption:
                     if (addToSymbolCache) SymbolCache.Set(symbol.Underlying.Value, symbol.Underlying);
-                    security = new IndexOption.IndexOption(symbol, exchangeHours, quoteCash, new IndexOption.IndexOptionSymbolProperties(symbolProperties), _cashBook, _registeredTypes, cache, underlying);
+                    security = new IndexOption.IndexOption(symbol, exchangeHours, quoteCash, new IndexOption.IndexOptionSymbolProperties(symbolProperties), _cashBook, _registeredTypes, cache, underlying, priceModelProvider: _optionPriceModelProvider);
                     break;
 
                 case SecurityType.FutureOption:
@@ -159,7 +201,7 @@ namespace QuantConnect.Securities
                     break;
 
                 case SecurityType.Future:
-                    security = new Future.Future(symbol, exchangeHours, quoteCash, symbolProperties, _cashBook, _registeredTypes, cache, underlying);
+                    security = new Future.Future(symbol, exchangeHours, quoteCash, symbolProperties, _cashBook, _registeredTypes, cache);
                     break;
 
                 case SecurityType.Forex:
@@ -198,7 +240,7 @@ namespace QuantConnect.Securities
             security.AddData(configList);
 
             // invoke the security initializer
-            _securityInitializerProvider.SecurityInitializer.Initialize(security);
+            InitializeSecurity(initializeSecurity, security, seedSecurity);
 
             CheckCanonicalSecurityModels(security);
 
@@ -225,9 +267,47 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <remarks>Following the obsoletion of Security.Subscriptions,
         /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
-        public Security CreateSecurity(Symbol symbol, SubscriptionDataConfig subscriptionDataConfig, decimal leverage = 0, bool addToSymbolCache = true, Security underlying = null)
+        public Security CreateSecurity(Symbol symbol,
+            List<SubscriptionDataConfig> subscriptionDataConfigList,
+            decimal leverage = 0,
+            bool addToSymbolCache = true,
+            Security underlying = null,
+            bool seedSecurity = true)
         {
-            return CreateSecurity(symbol, new List<SubscriptionDataConfig> { subscriptionDataConfig }, leverage, addToSymbolCache, underlying);
+            return CreateSecurity(symbol, subscriptionDataConfigList, leverage, addToSymbolCache, underlying,
+                initializeSecurity: true, reCreateSecurity: false, seedSecurity: seedSecurity);
+        }
+
+        /// <summary>
+        /// Creates a new security
+        /// </summary>
+        /// <remarks>Following the obsoletion of Security.Subscriptions,
+        /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
+        public Security CreateSecurity(Symbol symbol,
+            SubscriptionDataConfig subscriptionDataConfig,
+            decimal leverage = 0,
+            bool addToSymbolCache = true,
+            Security underlying = null,
+            bool seedSecurity = true)
+        {
+            return CreateSecurity(symbol, new List<SubscriptionDataConfig> { subscriptionDataConfig }, leverage, addToSymbolCache, underlying, seedSecurity);
+        }
+
+        /// <summary>
+        /// Creates a new security
+        /// </summary>
+        /// <remarks>Following the obsoletion of Security.Subscriptions,
+        /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
+        public Security CreateBenchmarkSecurity(Symbol symbol)
+        {
+            return CreateSecurity(symbol,
+                new List<SubscriptionDataConfig>(),
+                leverage: 1,
+                addToSymbolCache: false,
+                underlying: null,
+                initializeSecurity: false,
+                reCreateSecurity: true,
+                seedSecurity: false);
         }
 
         /// <summary>
@@ -261,6 +341,20 @@ namespace QuantConnect.Securities
                     _modelsMismatchWarningSent = true;
                     _algorithm.Debug($"Warning: Security {security.Symbol} its canonical security {security.Symbol.Canonical} have at least one model of different types (fill, fee, buying power, margin interest rate, slippage, volatility, settlement). To avoid this, consider using a security initializer to set the right models to each security type according to your algorithm's requirements.");
                 }
+            }
+        }
+
+        private void InitializeSecurity(bool initializeSecurity, Security security, bool seedSecurity)
+        {
+            if (initializeSecurity && !security.IsInitialized)
+            {
+                if (seedSecurity && _algorithm != null && _algorithm.Settings.SeedInitialPrices)
+                {
+                    AlgorithmUtils.SeedSecurities([security], _algorithm);
+                }
+
+                _securityInitializerProvider.SecurityInitializer.Initialize(security);
+                security.IsInitialized = true;
             }
         }
     }

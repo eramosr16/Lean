@@ -30,6 +30,8 @@ using QuantConnect.Tests.Engine.DataFeeds;
 using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Indicators;
+using Python.Runtime;
+using QuantConnect.Algorithm.Framework.Portfolio;
 
 namespace QuantConnect.Tests.Algorithm
 {
@@ -1162,7 +1164,7 @@ namespace QuantConnect.Tests.Algorithm
             var actual = algo.CalculateOrderQuantity(symbol, 1m);
             Assert.AreEqual(3000m, actual);
 
-            var btcusd = algo.AddCrypto("BTCUSD", market: Market.GDAX);
+            var btcusd = algo.AddCrypto("BTCUSD", market: Market.Coinbase);
             btcusd.FeeModel = new ConstantFeeModel(0);
             // Set Price to $26
             Update(btcusd, 26);
@@ -1187,7 +1189,7 @@ namespace QuantConnect.Tests.Algorithm
             var actual = algo.CalculateOrderQuantity(symbol, -1m);
             Assert.AreEqual(-3000m, actual);
 
-            var btcusd = algo.AddCrypto("BTCUSD", market: Market.GDAX);
+            var btcusd = algo.AddCrypto("BTCUSD", market: Market.Coinbase);
             btcusd.BuyingPowerModel = new CashBuyingPowerModel();
             btcusd.FeeModel = new ConstantFeeModel(0);
             // Set Price to $26
@@ -1319,6 +1321,60 @@ namespace QuantConnect.Tests.Algorithm
         //    Assert.AreEqual(2500, actual);
         //}
 
+        [TestCaseSource(nameof(SetHoldingReturnsOrderTicketsTestCases))]
+        public void SetHoldingsReturnsOrderTicketsTest(List<Symbol> symbols, bool liquidateExistingHoldings, Dictionary<Symbol, decimal> expectedOrders, string tag)
+        {
+            // Initialize the algorithm and add equities to the portfolio
+            var algo = GetAlgorithm(out _, 1, 0);
+            var appl = algo.AddEquity("AAPL");
+            var spy = algo.AddEquity("SPY");
+            var ibm = algo.AddEquity("IBM");
+
+            // Update prices and set initial holdings for the equities
+            Update(appl, 100);
+            Update(spy, 200);
+            Update(ibm, 300);
+            appl.Holdings.SetHoldings(25, 3);
+            spy.Holdings.SetHoldings(25, 3);
+            ibm.Holdings.SetHoldings(25, 3);
+
+            List<OrderTicket> orderTickets;
+            if (symbols.Count > 1)
+            {
+                // Handle multiple symbols by creating portfolio targets
+                var portfolioTargets = new List<PortfolioTarget>();
+                foreach (var symbol in symbols)
+                {
+                    portfolioTargets.Add(new PortfolioTarget(symbol, 0.5m));
+                }
+                orderTickets = algo.SetHoldings(portfolioTargets, liquidateExistingHoldings, tag: tag);
+            }
+            else
+            {
+                // Handle a single symbol or no symbols
+                if (symbols.Count != 0)
+                {
+                    orderTickets = algo.SetHoldings(symbols.First(), 1, liquidateExistingHoldings, tag: tag);
+                }
+                else
+                {
+                    orderTickets = algo.SetHoldings(new List<PortfolioTarget>(), liquidateExistingHoldings, tag: tag);
+                }
+            }
+
+            // Assert that the number of tickets matches the expected count
+            Assert.AreEqual(expectedOrders.Count, orderTickets.Count);
+
+            // Check each ticket:
+            // 1. Ensure the symbol is in the expectedOrders dictionary.
+            // 2. Verify the quantity matches the expected value for that symbol.
+            foreach (var ticket in orderTickets)
+            {
+                Assert.IsTrue(expectedOrders.ContainsKey(ticket.Symbol));
+                Assert.AreEqual(expectedOrders[ticket.Symbol], ticket.Quantity);
+            }
+        }
+
         [Test]
         public void OrderQuantityConversionTest()
         {
@@ -1331,7 +1387,7 @@ namespace QuantConnect.Tests.Algorithm
             algo.Portfolio.SetCash(150000);
 
             var mock = new Mock<ITransactionHandler>();
-            var request = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null, null);
+            var request = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null, null, null);
             mock.Setup(m => m.Process(It.IsAny<OrderRequest>())).Returns(new OrderTicket(null, request.Object));
             mock.Setup(m => m.GetOpenOrders(It.IsAny<Func<Order, bool>>())).Returns(new List<Order>());
             algo.Transactions.SetOrderProcessor(mock.Object);
@@ -1396,13 +1452,117 @@ namespace QuantConnect.Tests.Algorithm
             Assert.AreEqual(expected, algo.Transactions.LastOrderId);
         }
 
+        [TestCaseSource(nameof(LiquidateWorksAsExpectedTestCases))]
+        public void LiquidateWorksAsExpected(Language language, bool? multipleSymbols, bool isAsynchronous, TimeInForce timeInForce)
+        {
+            Security msft;
+            var algo = GetAlgorithm(out msft, 1, 0);
+            algo.AddEquity("AAPL");
+            algo.Securities[Symbols.AAPL].FeeModel = new ConstantFeeModel(0);
+            var aapl = algo.Securities[Symbols.AAPL];
+            aapl.SetLeverage(1);
+            msft.Holdings.SetHoldings(25, 3);
+            aapl.Holdings.SetHoldings(25, 7);
+
+            msft.Exchange.SetMarketHours(new List<MarketHoursSegment>() { MarketHoursSegment.OpenAllDay() });
+            aapl.Exchange.SetMarketHours(new List<MarketHoursSegment>() { MarketHoursSegment.OpenAllDay() });
+
+            //Set price to $25
+            Update(msft, 25);
+            Update(aapl, 25);
+
+            algo.Portfolio.SetCash(15000000);
+            var limitOrderCanceled = false;
+
+            // Setup the transaction handler
+            var tickets = new Dictionary<int, OrderTicket>();
+            var mock = new Mock<ITransactionHandler>();
+            var request = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null, null, null);
+            mock.Setup(m => m.Process(It.IsAny<OrderRequest>())).Returns<OrderRequest>(s =>
+            {
+                if (s.OrderRequestType == OrderRequestType.Cancel)
+                {
+                    limitOrderCanceled = true;
+                    return new OrderTicket(null, request.Object);
+                }
+                var orderRequest = s as SubmitOrderRequest;
+                var submitOrderRequest = new SubmitOrderRequest(orderRequest.OrderType, SecurityType.Equity, orderRequest.Symbol, orderRequest.Quantity, 0, 0, DateTime.UtcNow, "", orderRequest.OrderProperties);
+                submitOrderRequest.SetOrderId((int)orderRequest.Quantity);
+                var ticket = new OrderTicket(null, submitOrderRequest);
+                tickets[ticket.OrderId] = ticket;
+                return ticket;
+            });
+            algo.Transactions.SetOrderProcessor(mock.Object);
+
+            // Make the initial orders
+            var order1 = algo.MarketOrder(Symbols.MSFT, 1);
+            var order2 = algo.MarketOrder(Symbols.MSFT, 2);
+            var order3 = algo.MarketOrder(Symbols.AAPL, 3);
+            var order4 = algo.MarketOrder(Symbols.AAPL, 4);
+            var order5 = algo.LimitOrder(Symbols.AAPL, 5, 10);
+
+            // Setup the transaction handler to get the open orders as well as the order tickets
+            mock.Setup(m => m.GetOpenOrders(It.IsAny<Func<Order, bool>>())).Returns<Func<Order, bool>>(filter => tickets.Values.Select(x => Order.CreateOrder(x.SubmitRequest)).Where(x => filter(x)).ToList());
+            mock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns<int>(s =>
+            {
+                if (s < 0 && isAsynchronous)
+                {
+                    // This means that the method `Transactions.WaitForOrder()` was called, since the
+                    // negative ID's, in these case, come from the cancel orders, this is, from the
+                    // liquidate method
+                    throw new RegressionTestException("The orders were supposed to be liquidated asynchronously, but instead" +
+                        "they were liquidated synchronously");
+                }
+                else
+                {
+                    return tickets[s];
+                }
+            });
+
+            // Test different Liquidate() constructors
+            var orderProperties = timeInForce != null ? new OrderProperties() { TimeInForce = timeInForce } : null;
+            List<OrderTicket> liquidatedTickets;
+            if (language == Language.CSharp)
+            {
+                if (multipleSymbols == true)
+                {
+                    liquidatedTickets = algo.Liquidate(new List<Symbol>() { Symbols.AAPL, Symbols.MSFT }, asynchronous: isAsynchronous, orderProperties: orderProperties);
+                }
+                else if (multipleSymbols == false)
+                {
+                    liquidatedTickets = algo.Liquidate(Symbols.AAPL, asynchronous: isAsynchronous, orderProperties: orderProperties);
+                    liquidatedTickets.AddRange(algo.Liquidate(Symbols.MSFT, asynchronous: isAsynchronous, orderProperties: orderProperties));
+                }
+                else
+                {
+                    liquidatedTickets = algo.Liquidate(asynchronous: isAsynchronous, orderProperties: orderProperties);
+                }
+            }
+            else
+            {
+                using (Py.GIL())
+                {
+                    liquidatedTickets = algo.Liquidate((new List<Symbol>() { Symbols.AAPL, Symbols.MSFT }).ToPython(), asynchronous: isAsynchronous, orderProperties: orderProperties);
+                }
+            }
+
+            // Assert the symbols were liquidated asynchronously
+            var aaplTicket = liquidatedTickets.Where(x => x.Symbol == Symbols.AAPL).Single();
+            var msftTicket = liquidatedTickets.Where(x => x.Symbol == Symbols.MSFT).Single();
+            Assert.AreEqual(aapl.Holdings.Quantity * (-2), aaplTicket.Quantity);
+            Assert.AreEqual(msft.Holdings.Quantity * (-2), msftTicket.Quantity);
+            Assert.AreEqual(timeInForce ?? TimeInForce.GoodTilCanceled, aaplTicket.SubmitRequest.OrderProperties.TimeInForce);
+            Assert.AreEqual(timeInForce ?? TimeInForce.GoodTilCanceled, msftTicket.SubmitRequest.OrderProperties.TimeInForce);
+            Assert.IsTrue(limitOrderCanceled);
+        }
+
         [Test]
         public void MarketOrdersAreSupportedForFuturesOnExtendedMarketHours()
         {
             var algo = GetAlgorithm(out _, 1, 0);
 
             var mockOrderProcessor = new Mock<ITransactionHandler>();
-            var mockRequest = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null, null);
+            var mockRequest = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null, null, null);
             var mockTicket = new OrderTicket(algo.Transactions, mockRequest.Object);
             mockOrderProcessor.Setup(m => m.Process(It.IsAny<OrderRequest>())).Returns(mockTicket);
             mockOrderProcessor.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(mockTicket);
@@ -1696,5 +1856,34 @@ namespace QuantConnect.Tests.Algorithm
                 security, new MarketOrder(security.Symbol, orderQuantity, DateTime.UtcNow));
             return hashSufficientBuyingPower.IsSufficient;
         }
+
+        private static object[] LiquidateWorksAsExpectedTestCases =
+        {
+            new object[] { Language.CSharp, true, true, TimeInForce.Day },
+            new object[] { Language.CSharp, false, true, TimeInForce.Day },
+            new object[] { Language.CSharp, null, true, TimeInForce.Day },
+            new object[] { Language.Python, null, true, TimeInForce.Day },
+            new object[] { Language.CSharp, true, false, TimeInForce.Day },
+            new object[] { Language.CSharp, false, false, TimeInForce.Day },
+            new object[] { Language.CSharp, null, false, TimeInForce.Day },
+            new object[] { Language.Python, null, false, TimeInForce.Day },
+            new object[] { Language.CSharp, true, true, null },
+            new object[] { Language.CSharp, false, true, null },
+            new object[] { Language.CSharp, null, true, null },
+            new object[] { Language.Python, null, true, null },
+            new object[] { Language.CSharp, true, false, null },
+            new object[] { Language.CSharp, false, false, null },
+            new object[] { Language.CSharp, null, false, null },
+            new object[] { Language.Python, null, false, null }
+        };
+        private static object[] SetHoldingReturnsOrderTicketsTestCases =
+        {
+            new object[] { new List<Symbol>(), true, new Dictionary<Symbol, decimal> { { Symbols.AAPL, -3 }, { Symbols.IBM, -3 }, { Symbols.SPY, -3 } }, "(Empty, true)"},
+            new object[] { new List<Symbol>(), false, new Dictionary<Symbol, decimal>(), "(Empty, false)" },
+            new object[] { new List<Symbol>() { Symbols.IBM }, true, new Dictionary<Symbol, decimal> { { Symbols.AAPL, -3m }, { Symbols.IBM, 335m }, { Symbols.SPY, -3m } }, "(OneSymbol, true)" },
+            new object[] { new List<Symbol>() { Symbols.IBM }, false, new Dictionary<Symbol, decimal> { { Symbols.IBM, 335m } }, "(OneSymbol, true)" },
+            new object[] { new List<Symbol>() { Symbols.AAPL, Symbols.SPY }, true, new Dictionary<Symbol, decimal> { { Symbols.AAPL, 504m }, { Symbols.IBM, -3m }, { Symbols.SPY, 250m } }, "(MultipleSymbols, true)" },
+            new object[] { new List<Symbol>() { Symbols.AAPL, Symbols.SPY }, false, new Dictionary<Symbol, decimal> { { Symbols.AAPL, 504m }, { Symbols.SPY, 250m } }, "(MultipleSymbols, false)" },
+        };
     }
 }

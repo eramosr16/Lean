@@ -58,6 +58,10 @@ using QuantConnect.Securities.Future;
 using QuantConnect.Securities.FutureOption;
 using QuantConnect.Securities.Option;
 using QuantConnect.Statistics;
+using Newtonsoft.Json.Linq;
+using QuantConnect.Orders.Fees;
+using Newtonsoft.Json.Serialization;
+using QuantConnect.Api;
 
 namespace QuantConnect
 {
@@ -66,8 +70,7 @@ namespace QuantConnect
     /// </summary>
     public static class Extensions
     {
-        private static readonly Regex LeanPathRegex = new Regex("(?:\\S*?\\\\Lean\\\\)|(?:\\S*?/Lean/)", RegexOptions.Compiled);
-        private static readonly Dictionary<string, bool> _emptyDirectories = new ();
+        private static readonly Dictionary<string, bool> _emptyDirectories = new();
         private static readonly HashSet<string> InvalidSecurityTypes = new HashSet<string>();
         private static readonly Regex DateCheck = new Regex(@"\d{8}", RegexOptions.Compiled);
         private static RecyclableMemoryStreamManager MemoryManager = new RecyclableMemoryStreamManager();
@@ -87,6 +90,22 @@ namespace QuantConnect
         private static readonly ZoneLocalMappingResolver _mappingResolver = Resolvers.CreateMappingResolver(Resolvers.ReturnLater, Resolvers.ReturnStartOfIntervalAfter);
 
         /// <summary>
+        /// Json converter deserializer for streams
+        /// </summary>
+        private static readonly JsonSerializer JsonSerializer = new()
+        {
+            Converters = { new LiveAlgorithmResultsJsonConverter(), new OrderJsonConverter() },
+            ContractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy
+                {
+                    ProcessDictionaryKeys = false,
+                    OverrideSpecifiedNames = true
+                }
+            }
+        };
+
+        /// <summary>
         /// The offset span from the market close to liquidate or exercise a security on the delisting date
         /// </summary>
         /// <remarks>Will no be used in live trading</remarks>
@@ -94,6 +113,43 @@ namespace QuantConnect
         /// like future options the market close would match the delisted event time and would cancel all orders and mark the security
         /// as non tradable and delisted.</remarks>
         public static TimeSpan DelistingMarketCloseOffsetSpan { get; set; } = TimeSpan.FromMinutes(-15);
+
+        /// <summary>
+        /// Helper method to get a property in a jobject if available
+        /// </summary>
+        /// <typeparam name="T">The property type</typeparam>
+        /// <param name="jObject">The jobject source</param>
+        /// <param name="name">The property name</param>
+        /// <returns>The property value if present or it's default value</returns>
+        public static T TryGetPropertyValue<T>(this JObject jObject, string name)
+        {
+            T result = default;
+            if (jObject == null)
+            {
+                return result;
+            }
+
+            var jValue = jObject[name];
+            if (jValue != null && jValue.Type != JTokenType.Null)
+            {
+                result = jValue.Value<T>();
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Helper method to find all defined enums in the given value
+        /// </summary>
+        public static IEnumerable<T> GetFlags<T>(long value) where T : Enum
+        {
+            foreach (T flag in Enum.GetValues(typeof(T)))
+            {
+                if ((value & Convert.ToInt64(flag, CultureInfo.InvariantCulture)) != 0)
+                {
+                    yield return flag;
+                }
+            }
+        }
 
         /// <summary>
         /// Determine if the file is out of date according to our download period.
@@ -109,20 +165,6 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Helper method to clear undesired paths from stack traces
-        /// </summary>
-        /// <param name="error">The error to cleanup</param>
-        /// <returns>The sanitized error</returns>
-        public static string ClearLeanPaths(string error)
-        {
-            if (string.IsNullOrEmpty(error))
-            {
-                return error;
-            }
-            return LeanPathRegex.Replace(error, string.Empty);
-        }
-
-        /// <summary>
         /// Helper method to check if a directory exists and is not empty
         /// </summary>
         /// <param name="directoryPath">The path to check</param>
@@ -132,7 +174,7 @@ namespace QuantConnect
         {
             lock (_emptyDirectories)
             {
-                if(!_emptyDirectories.TryGetValue(directoryPath, out var result))
+                if (!_emptyDirectories.TryGetValue(directoryPath, out var result))
                 {
                     // is empty unless it exists and it has at least 1 file or directory in it
                     result = true;
@@ -181,7 +223,18 @@ namespace QuantConnect
                 return entry;
             }
 
-            return marketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.ID.SecurityType);
+            var result = marketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.ID.SecurityType);
+
+            // For the OptionUniverse and FutureUniverse types, the exchange and data time zones are set to the same value (exchange tz).
+            // This is not actual options/futures data, just chains/universe selection, so we don't want any offsets
+            // between the exchange and data time zones.
+            // If the MHDB were data type dependent as well, this would be taken care in there.
+            if (result != null && dataTypes.Any(dataType => dataType.IsAssignableTo(typeof(BaseChainUniverseData))))
+            {
+                result = new MarketHoursDatabase.Entry(result.ExchangeHours.TimeZone, result.ExchangeHours);
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -190,17 +243,49 @@ namespace QuantConnect
         /// <param name="jsonArray">The value to deserialize</param>
         public static List<string> DeserializeList(this string jsonArray)
         {
-            List<string> result = new();
+            return DeserializeList<string>(jsonArray);
+        }
+
+        /// <summary>
+        /// Helper method to deserialize a json array into a list also handling single json values
+        /// </summary>
+        /// <param name="jsonArray">The value to deserialize</param>
+        public static List<T> DeserializeList<T>(this string jsonArray)
+        {
             try
             {
-                result = JsonConvert.DeserializeObject<List<string>>(jsonArray);
+                if (string.IsNullOrEmpty(jsonArray))
+                {
+                    return new();
+                }
+                return JsonConvert.DeserializeObject<List<T>>(jsonArray);
             }
-            catch(JsonReaderException)
+            catch (Exception ex)
             {
-                result.Add(jsonArray);
-            }
+                if (ex is not JsonReaderException && ex is not JsonSerializationException)
+                {
+                    throw;
+                }
 
-            return result;
+                if (typeof(T) == typeof(string))
+                {
+                    return new List<T> { (T)Convert.ChangeType(jsonArray, typeof(T), CultureInfo.InvariantCulture) };
+                }
+                return new List<T> { JsonConvert.DeserializeObject<T>(jsonArray) };
+            }
+        }
+
+        /// <summary>
+        /// Helper method to download a provided url as a string
+        /// </summary>
+        /// <param name="client">The http client to use</param>
+        /// <param name="url">The url to download data from</param>
+        /// <param name="data">The downloaded data</param>
+        /// <param name="statusCode">The request status code</param>
+        /// <param name="headers">Add custom headers for the request</param>
+        public static bool TryDownloadData(this HttpClient client, string url, out string data, out HttpStatusCode? statusCode, Dictionary<string, string> headers = null)
+        {
+            return client.TryDownloadData(url, out data, out statusCode, headers, null);
         }
 
         /// <summary>
@@ -211,28 +296,7 @@ namespace QuantConnect
         /// <param name="headers">Add custom headers for the request</param>
         public static string DownloadData(this HttpClient client, string url, Dictionary<string, string> headers = null)
         {
-            if (headers != null)
-            {
-                foreach (var kvp in headers)
-                {
-                    client.DefaultRequestHeaders.Add(kvp.Key, kvp.Value);
-                }
-            }
-            try
-            {
-                using (var response = client.GetAsync(url).Result)
-                {
-                    using (var content = response.Content)
-                    {
-                        return content.ReadAsStringAsync().Result;
-                    }
-                }
-            }
-            catch (WebException ex)
-            {
-                Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}");
-                return null;
-            }
+            return client.DownloadData<string>(url, headers, null);
         }
 
         /// <summary>
@@ -242,8 +306,94 @@ namespace QuantConnect
         /// <param name="headers">Add custom headers for the request</param>
         public static string DownloadData(this string url, Dictionary<string, string> headers = null)
         {
+            return url.DownloadData<string>(headers, null);
+        }
+
+        /// <summary>
+        /// Download the content of a url to a string and deserialize it to the specified type
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize to</typeparam>
+        /// <param name="client">The http client to use</param>
+        /// <param name="url">The url to download data from</param>
+        /// <param name="headers">Add custom headers for the request</param>
+        /// <param name="settings">Optional JSON serializer settings</param>
+        /// <returns>The deserialized data</returns>
+        public static T DownloadData<T>(this HttpClient client, string url, Dictionary<string, string> headers = null, JsonSerializerSettings settings = null)
+        {
+            client.TryDownloadData<T>(url, out var result, out _, headers, settings);
+            return result;
+        }
+
+        /// <summary>
+        /// Download the content of a url to a string and deserialize it to the specified type
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize to</typeparam>
+        /// <param name="url">The url to download data from</param>
+        /// <param name="headers">Add custom headers for the request</param>
+        /// <param name="settings">Optional JSON serializer settings</param>
+        /// <returns>The deserialized data</returns>
+        public static T DownloadData<T>(this string url, Dictionary<string, string> headers = null, JsonSerializerSettings settings = null)
+        {
             using var client = new HttpClient();
-            return client.DownloadData(url, headers);
+            return client.DownloadData<T>(url, headers, settings);
+        }
+
+        /// <summary>
+        /// Tries to download and deserialize directly from stream to T
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize to</typeparam>
+        /// <param name="client">The http client to use</param>
+        /// <param name="url">The url to download data from</param>
+        /// <param name="result">The deserialized data if successful</param>
+        /// <param name="statusCode">The request status code</param>
+        /// <param name="headers">Add custom headers for the request</param>
+        /// <param name="settings">Optional JSON serializer settings</param>
+        /// <returns>True if successful, otherwise false</returns>
+        public static bool TryDownloadData<T>(this HttpClient client, string url, out T result, out HttpStatusCode? statusCode, Dictionary<string, string> headers = null, JsonSerializerSettings settings = null)
+        {
+            result = default;
+            statusCode = null;
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            if (headers != null)
+            {
+                foreach (var kvp in headers)
+                {
+                    request.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value);
+                }
+            }
+
+            try
+            {
+                using var response = client.SendAsync(request).SynchronouslyAwaitTaskResult();
+                statusCode = response.StatusCode;
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Error($"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}. Status code: {response.StatusCode}");
+                    return false;
+                }
+
+                using var stream = response.Content.ReadAsStreamAsync().SynchronouslyAwaitTaskResult();
+                using var reader = new StreamReader(stream);
+
+                if (typeof(T) == typeof(string))
+                {
+                    // Special case: return the response as a raw string without deserialization
+                    result = (T)(object)reader.ReadToEnd();
+                }
+                else
+                {
+                    using var jsonReader = new JsonTextReader(reader);
+                    var serializer = JsonSerializer.Create(settings);
+                    result = serializer.Deserialize<T>(jsonReader);
+                }
+                return true;
+            }
+            catch (HttpRequestException ex)
+            {
+                Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}");
+                return false;
+            }
         }
 
         /// <summary>
@@ -429,12 +579,6 @@ namespace QuantConnect
                         resultPacket.Orders = resultPacket.Orders.GroupBy(order => order.Id)
                             .Select(ordersGroup => ordersGroup.Last()).ToList();
                     }
-
-                    if (newerPacket.Portfolio != null)
-                    {
-                        // we just keep the newest state if not null
-                        resultPacket.Portfolio = newerPacket.Portfolio;
-                    }
                 }
             }
             return resultPacket;
@@ -571,8 +715,8 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Returns if the specified <see cref="Chart"/> instance  holds no <see cref="Series"/>
-        /// or they are all empty <see cref="IsEmpty(Series)"/>
+        /// Returns if the specified <see cref="Chart"/> instance holds no <see cref="Series"/>
+        /// or they are all empty <see cref="Extensions.IsEmpty(BaseSeries)"/>
         /// </summary>
         public static bool IsEmpty(this Chart chart)
         {
@@ -589,12 +733,111 @@ namespace QuantConnect
         {
             using (Py.GIL())
             {
-                var method = instance.GetAttr(name);
-                var pythonType = method.GetPythonType();
-                var isPythonDefined = pythonType.Repr().Equals("<class \'method\'>");
+                PyObject method;
 
-                return isPythonDefined ? method : null;
+                // Let's try first with snake-case style in case the user is using it
+                var snakeCasedNamed = name.ToSnakeCase();
+                if (snakeCasedNamed != name)
+                {
+                    method = instance.GetPythonMethodWithChecks(snakeCasedNamed);
+                    if (method != null)
+                    {
+                        return method;
+                    }
+                }
+
+                method = instance.GetAttr(name);
+                using var pythonType = method.GetPythonType();
+                var isPythonDefined = pythonType.Repr().Equals("<class \'method\'>", StringComparison.Ordinal);
+
+                if (isPythonDefined)
+                {
+                    return method;
+                }
+                method.Dispose();
+                return null;
             }
+        }
+
+        /// <summary>
+        /// Gets a python property by name
+        /// </summary>
+        /// <param name="instance">The object instance to search the property in</param>
+        /// <param name="name">The name of the property</param>
+        /// <returns>The python property or null if not defined or CSharp implemented</returns>
+        public static dynamic GetPythonBoolProperty(this PyObject instance, string name)
+        {
+            using (Py.GIL())
+            {
+                var objectType = instance.GetPythonType();
+                if (!objectType.HasAttr(name))
+                {
+                    return null;
+                }
+
+                var property = instance.GetAttr(name);
+                var pythonType = property.GetPythonType();
+                var isPythonDefined = pythonType.Repr().Equals("<class \'bool\'>", StringComparison.Ordinal);
+
+                if (isPythonDefined)
+                {
+                    return property;
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Gets a python property by name
+        /// </summary>
+        /// <param name="instance">The object instance to search the property in</param>
+        /// <param name="name">The name of the method</param>
+        /// <returns>The python property or null if not defined or CSharp implemented</returns>
+        public static dynamic GetPythonBoolPropertyWithChecks(this PyObject instance, string name)
+        {
+            using (Py.GIL())
+            {
+                if (!instance.HasAttr(name))
+                {
+                    return null;
+                }
+
+                return instance.GetPythonBoolProperty(name);
+            }
+        }
+
+        /// <summary>
+        /// Gets a python method by name
+        /// </summary>
+        /// <param name="instance">The object instance to search the method in</param>
+        /// <param name="name">The name of the method</param>
+        /// <returns>The python method or null if not defined or CSharp implemented</returns>
+        public static dynamic GetPythonMethodWithChecks(this PyObject instance, string name)
+        {
+            using (Py.GIL())
+            {
+                if (!instance.HasAttr(name))
+                {
+                    return null;
+                }
+
+                return instance.GetPythonMethod(name);
+            }
+        }
+
+        /// <summary>
+        /// Gets a method from a <see cref="PyObject"/> instance by name.
+        /// First, it tries to get the snake-case version of the method name, in case the user is using that style.
+        /// Else, it tries to get the method with the original name, regardless of whether the class has a Python overload or not.
+        /// </summary>
+        /// <param name="instance">The object instance to search the method in</param>
+        /// <param name="name">The name of the method</param>
+        /// <returns>The method matching the name</returns>
+        public static dynamic GetMethod(this PyObject instance, string name)
+        {
+            using var _ = Py.GIL();
+            return instance.GetPythonMethodWithChecks(name.ToSnakeCase()) ?? instance.GetAttr(name);
         }
 
         /// <summary>
@@ -646,9 +889,7 @@ namespace QuantConnect
                     {
                         PortfolioTarget = x,
                         TargetQuantity = OrderSizing.AdjustByLotSize(security, x.Quantity),
-                        ExistingQuantity = security.Holdings.Quantity
-                            + algorithm.Transactions.GetOpenOrderTickets(x.Symbol)
-                                .Aggregate(0m, (d, t) => d + t.Quantity - t.QuantityFilled),
+                        ExistingQuantity = algorithm.Transactions.GetProjectedHoldings(security).ProjectedQuantity,
                         Security = security
                     };
                 })
@@ -657,7 +898,8 @@ namespace QuantConnect
                             && (targetIsDelta ? Math.Abs(x.TargetQuantity) : Math.Abs(x.TargetQuantity - x.ExistingQuantity))
                             >= x.Security.SymbolProperties.LotSize
                 )
-                .Select(x => new {
+                .Select(x => new
+                {
                     x.PortfolioTarget,
                     OrderValue = Math.Abs((targetIsDelta ? x.TargetQuantity : (x.TargetQuantity - x.ExistingQuantity)) * x.Security.Price),
                     IsReducingPosition = x.ExistingQuantity != 0
@@ -683,7 +925,7 @@ namespace QuantConnect
             }
 
             var instance = objectActivator.Invoke(new object[] { type });
-            if(instance == null)
+            if (instance == null)
             {
                 // shouldn't happen but just in case...
                 throw new ArgumentException(Messages.Extensions.FailedToCreateInstanceOfType(type));
@@ -747,6 +989,74 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Reads the entire content of a stream and returns it as a byte array.
+        /// </summary>
+        /// <param name="stream">Stream to read bytes from</param>
+        /// <returns>The bytes read from the stream</returns>
+        public static byte[] GetBytes(this Stream stream)
+        {
+            using var memoryStream = new MemoryStream();
+            stream.CopyTo(memoryStream);
+            return memoryStream.ToArray();
+        }
+
+        /// <summary>
+        /// Deserialize a json stream into an object of type T
+        /// </summary>
+        /// <param name="stream">The stream to deserialize</param>
+        /// <param name="serializer">The json serializer to use</param>
+        /// <param name="leaveOpen">Whether to leave the source stream open</param>
+        /// <returns>The deserialized object</returns>
+        public static T DeserializeJson<T>(this Stream stream, JsonSerializer serializer = null, bool leaveOpen = true)
+        {
+            using var streamReader = new StreamReader(stream, leaveOpen: leaveOpen);
+            using var jsonReader = new JsonTextReader(streamReader);
+            return (serializer ?? JsonSerializer).Deserialize<T>(jsonReader);
+        }
+
+        /// <summary>
+        /// Deserialize a json stream into an object of type T
+        /// </summary>
+        /// <param name="content">The string to deserialize</param>
+        /// <param name="serializer">The json serializer to use</param>
+        /// <returns>The deserialized object</returns>
+        public static T DeserializeJson<T>(this string content, JsonSerializer serializer = null)
+        {
+            using var stringReader = new StringReader(content);
+            using var jsonReader = new JsonTextReader(stringReader);
+            return (serializer ?? JsonSerializer).Deserialize<T>(jsonReader);
+        }
+
+        /// <summary>
+        /// Serialize an object of type T into a json stream
+        /// </summary>
+        /// <param name="value">The object to serialize</param>
+        /// <param name="target">The stream to serialize the object to</param>
+        /// <param name="serializer">The json serializer to use</param>
+        public static void SerializeJsonToStream<T>(this T value, Stream target, JsonSerializer serializer = null)
+        {
+            using var writer = new StreamWriter(target, leaveOpen: true);
+            using var jsonWriter = new JsonTextWriter(writer);
+            (serializer ?? JsonSerializer).Serialize(jsonWriter, value);
+            jsonWriter.Flush();
+            target.Position = 0;
+        }
+
+        /// <summary>
+        /// Serialize an object of type T into a json stream
+        /// </summary>
+        /// <param name="value">The object to serialize</param>
+        /// <param name="serializer">The json serializer to use</param>
+        /// <returns>The serialized string</returns>
+        public static string SerializeJsonToString<T>(this T value, JsonSerializer serializer = null)
+        {
+            using var stringWriter = new StringWriter();
+            using var jsonWriter = new JsonTextWriter(stringWriter);
+            (serializer ?? JsonSerializer).Serialize(jsonWriter, value);
+            return stringWriter.ToString();
+        }
+
+        /// <summary>
         /// Extentsion method to clear all items from a thread safe queue
         /// </summary>
         /// <remarks>Small risk of race condition if a producer is adding to the list.</remarks>
@@ -755,7 +1065,8 @@ namespace QuantConnect
         public static void Clear<T>(this ConcurrentQueue<T> queue)
         {
             T item;
-            while (queue.TryDequeue(out item)) {
+            while (queue.TryDequeue(out item))
+            {
                 // NOP
             }
         }
@@ -781,13 +1092,10 @@ namespace QuantConnect
         public static string ToMD5(this string str)
         {
             var builder = new StringBuilder(32);
-            using (var md5Hash = MD5.Create())
+            var data = MD5.HashData(Encoding.UTF8.GetBytes(str));
+            for (var i = 0; i < 16; i++)
             {
-                var data = md5Hash.ComputeHash(Encoding.UTF8.GetBytes(str));
-                for (var i = 0; i < 16; i++)
-                {
-                    builder.Append(data[i].ToStringInvariant("x2"));
-                }
+                builder.Append(data[i].ToStringInvariant("x2"));
             }
             return builder.ToString();
         }
@@ -800,13 +1108,10 @@ namespace QuantConnect
         public static string ToSHA256(this string data)
         {
             var hash = new StringBuilder(64);
-            using (var crypt = SHA256.Create())
+            var crypto = SHA256.HashData(Encoding.UTF8.GetBytes(data));
+            for (var i = 0; i < 32; i++)
             {
-                var crypto = crypt.ComputeHash(Encoding.UTF8.GetBytes(data));
-                for (var i = 0; i < 32; i++)
-                {
-                    hash.Append(crypto[i].ToStringInvariant("x2"));
-                }
+                hash.Append(crypto[i].ToStringInvariant("x2"));
             }
             return hash.ToString();
         }
@@ -1048,7 +1353,7 @@ namespace QuantConnect
         public static decimal RoundToSignificantDigits(this decimal d, int digits)
         {
             if (d == 0) return 0;
-            var scale = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double) Math.Abs(d))) + 1);
+            var scale = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double)Math.Abs(d))) + 1);
             return scale * Math.Round(d / scale, digits);
         }
 
@@ -1171,6 +1476,31 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Provides global smart rounding to a shorter version
+        /// </summary>
+        public static decimal SmartRoundingShort(this decimal input)
+        {
+            input = Normalize(input);
+            if (input <= 1)
+            {
+                // 0.99 > input
+                return input;
+            }
+            else if (input <= 10)
+            {
+                // 1.01 to 9.99
+                return Math.Round(input, 2);
+            }
+            else if (input <= 100)
+            {
+                // 99.9 to 10.1
+                return Math.Round(input, 1);
+            }
+            // 100 to inf
+            return Math.Truncate(input);
+        }
+
+        /// <summary>
         /// Casts the specified input value to a decimal while acknowledging the overflow conditions
         /// </summary>
         /// <param name="input">The value to be cast</param>
@@ -1188,9 +1518,9 @@ namespace QuantConnect
                 );
             }
 
-            if (input <= (double) decimal.MinValue) return decimal.MinValue;
-            if (input >= (double) decimal.MaxValue) return decimal.MaxValue;
-            return (decimal) input;
+            if (input <= (double)decimal.MinValue) return decimal.MinValue;
+            if (input >= (double)decimal.MaxValue) return decimal.MaxValue;
+            return (decimal)input;
         }
 
         /// <summary>
@@ -1430,6 +1760,75 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Gets the value at the specified index from a CSV line.
+        /// </summary>
+        /// <param name="csvLine">The CSV line</param>
+        /// <param name="index">The index of the value to be extracted from the CSV line</param>
+        /// <param name="result">The value at the given index</param>
+        /// <returns>Whether there was a value at the given index and could be extracted</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryGetFromCsv(this string csvLine, int index, out ReadOnlySpan<char> result)
+        {
+            result = ReadOnlySpan<char>.Empty;
+            if (string.IsNullOrEmpty(csvLine) || index < 0)
+            {
+                return false;
+            }
+
+            var span = csvLine.AsSpan();
+            for (int i = 0; i < index; i++)
+            {
+                var commaIndex = span.IndexOf(',');
+                if (commaIndex == -1)
+                {
+                    return false;
+                }
+                span = span.Slice(commaIndex + 1);
+            }
+
+            var nextCommaIndex = span.IndexOf(',');
+            if (nextCommaIndex == -1)
+            {
+                nextCommaIndex = span.Length;
+            }
+
+            result = span.Slice(0, nextCommaIndex);
+            return true;
+        }
+
+        /// <summary>
+        /// Gets the value at the specified index from a CSV line, converted into a decimal.
+        /// </summary>
+        /// <param name="csvLine">The CSV line</param>
+        /// <param name="index">The index of the value to be extracted from the CSV line</param>
+        /// <param name="value">The decimal value at the given index</param>
+        /// <returns>Whether there was a value at the given index and could be extracted and converted into a decimal</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryGetDecimalFromCsv(this string csvLine, int index, out decimal value)
+        {
+            value = decimal.Zero;
+            if (!csvLine.TryGetFromCsv(index, out var csvValue))
+            {
+                return false;
+            }
+
+            return decimal.TryParse(csvValue, NumberStyles.Any, CultureInfo.InvariantCulture, out value);
+        }
+
+        /// <summary>
+        /// Gets the value at the specified index from a CSV line, converted into a decimal.
+        /// </summary>
+        /// <param name="csvLine">The CSV line</param>
+        /// <param name="index">The index of the value to be extracted from the CSV line</param>
+        /// <returns>The decimal value at the given index. If the index is invalid or conversion fails, it will return zero</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal GetDecimalFromCsv(this string csvLine, int index)
+        {
+            csvLine.TryGetDecimalFromCsv(index, out var value);
+            return value;
+        }
+
+        /// <summary>
         /// Check if a number is NaN or infinity
         /// </summary>
         /// <param name="value">The double value to check</param>
@@ -1463,7 +1862,8 @@ namespace QuantConnect
         /// </summary>
         /// <param name="str">String we're looking for the extension for.</param>
         /// <returns>Last 4 character string of string.</returns>
-        public static string GetExtension(this string str) {
+        public static string GetExtension(this string str)
+        {
             var ext = str.Substring(Math.Max(0, str.Length - 4));
             var allowedExt = new List<string> { ".zip", ".csv", ".json", ".tsv" };
             if (!allowedExt.Contains(ext))
@@ -1872,19 +2272,19 @@ namespace QuantConnect
         {
             if (requireExactMatch)
             {
-                if (TimeSpan.Zero == timeSpan)  return Resolution.Tick;
+                if (TimeSpan.Zero == timeSpan) return Resolution.Tick;
                 if (Time.OneSecond == timeSpan) return Resolution.Second;
                 if (Time.OneMinute == timeSpan) return Resolution.Minute;
-                if (Time.OneHour   == timeSpan) return Resolution.Hour;
-                if (Time.OneDay    == timeSpan) return Resolution.Daily;
+                if (Time.OneHour == timeSpan) return Resolution.Hour;
+                if (Time.OneDay == timeSpan) return Resolution.Daily;
                 throw new InvalidOperationException(Messages.Extensions.UnableToConvertTimeSpanToResolution(timeSpan));
             }
 
             // for non-perfect matches
             if (Time.OneSecond > timeSpan) return Resolution.Tick;
             if (Time.OneMinute > timeSpan) return Resolution.Second;
-            if (Time.OneHour   > timeSpan) return Resolution.Minute;
-            if (Time.OneDay    > timeSpan) return Resolution.Hour;
+            if (Time.OneHour > timeSpan) return Resolution.Minute;
+            if (Time.OneDay > timeSpan) return Resolution.Hour;
 
             return Resolution.Daily;
         }
@@ -1923,7 +2323,7 @@ namespace QuantConnect
         /// <returns>The converted value</returns>
         public static T ConvertTo<T>(this string value)
         {
-            return (T) value.ConvertTo(typeof (T));
+            return (T)value.ConvertTo(typeof(T));
         }
 
         /// <summary>
@@ -1939,16 +2339,16 @@ namespace QuantConnect
                 return Enum.Parse(type, value, true);
             }
 
-            if (typeof (IConvertible).IsAssignableFrom(type))
+            if (typeof(IConvertible).IsAssignableFrom(type))
             {
                 return Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
             }
 
             // try and find a static parse method
-            var parse = type.GetMethod("Parse", new[] {typeof (string)});
+            var parse = type.GetMethod("Parse", new[] { typeof(string) });
             if (parse != null)
             {
-                var result = parse.Invoke(null, new object[] {value});
+                var result = parse.Invoke(null, new object[] { value });
                 return result;
             }
 
@@ -1983,7 +2383,7 @@ namespace QuantConnect
         /// <exception cref="T:System.InvalidOperationException">The maximum number of waiters has been exceeded. </exception><exception cref="T:System.ObjectDisposedException">The object has already been disposed or the <see cref="T:System.Threading.CancellationTokenSource"/> that created <paramref name="cancellationToken"/> has been disposed.</exception>
         public static bool WaitOne(this WaitHandle waitHandle, TimeSpan timeout, CancellationToken cancellationToken)
         {
-            return waitHandle.WaitOne((int) timeout.TotalMilliseconds, cancellationToken);
+            return waitHandle.WaitOne((int)timeout.TotalMilliseconds, cancellationToken);
         }
 
         /// <summary>
@@ -2068,7 +2468,7 @@ namespace QuantConnect
             // If we have multiple names we need to search the names based on the given algorithmTypeName
             // If the given name already contains dots (fully named) use it as it is
             // otherwise add a dot to the beginning to avoid matching any subsets of other names
-            var searchName = algorithmTypeName.Contains(".") ? algorithmTypeName : "." + algorithmTypeName;
+            var searchName = algorithmTypeName.Contains('.', StringComparison.InvariantCulture) ? algorithmTypeName : "." + algorithmTypeName;
             return names.SingleOrDefault(x => x.EndsWith(searchName));
         }
 
@@ -2566,10 +2966,13 @@ namespace QuantConnect
                     {
                         result = (T)pyObject.AsManagedObject(type);
                         // pyObject is a C# object wrapped in PyObject, in this case return true
+                        if (!pyObject.HasAttr("__name__"))
+                        {
+                            return true;
+                        }
                         // Otherwise, pyObject is a python object that subclass a C# class, only return true if 'allowPythonDerivative'
                         var castedResult = (Type)pyObject.AsManagedObject(type);
                         var pythonName = pyObject.GetAttr("__name__").GetAndDispose<string>();
-
                         return pythonName == castedResult.Name;
                     }
 
@@ -2580,22 +2983,38 @@ namespace QuantConnect
                         return true;
                     }
 
-                    var pythonType = pyObject.GetPythonType();
+                    using var pythonType = pyObject.GetPythonType();
                     var csharpType = pythonType.As<Type>();
 
                     if (!type.IsAssignableFrom(csharpType))
                     {
-                        pythonType.Dispose();
                         return false;
                     }
 
                     result = (T)pyObject.AsManagedObject(type);
 
+                    // The PyObject is a Python object of a Python class that is a subclass of a C# class.
+                    // In this case, we return false just because we want the actual Python object
+                    // so it gets wrapped in a python wrapper, not the C# object.
+                    if (result is IPythonDerivedType)
+                    {
+                        return false;
+                    }
+
+                    // If the python type object is just a representation of the C# type, the conversion is direct,
+                    // the python object is an instance of the C# class.
+                    // We can compare by reference because pythonnet caches the PyTypes and because the behavior of
+                    // PyObject.Equals is not exactly what we want:
+                    // e.g. type(class PyClass(CSharpClass)) == type(CSharpClass) is true in Python
+                    if (PythonReferenceComparer.Instance.Equals(PyType.Get(csharpType), pythonType))
+                    {
+                        return true;
+                    }
+
                     // If the PyObject type and the managed object names are the same,
                     // pyObject is a C# object wrapped in PyObject, in this case return true
                     // Otherwise, pyObject is a python object that subclass a C# class, only return true if 'allowPythonDerivative'
-                    var name = (((dynamic) pythonType).__name__ as PyObject).GetAndDispose<string>();
-                    pythonType.Dispose();
+                    var name = (((dynamic)pythonType).__name__ as PyObject).GetAndDispose<string>();
                     return name == result.GetType().Name;
                 }
                 catch
@@ -2605,64 +3024,6 @@ namespace QuantConnect
                 }
             }
 
-            return false;
-        }
-
-        /// <summary>
-        /// Tries to convert a <see cref="PyObject"/> into a managed object
-        /// </summary>
-        /// <typeparam name="T">Target type of the resulting managed object</typeparam>
-        /// <param name="pyObject">PyObject to be converted</param>
-        /// <param name="result">Managed object </param>
-        /// <returns>True if successful conversion</returns>
-        public static bool TryConvertToDelegate<T>(this PyObject pyObject, out T result)
-        {
-            var type = typeof(T);
-
-            if (!typeof(MulticastDelegate).IsAssignableFrom(type))
-            {
-                throw new ArgumentException(Messages.Extensions.ConvertToDelegateCannotConverPyObjectToType("TryConvertToDelegate", type));
-            }
-
-            result = default(T);
-
-            if (pyObject == null)
-            {
-                return true;
-            }
-
-            var code = string.Empty;
-            var types = type.GetGenericArguments();
-
-            using (Py.GIL())
-            {
-                var locals = new PyDict();
-                try
-                {
-                    for (var i = 0; i < types.Length; i++)
-                    {
-                        var iString = i.ToStringInvariant();
-                        code += $",t{iString}";
-                        locals.SetItem($"t{iString}", types[i].ToPython());
-                    }
-
-                    locals.SetItem("pyObject", pyObject);
-
-                    var name = type.FullName.Substring(0, type.FullName.IndexOf('`'));
-                    code = $"import System; delegate = {name}[{code.Substring(1)}](pyObject)";
-
-                    PythonEngine.Exec(code, null, locals);
-                    result = (T)locals.GetItem("delegate").AsManagedObject(typeof(T));
-                    locals.Dispose();
-                    return true;
-                }
-                catch
-                {
-                    // Do not throw or log the exception.
-                    // Return false as an exception means that the conversion could not be made.
-                }
-                locals.Dispose();
-            }
             return false;
         }
 
@@ -2692,12 +3053,12 @@ namespace QuantConnect
         /// </summary>
         /// <param name="universeFilterFunc">Universe filter function from Python</param>
         /// <returns>Function that provides <typeparamref name="T"/> and returns an enumerable of Symbols</returns>
-        public static Func<IEnumerable<T>, IEnumerable<Symbol>> ConvertPythonUniverseFilterFunction<T>(this PyObject universeFilterFunc)
+        public static Func<IEnumerable<T>, IEnumerable<Symbol>> ConvertPythonUniverseFilterFunction<T>(this PyObject universeFilterFunc) where T : BaseData
         {
             Func<IEnumerable<T>, object> convertedFunc;
             Func<IEnumerable<T>, IEnumerable<Symbol>> filterFunc = null;
 
-            if (universeFilterFunc.TryConvertToDelegate(out convertedFunc))
+            if (universeFilterFunc != null && universeFilterFunc.TrySafeAs(out convertedFunc))
             {
                 filterFunc = convertedFunc.ConvertToUniverseSelectionSymbolDelegate();
             }
@@ -2712,13 +3073,37 @@ namespace QuantConnect
         /// <remarks>This method is a work around for the fact that currently we can not create a delegate which returns
         /// an <see cref="IEnumerable{Symbol}"/> from a python method returning an array, plus the fact that
         /// <see cref="Universe.Unchanged"/> can not be cast to an array</remarks>
-        public static Func<T, IEnumerable<Symbol>> ConvertToUniverseSelectionSymbolDelegate<T>(this Func<T, object> selector)
+        public static Func<IEnumerable<T>, IEnumerable<Symbol>> ConvertToUniverseSelectionSymbolDelegate<T>(this Func<IEnumerable<T>, object> selector) where T : BaseData
+        {
+            if (selector == null)
+            {
+                return (dataPoints) => dataPoints.Select(x => x.Symbol);
+            }
+            return selector.ConvertSelectionSymbolDelegate();
+        }
+
+        /// <summary>
+        /// Wraps the provided universe selection selector checking if it returned <see cref="Universe.Unchanged"/>
+        /// and returns it instead, else enumerates result as <see cref="IEnumerable{Symbol}"/>
+        /// </summary>
+        /// <remarks>This method is a work around for the fact that currently we can not create a delegate which returns
+        /// an <see cref="IEnumerable{Symbol}"/> from a python method returning an array, plus the fact that
+        /// <see cref="Universe.Unchanged"/> can not be cast to an array</remarks>
+        public static Func<T, IEnumerable<Symbol>> ConvertSelectionSymbolDelegate<T>(this Func<T, object> selector)
         {
             return data =>
             {
                 var result = selector(data);
                 return ReferenceEquals(result, Universe.Unchanged)
-                    ? Universe.Unchanged : ((object[])result).Select(x => (Symbol)x);
+                    ? Universe.Unchanged
+                    : ((object[])result).Select(x =>
+                    {
+                        if (x is Symbol castedSymbol)
+                        {
+                            return castedSymbol;
+                        }
+                        return SymbolCache.TryGetSymbol((string)x, out var symbol) ? symbol : null;
+                    });
             };
         }
 
@@ -2737,25 +3122,6 @@ namespace QuantConnect
                 return ReferenceEquals(result, Universe.Unchanged)
                     ? Universe.Unchanged : ((object[])result).Select(x => (string)x);
             };
-        }
-
-        /// <summary>
-        /// Convert a <see cref="PyObject"/> into a managed object
-        /// </summary>
-        /// <typeparam name="T">Target type of the resulting managed object</typeparam>
-        /// <param name="pyObject">PyObject to be converted</param>
-        /// <returns>Instance of type T</returns>
-        public static T ConvertToDelegate<T>(this PyObject pyObject)
-        {
-            T result;
-            if (pyObject.TryConvertToDelegate(out result))
-            {
-                return result;
-            }
-            else
-            {
-                throw new ArgumentException(Messages.Extensions.ConvertToDelegateCannotConverPyObjectToType("ConvertToDelegate", typeof(T)));
-            }
         }
 
         /// <summary>
@@ -2808,31 +3174,59 @@ namespace QuantConnect
         {
             using (Py.GIL())
             {
+                Exception exception = null;
                 if (!PyList.IsListType(pyObject))
                 {
-                    pyObject = new PyList(new[] {pyObject});
+                    // it's not a pylist try to conver directly
+                    Symbol result = null;
+                    try
+                    {
+                        // we shouldn't dispose of an object we haven't created
+                        result = ConvertToSymbol(pyObject, dispose: false);
+                    }
+                    catch (Exception ex)
+                    {
+                        exception = ex;
+                    }
+
+                    if (result != null)
+                    {
+                        // happy case
+                        yield return result;
+                    }
+                }
+                else
+                {
+                    using var iterator = pyObject.GetIterator();
+                    foreach (PyObject item in iterator)
+                    {
+                        Symbol result;
+                        try
+                        {
+                            result = ConvertToSymbol(item, dispose: true);
+                        }
+                        catch (Exception ex)
+                        {
+                            exception = ex;
+                            break;
+                        }
+                        yield return result;
+                    }
                 }
 
-                using var iterator = pyObject.GetIterator();
-                foreach (PyObject item in iterator)
+                // let's give it once last try, relying on pythonnet internal conversions, else throw
+                if (exception != null)
                 {
-                    if (PyString.IsStringType(item))
+                    if (pyObject.TryConvert(out IEnumerable<Symbol> symbols))
                     {
-                        yield return SymbolCache.GetSymbol(item.GetAndDispose<string>());
+                        foreach (var symbol in symbols)
+                        {
+                            yield return symbol;
+                        }
                     }
                     else
                     {
-                        Symbol symbol;
-                        try
-                        {
-                            symbol = item.GetAndDispose<Symbol>();
-                        }
-                        catch (Exception e)
-                        {
-                            throw new ArgumentException(Messages.Extensions.ConvertToSymbolEnumerableFailed(item), e);
-                        }
-
-                        yield return symbol;
+                        throw exception;
                     }
                 }
             }
@@ -2872,26 +3266,80 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Gets the <see cref="Type"/> from a <see cref="PyObject"/> that represents a C# type.
+        /// It throws an <see cref="ArgumentException"/> if the <see cref="PyObject"/> is not a C# type.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Type GetType(PyObject pyObject)
+        {
+            if (pyObject.TryConvert(out Type type))
+            {
+                return type;
+            }
+
+            using (Py.GIL())
+            {
+                throw new ArgumentException($"GetType(): {Messages.Extensions.ObjectFromPythonIsNotACSharpType(pyObject.Repr())}");
+            }
+        }
+
+        /// <summary>
         /// Converts the numeric value of one or more enumerated constants to an equivalent enumerated string.
         /// </summary>
         /// <param name="value">Numeric value</param>
         /// <param name="pyObject">Python object that encapsulated a Enum Type</param>
         /// <returns>String that represents the enumerated object</returns>
+        [Obsolete("Deprecated as of 2025-07. Please use `str()`.")]
         public static string GetEnumString(this int value, PyObject pyObject)
         {
-            Type type;
+            var type = GetType(pyObject);
+            return value.ToStringInvariant().ConvertTo(type).ToString();
+        }
+
+        /// <summary>
+        /// Converts the numeric value of one or more enumerated constants to an equivalent enumerated string.
+        /// </summary>
+        /// <param name="value">Numeric value</param>
+        /// <param name="pyObject">Python object that encapsulated a Enum Type</param>
+        /// <returns>String that represents the enumerated object</returns>
+        [Obsolete("Deprecated as of 2025-07. Please use `str()`.")]
+        public static string GetEnumString(this Enum value, PyObject pyObject)
+        {
+            var type = GetType(pyObject);
+            return value.ToString();
+        }
+
+        /// <summary>
+        /// Try to create a type with a given name, if PyObject is not a CLR type. Otherwise, convert it.
+        /// </summary>
+        /// <param name="pyObject">Python object representing a type.</param>
+        /// <param name="type">Type object</param>
+        /// <returns>True if was able to create the type</returns>
+        public static bool TryCreateType(this PyObject pyObject, out Type type)
+        {
             if (pyObject.TryConvert(out type))
             {
-                return value.ToStringInvariant().ConvertTo(type).ToString();
+                // handles pure C# types
+                return true;
             }
-            else
+
+            if (!PythonActivators.TryGetValue(pyObject.Handle, out var pythonType))
             {
-                using (Py.GIL())
+                // Some examples:
+                // pytype: "<class 'DropboxBaseDataUniverseSelectionAlgorithm.StockDataSource'>"
+                // method: "<bound method CoarseFineFundamentalComboAlgorithm.CoarseSelectionFunction of <CoarseFineFunda..."
+                // array: "[<QuantConnect.Symbol object at 0x000001EEF21ED480>]"
+                if (pyObject.ToString().StartsWith("<class '", StringComparison.InvariantCulture))
                 {
-                    throw new ArgumentException($"GetEnumString(): {Messages.Extensions.ObjectFromPythonIsNotACSharpType(pyObject.Repr())}");
+                    type = CreateType(pyObject);
+                    return true;
                 }
+                return false;
             }
+            type = pythonType.Type;
+            return true;
         }
+
 
         /// <summary>
         /// Creates a type with a given name, if PyObject is not a CLR type. Otherwise, convert it.
@@ -2955,7 +3403,7 @@ namespace QuantConnect
                 {
                     if (list == null)
                     {
-                        list = new List<T> {enumerator.Current};
+                        list = new List<T> { enumerator.Current };
                     }
                     else if (list.Count < batchSize)
                     {
@@ -2964,7 +3412,7 @@ namespace QuantConnect
                     else
                     {
                         yield return list;
-                        list = new List<T> {enumerator.Current};
+                        list = new List<T> { enumerator.Current };
                     }
                 }
 
@@ -3003,6 +3451,34 @@ namespace QuantConnect
         /// <returns>The result of the task</returns>
         public static T SynchronouslyAwaitTask<T>(this Task<T> task)
         {
+            return SynchronouslyAwaitTaskResult(task);
+        }
+
+        /// <summary>
+        /// Safely blocks until the specified task has completed executing
+        /// </summary>
+        /// <param name="task">The task to be awaited</param>
+        /// <returns>The result of the task</returns>
+        public static void SynchronouslyAwaitTask(this ValueTask task)
+        {
+            if (task.IsCompleted)
+            {
+                return;
+            }
+            task.ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Safely blocks until the specified task has completed executing
+        /// </summary>
+        /// <param name="task">The task to be awaited</param>
+        /// <returns>The result of the task</returns>
+        public static T SynchronouslyAwaitTask<T>(this ValueTask<T> task)
+        {
+            if (task.IsCompleted)
+            {
+                return task.Result;
+            }
             return task.ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
@@ -3137,6 +3613,27 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Helper method to get the mirror option symbol for a given option symbol
+        /// </summary>
+        /// <param name="contractSymbol">The original option contract symbol</param>
+        /// <returns>The mirror option contract symbol</returns>
+        public static Symbol GetMirrorOptionSymbol(this Symbol contractSymbol)
+        {
+            if (!contractSymbol.SecurityType.IsOption() || contractSymbol.IsCanonical())
+            {
+                throw new ArgumentException(Messages.Extensions.NotAValidOptionSymbolForMirror);
+            }
+
+            return Symbol.CreateOption(contractSymbol.Underlying,
+                contractSymbol.ID.Symbol,
+                contractSymbol.ID.Market,
+                contractSymbol.ID.OptionStyle,
+                contractSymbol.ID.OptionRight.Invert(),
+                contractSymbol.ID.StrikePrice,
+                contractSymbol.ID.Date);
+        }
+
+        /// <summary>
         /// Helper method to unsubscribe a given configuration, handling any required mapping
         /// </summary>
         public static void UnsubscribeWithMapping(this IDataQueueHandler dataQueueHandler, SubscriptionDataConfig dataConfig)
@@ -3184,7 +3681,7 @@ namespace QuantConnect
         /// <returns>Enumeration of lines in file</returns>
         public static IEnumerable<string> ReadLines(this IDataProvider dataProvider, string file)
         {
-            if(dataProvider == null)
+            if (dataProvider == null)
             {
                 throw new ArgumentException(Messages.Extensions.NullDataProvider);
             }
@@ -3417,6 +3914,27 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Helper method to determine the right data mapping mode to use by default
+        /// </summary>
+        public static DataMappingMode GetUniverseMappingModeOrDefault(this UniverseSettings universeSettings, SecurityType securityType, string market)
+        {
+            switch (securityType)
+            {
+                case SecurityType.Future:
+                    if ((universeSettings.DataMappingMode == DataMappingMode.OpenInterest
+                        || universeSettings.DataMappingMode == DataMappingMode.OpenInterestAnnual)
+                        && (market == Market.HKFE || market == Market.EUREX || market == Market.ICE))
+                    {
+                        // circle around default OI for currently no OI available data
+                        return DataMappingMode.LastTradingDay;
+                    }
+                    return universeSettings.DataMappingMode;
+                default:
+                    return universeSettings.DataMappingMode;
+            }
+        }
+
+        /// <summary>
         /// Helper method to determine the right data normalization mode to use by default
         /// </summary>
         public static DataNormalizationMode GetUniverseNormalizationModeOrDefault(this UniverseSettings universeSettings, SecurityType securityType)
@@ -3501,8 +4019,6 @@ namespace QuantConnect
         {
             foreach (var security in securityChanges.AddedSecurities)
             {
-                security.IsTradable = true;
-
                 // uses TryAdd, so don't need to worry about duplicates here
                 algorithm.Securities.Add(security);
             }
@@ -3512,8 +4028,20 @@ namespace QuantConnect
             {
                 if (!activeSecurities.ContainsKey(security.Symbol))
                 {
-                    security.IsTradable = false;
+                    security.Reset();
                 }
+            }
+        }
+
+        /// <summary>
+        /// Helper method to set the <see cref="Security.IsTradable"/> property to <code>true</code>
+        /// for the given security when possible
+        /// </summary>
+        public static void MakeTradable(this Security security)
+        {
+            if (security.Type != SecurityType.Index || (security as Securities.Index.Index).ManualSetIsTradable)
+            {
+                security.IsTradable = true;
             }
         }
 
@@ -3630,6 +4158,82 @@ namespace QuantConnect
             return algorithm.UniverseManager.Values.Where(universe => universe.Configuration.Symbol == symbol.Canonical || ContinuousContractUniverse.CreateSymbol(symbol.Canonical) == universe.Configuration.Symbol);
         }
 
+        private static bool _notifiedUniverseSettingsUsed;
+        private static readonly HashSet<SecurityType> _supportedSecurityTypes = new()
+        {
+            SecurityType.Equity,
+            SecurityType.Forex,
+            SecurityType.Cfd,
+            SecurityType.Option,
+            SecurityType.Future,
+            SecurityType.FutureOption,
+            SecurityType.IndexOption,
+            SecurityType.Crypto,
+            SecurityType.CryptoFuture
+        };
+
+        /// <summary>
+        /// Gets the security for the specified symbol from the algorithm's securities collection.
+        /// In case the security is not found, it will be created using the <see cref="IAlgorithm.UniverseSettings"/>
+        /// and a best effort configuration setup.
+        /// </summary>
+        /// <param name="algorithm">The algorithm instance</param>
+        /// <param name="symbol">The symbol which security is being looked up</param>
+        /// <param name="security">The found or added security instance</param>
+        /// <param name="onError">Callback to invoke in case of unsupported security type</param>
+        /// <returns>True if the security was found or added</returns>
+        public static bool GetOrAddUnrequestedSecurity(this IAlgorithm algorithm, Symbol symbol, out Security security,
+            Action<IReadOnlyCollection<SecurityType>> onError = null)
+        {
+            if (!algorithm.Securities.TryGetValue(symbol, out security))
+            {
+                if (!_supportedSecurityTypes.Contains(symbol.SecurityType))
+                {
+                    Log.Error("GetOrAddUnrequestedSecurity(): Unsupported security type: " + symbol.SecurityType + "-" + symbol.Value);
+                    onError?.Invoke(_supportedSecurityTypes);
+                    return false;
+                }
+
+                var resolution = algorithm.UniverseSettings.Resolution;
+                var fillForward = algorithm.UniverseSettings.FillForward;
+                var leverage = algorithm.UniverseSettings.Leverage;
+                var extendedHours = algorithm.UniverseSettings.ExtendedMarketHours;
+
+                if (!_notifiedUniverseSettingsUsed)
+                {
+                    // let's just send the message once
+                    _notifiedUniverseSettingsUsed = true;
+
+                    var leverageMsg = $" Leverage = {leverage};";
+                    if (leverage == Security.NullLeverage)
+                    {
+                        leverageMsg = $" Leverage = default;";
+                    }
+                    algorithm.Debug($"Will use UniverseSettings for automatically added securities for open orders and holdings. UniverseSettings:" +
+                        $" Resolution = {resolution};{leverageMsg} FillForward = {fillForward}; ExtendedHours = {extendedHours}");
+                }
+
+                Log.Trace("GetOrAddUnrequestedSecurity(): Adding unrequested security: " + symbol.Value);
+
+                if (symbol.SecurityType.IsOption())
+                {
+                    // add current option contract to the system
+                    security = algorithm.AddOptionContract(symbol, resolution, fillForward, leverage, extendedHours);
+                }
+                else if (symbol.SecurityType == SecurityType.Future)
+                {
+                    // add current future contract to the system
+                    security = algorithm.AddFutureContract(symbol, resolution, fillForward, leverage, extendedHours);
+                }
+                else
+                {
+                    // for items not directly requested set leverage to 1 and at the min resolution
+                    security = algorithm.AddSecurity(symbol.SecurityType, symbol.Value, resolution, symbol.ID.Market, fillForward, leverage, extendedHours);
+                }
+            }
+            return true;
+        }
+
         /// <summary>
         /// Inverts the specified <paramref name="right"/>
         /// </summary>
@@ -3638,7 +4242,7 @@ namespace QuantConnect
             switch (right)
             {
                 case OptionRight.Call: return OptionRight.Put;
-                case OptionRight.Put:  return OptionRight.Call;
+                case OptionRight.Put: return OptionRight.Call;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(right), right, null);
             }
@@ -3705,22 +4309,23 @@ namespace QuantConnect
         public static bool ShouldEmitData(this SubscriptionDataConfig config, BaseData data, bool isUniverse = false)
         {
             // For now we are only filtering Auxiliary data; so if its another type just return true or if it's a margin interest rate which we want to emit always
-            if (data.DataType != MarketDataType.Auxiliary || config.Type == typeof(MarginInterestRate))
+            if (data.DataType != MarketDataType.Auxiliary)
             {
                 return true;
             }
 
+            // This filter does not apply to auxiliary data outside of delisting/splits/dividends so lets those emit
+            var type = data.GetType();
+            var expectedType = type.IsAssignableTo(config.Type);
+
             // Check our config type first to be lazy about using data.GetType() unless required
-            var configTypeFilter = (config.Type == typeof(TradeBar) || config.Type == typeof(ZipEntryName) ||
+            var configTypeFilter = (config.Type == typeof(TradeBar) || config.Type.IsAssignableTo(typeof(BaseChainUniverseData)) ||
                 config.Type == typeof(Tick) && config.TickType == TickType.Trade || config.IsCustomData);
 
             if (!configTypeFilter)
             {
-                return false;
+                return expectedType;
             }
-
-            // This filter does not apply to auxiliary data outside of delisting/splits/dividends so lets those emit
-            var type = data.GetType();
 
             // We don't want to pump in any data to `Universe.SelectSymbols(...)` if the
             // type is not configured to be consumed by the universe. This change fixes
@@ -3728,12 +4333,17 @@ namespace QuantConnect
             // for filtering/selection, and would result in either a runtime error
             // if casting into the expected type explicitly, or call the filter function with
             // no data being provided, resulting in all universe Symbols being de-selected.
-            if (isUniverse && !type.IsAssignableFrom(config.Type))
+            if (isUniverse && !expectedType)
             {
                 return (data as Delisting)?.Type == DelistingType.Delisted;
             }
 
-            if (!(type == typeof(Delisting) || type == typeof(Split) || type == typeof(Dividend)))
+            // We let delistings through. We need to emit delistings for all subscriptions, even internals like
+            // continuous futures mapped contracts. For instance, an algorithm might hold a position for a mapped
+            // contract and then the continuous future is mapped to a different contract. If the previously mapped
+            // contract is delisted, we need to let the delisting through so that positions are closed out and the
+            // security is removed from the algorithm and marked as delisted and non-tradable.
+            if (!(type == typeof(Split) || type == typeof(Dividend)))
             {
                 return true;
             }
@@ -3915,6 +4525,16 @@ namespace QuantConnect
         /// </summary>
         /// <param name="values">List of numbers which greatest common divisor is requested</param>
         /// <returns>The greatest common divisor for the given list of numbers</returns>
+        public static decimal GreatestCommonDivisor(this IEnumerable<decimal> values)
+        {
+            return GreatestCommonDivisor(values.Select(Convert.ToInt32));
+        }
+
+        /// <summary>
+        /// Gets the greatest common divisor of a list of numbers
+        /// </summary>
+        /// <param name="values">List of numbers which greatest common divisor is requested</param>
+        /// <returns>The greatest common divisor for the given list of numbers</returns>
         public static int GreatestCommonDivisor(this IEnumerable<int> values)
         {
             int? result = null;
@@ -3951,6 +4571,87 @@ namespace QuantConnect
                 b = remainder;
             }
             return Math.Abs(a);
+        }
+
+        /// <summary>
+        /// Safe method to perform divisions avoiding DivideByZeroException and Overflow/Underflow exceptions
+        /// </summary>
+        /// <param name="failValue">Value to be returned if the denominator is zero</param>
+        /// <returns>The numerator divided by the denominator if the denominator is not
+        /// zero. Otherwise, the default failValue or the provided one</returns>
+        public static decimal SafeDivision(this decimal numerator, decimal denominator, decimal failValue = 0)
+        {
+            try
+            {
+                return (denominator == 0) ? failValue : (numerator / denominator);
+            }
+            catch
+            {
+                return failValue;
+            }
+        }
+
+        /// <summary>
+        /// Retrieve a common custom data types from the given symbols if any
+        /// </summary>
+        /// <param name="symbols">The target symbols to search</param>
+        /// <returns>The custom data type or null</returns>
+        public static Type GetCustomDataTypeFromSymbols(Symbol[] symbols)
+        {
+            if (symbols.Length != 0)
+            {
+                if (!SecurityIdentifier.TryGetCustomDataTypeInstance(symbols[0].ID.Symbol, out var dataType)
+                    || symbols.Any(x => !SecurityIdentifier.TryGetCustomDataTypeInstance(x.ID.Symbol, out var customDataType) || customDataType != dataType))
+                {
+                    return null;
+                }
+                return dataType;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Determines if certain data type is custom
+        /// </summary>
+        /// <param name="symbol">Symbol associated with the data type</param>
+        /// <param name="type">Data type to determine if it's custom</param>
+        public static bool IsCustomDataType(Symbol symbol, Type type)
+        {
+            return type.Namespace != typeof(Bar).Namespace || Extensions.GetCustomDataTypeFromSymbols(new Symbol[] { symbol }) != null;
+        }
+
+        /// <summary>
+        /// Returns the amount of fee's charged by executing a market order with the given arguments
+        /// </summary>
+        /// <param name="security">Security for which we would like to make a market order</param>
+        /// <param name="quantity">Quantity of the security we are seeking to trade</param>
+        /// <param name="time">Time the order was placed</param>
+        public static CashAmount GetMarketOrderFees(Security security, decimal quantity, DateTime time)
+        {
+            var marketOrder = new MarketOrder(security.Symbol, quantity, time);
+            return security.FeeModel.GetOrderFee(new OrderFeeParameters(security, marketOrder)).Value;
+        }
+
+        private static Symbol ConvertToSymbol(PyObject item, bool dispose)
+        {
+            if (PyString.IsStringType(item))
+            {
+                return SymbolCache.GetSymbol(dispose ? item.GetAndDispose<string>() : item.As<string>());
+            }
+            else
+            {
+                Symbol symbol;
+                try
+                {
+                    symbol = dispose ? item.GetAndDispose<Symbol>() : item.As<Symbol>();
+                }
+                catch (Exception e)
+                {
+                    throw new ArgumentException(Messages.Extensions.ConvertToSymbolEnumerableFailed(item), e);
+                }
+                return symbol;
+            }
         }
     }
 }

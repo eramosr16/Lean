@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -68,7 +68,7 @@ namespace QuantConnect.Tests.Common.Data
         [TestCase(typeof(OpenInterest), TickType.OpenInterest)]
         public void SubscribeSinglePerChannel(Type type, TickType tickType)
         {
-            var subscriptionManager = new FakeDataQueuehandlerSubscriptionManager((t) => t.ToString());
+            using var subscriptionManager = new FakeDataQueuehandlerSubscriptionManager((t) => t.ToString());
 
             subscriptionManager.Subscribe(GetSubscriptionDataConfig(type, Symbols.AAPL, Resolution.Minute));
 
@@ -84,7 +84,7 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void SubscribeManyPerChannel()
         {
-            var subscriptionManager = new FakeDataQueuehandlerSubscriptionManager((t) => t.ToString());
+            using var subscriptionManager = new FakeDataQueuehandlerSubscriptionManager((t) => t.ToString());
 
             for (int i = 0; i < 5; i++)
             {
@@ -111,6 +111,33 @@ namespace QuantConnect.Tests.Common.Data
 
             Assert.IsFalse(subscriptionManager.IsSubscribed(Symbols.AAPL, TickType.Trade));
             Assert.IsFalse(subscriptionManager.IsSubscribed(Symbols.AAPL, TickType.Quote));
+        }
+
+        [TestCase(TickType.Trade, MarketDataType.TradeBar, 1)]
+        [TestCase(TickType.Trade, MarketDataType.QuoteBar, 0)]
+        [TestCase(TickType.Quote, MarketDataType.QuoteBar, 1)]
+        [TestCase(TickType.OpenInterest, MarketDataType.Tick, 1)]
+        [TestCase(TickType.OpenInterest, MarketDataType.TradeBar, 0)]
+        public void GetSubscribeSymbolsBySpecificTickType(TickType tickType, MarketDataType dataType, int expectedCount)
+        {
+            using var fakeDataQueueHandler = new FakeDataQueuehandlerSubscriptionManager((tickType) => tickType!.ToString());
+
+            switch (dataType)
+            {
+                case MarketDataType.TradeBar:
+                    fakeDataQueueHandler.Subscribe(GetSubscriptionDataConfig<TradeBar>(Symbols.AAPL, Resolution.Minute));
+                    break;
+                case MarketDataType.QuoteBar:
+                    fakeDataQueueHandler.Subscribe(GetSubscriptionDataConfig<QuoteBar>(Symbols.AAPL, Resolution.Minute));
+                    break;
+                case MarketDataType.Tick:
+                    fakeDataQueueHandler.Subscribe(GetSubscriptionDataConfig<OpenInterest>(Symbols.AAPL, Resolution.Minute));
+                    break;
+            }
+
+            var subscribeSymbols = fakeDataQueueHandler.GetSubscribedSymbols(tickType).ToList();
+
+            Assert.That(subscribeSymbols.Count, Is.EqualTo(expectedCount));
         }
 
         #region helper

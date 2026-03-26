@@ -55,9 +55,9 @@ namespace QuantConnect.Algorithm.CSharp
                 foreach (var data in slice.Values)
                 {
                     var dataSpan = data.EndTime - data.Time;
-                    if (dataSpan != QuantConnect.Time.OneDay)
+                    if (dataSpan != TimeSpan.FromHours(6.5))
                     {
-                        throw new Exception($"Unexpected bar span! {data}: {dataSpan}");
+                        throw new RegressionTestException($"Unexpected bar span! {data}: {dataSpan}");
                     }
                 }
             }
@@ -77,7 +77,7 @@ namespace QuantConnect.Algorithm.CSharp
                     {
                         if (atmContract.LastPrice == 0)
                         {
-                            throw new Exception("Contract price is not set!");
+                            throw new RegressionTestException("Contract price is not set!");
                         }
                         _optionWarmupTimes.Add(Time);
                     }
@@ -98,14 +98,14 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnEndOfAlgorithm()
         {
-            var start = new DateTime(2014, 06, 07, 0, 0, 0);
+            var start = new DateTime(2014, 06, 06, 16, 0, 0);
             var end = new DateTime(2014, 06, 07, 0, 0, 0);
             var count = 0;
             do
             {
                 if (_optionWarmupTimes[count] != start)
                 {
-                    throw new Exception($"Unexpected time {_optionWarmupTimes[count]} expected {start}");
+                    throw new RegressionTestException($"Unexpected time {_optionWarmupTimes[count]} expected {start}");
                 }
                 count++;
                 start = start.AddDays(1);
@@ -121,12 +121,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 942365;
+        public long DataPoints => 96178;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -134,16 +134,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "3"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99908"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -160,9 +167,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "$2.00"},
             {"Estimated Strategy Capacity", "$5000.00"},
-            {"Lowest Capacity Asset", "AAPL 2ZTXYMUME0LUU|AAPL R735QTJ8XC9X"},
+            {"Lowest Capacity Asset", "AAPL 2ZTXYMUME4W6E|AAPL R735QTJ8XC9X"},
             {"Portfolio Turnover", "1.08%"},
-            {"OrderListHash", "bb331aa7fbfb7fdd9c1d721f45e7a11c"}
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "94523a9f34b004d45970aa5ed06f8672"}
         };
     }
 }

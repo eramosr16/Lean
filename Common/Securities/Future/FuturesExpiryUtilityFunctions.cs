@@ -25,30 +25,19 @@ namespace QuantConnect.Securities.Future
     /// </summary>
     public static class FuturesExpiryUtilityFunctions
     {
-        private static readonly Dictionary<DateTime, DateTime> _reverseDairyReportDates = FuturesExpiryFunctions.DairyReportDates
-            .ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
-
-        private static readonly HashSet<string> _dairyUnderlying = new HashSet<string>
-        {
-            "CB",
-            "CSC",
-            "DC",
-            "DY",
-            "GDK",
-            "GNF"
-        };
+        private static readonly MarketHoursDatabase MarketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
         /// <summary>
         /// Get holiday list from the MHDB given the market and the symbol of the security
         /// </summary>
         /// <param name="market">The market the exchange resides in, i.e, 'usa', 'fxcm', ect...</param>
         /// <param name="symbol">The particular symbol being traded</param>s
-        public static HashSet<DateTime> GetHolidays(string market, string symbol)
+        internal static HashSet<DateTime> GetExpirationHolidays(string market, string symbol)
         {
-            return MarketHoursDatabase.FromDataFolder()
+            var exchangeHours = MarketHoursDatabase.FromDataFolder()
                         .GetEntry(market, symbol, SecurityType.Future)
-                        .ExchangeHours
-                        .Holidays;
+                        .ExchangeHours;
+            return exchangeHours.Holidays.Concat(exchangeHours.BankHolidays).ToHashSet();
         }
 
         /// <summary>
@@ -128,7 +117,7 @@ namespace QuantConnect.Securities.Future
             var lastDayOfMonth = new DateTime(time.Year, time.Month, daysInMonth);
             var holidays = holidayList.Select(x => x.Date);
 
-            if(n > daysInMonth)
+            if (n > daysInMonth)
             {
                 throw new ArgumentOutOfRangeException(nameof(n), Invariant(
                     $"Number of days ({n}) is larger than the size of month({daysInMonth})"
@@ -336,39 +325,6 @@ namespace QuantConnect.Securities.Future
         }
 
         /// <summary>
-        /// Gets the last trade date corresponding to the contract month
-        /// </summary>
-        /// <param name="time">Contract month</param>
-        /// <param name="holidayList">Enumerable of holidays to exclude. These should be sourced from the <see cref="MarketHoursDatabase"/></param>
-        /// <param name="lastTradeTime">Time at which the dairy future contract stops trading (usually should be on 17:10:00 UTC)</param>
-        /// <returns></returns>
-        public static DateTime DairyLastTradeDate(DateTime time, IEnumerable<DateTime> holidayList, TimeSpan? lastTradeTime = null)
-        {
-            // Trading shall terminate on the business day immediately preceding the day on which the USDA announces the <DAIRY_PRODUCT> price for that contract month. (LTD 12:10 p.m.)
-            var contractMonth = new DateTime(time.Year, time.Month, 1);
-            var lastTradeTs = lastTradeTime ?? new TimeSpan(17, 10, 0);
-
-            if (FuturesExpiryFunctions.DairyReportDates.TryGetValue(contractMonth, out DateTime publicationDate))
-            {
-                do
-                {
-                    publicationDate = publicationDate.AddDays(-1);
-                }
-                while (holidayList.Contains(publicationDate) || publicationDate.DayOfWeek == DayOfWeek.Saturday);
-            }
-            else
-            {
-                publicationDate = contractMonth.AddMonths(1);
-            }
-
-            // The USDA price announcements are erratic in their publication date. You can view the calendar the USDA announces prices here: https://www.ers.usda.gov/calendar/
-            // More specifically, the report you should be looking for has the name "National Dairy Products Sales Report".
-            // To get the report dates found in FuturesExpiryFunctions.DairyReportDates, visit this website: https://mpr.datamart.ams.usda.gov/menu.do?path=Products\Dairy\All%20Dairy\(DY_CL102)%20National%20Dairy%20Products%20Prices%20-%20Monthly
-
-            return publicationDate.Add(lastTradeTs);
-        }
-
-        /// <summary>
         /// Gets the number of months between the contract month and the expiry date.
         /// </summary>
         /// <param name="underlying">The future symbol ticker</param>
@@ -376,67 +332,89 @@ namespace QuantConnect.Securities.Future
         /// <returns>The number of months between the contract month and the contract expiry</returns>
         public static int GetDeltaBetweenContractMonthAndContractExpiry(string underlying, DateTime? futureExpiryDate = null)
         {
-            if (futureExpiryDate != null && _dairyUnderlying.Contains(underlying))
-            {
-                // Dairy can expire in the month following the contract month.
-                var dairyReportDate = futureExpiryDate.Value.Date.AddDays(1);
-                if (_reverseDairyReportDates.ContainsKey(dairyReportDate))
-                {
-                    var contractMonth = _reverseDairyReportDates[dairyReportDate];
-                    // Gets the distance between two months in months
-                    return ((contractMonth.Year - dairyReportDate.Year) * 12) + contractMonth.Month - dairyReportDate.Month;
-                }
-
-                return 0;
-            }
-
             return ExpiriesPriorMonth.TryGetValue(underlying, out int value) ? value : 0;
         }
 
         /// <summary>
-        /// Calculates the date of Good Friday for a given year.
+        /// Helper method to retrieve the futures contract month
         /// </summary>
-        /// <param name="year">Year to calculate Good Friday for</param>
-        /// <returns>Date of Good Friday</returns>
-        public static DateTime GetGoodFriday(int year)
+        public static DateTime GetFutureContractMonth(Symbol symbol)
         {
-            // Acknowledgement
-            // Author: Jan Schreuder
-            // Link: https://www.codeproject.com/Articles/10860/Calculating-Christian-Holidays
-            // Calculates Easter Sunday as Easter is always celebrated on the Sunday immediately following the Paschal Full Moon date of the year
-            int g = year % 19;
-            int c = year / 100;
-            int h = (c - c / 4 - (8 * c + 13) / 25 + 19 * g + 15) % 30;
-            int i = h - h / 28 * (1 - h / 28 * (29 / (h + 1)) * ((21 - g) / 11));
-
-            int day = i - (year + year / 4 + i + 2 - c + c / 4) % 7 + 28;
-            int month = 3;
-            if (day > 31)
+            if (symbol.SecurityType == SecurityType.FutureOption)
             {
-                month++;
-                day -= 31;
+                symbol = symbol.Underlying;
             }
 
-            // Calculate Good Friday
-            return new DateTime(year, month, day).AddDays(-2);
+            var contractExpirationDate = symbol.ID.Date.Date;
+            var monthsToAdd = GetDeltaBetweenContractMonthAndContractExpiry(symbol.ID.Symbol, contractExpirationDate);
+            var contractMonth = contractExpirationDate.AddDays(-(contractExpirationDate.Day - 1))
+                .AddMonths(monthsToAdd);
+            return contractMonth;
+        }
+
+        /// <summary>
+        /// Helper method to resolve a future expiration from it's contract month
+        /// </summary>
+        public static DateTime GetFutureExpirationFromContractMonth(string symbol, string market, DateTime contractMonth)
+        {
+            return GetFutureExpirationFromContractMonth(Symbol.CreateFuture(symbol, market, SecurityIdentifier.DefaultDate), contractMonth);
+        }
+
+        /// <summary>
+        /// Helper method to resolve a future expiration from it's contract month
+        /// </summary>
+        public static DateTime GetFutureExpirationFromContractMonth(Symbol future, DateTime contractMonth)
+        {
+            var futureExpiryFunc = FuturesExpiryFunctions.FuturesExpiryFunction(future.Canonical);
+            var futureExpiry = futureExpiryFunc(contractMonth);
+            return futureExpiry;
+        }
+
+        /// <summary>
+        /// This function returns the third Friday of the month, adjusted for holidays and weekends.
+        /// </summary>
+        public static DateTime ThirdFriday(DateTime time, Symbol contract)
+        {
+            if (contract.ID.SecurityType.IsOption())
+            {
+                return ThirdFriday(time, contract.Underlying);
+            }
+            var thirdFriday = ThirdFriday(time);
+            var holidays = GetExpirationHolidays(contract.ID.Market, contract.ID.Symbol);
+            return AddBusinessDaysIfHoliday(thirdFriday, -1, holidays);
+        }
+
+        /// <summary>
+        /// Checks if the future contract is expired.
+        /// </summary>
+        public static bool IsFutureContractExpired(Symbol symbol, DateTime currentUtcTime, MarketHoursDatabase marketHoursDatabase = null)
+        {
+            var exchangeHours = (marketHoursDatabase ?? MarketHoursDatabase).GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
+            var currentTimeInExchangeTz = currentUtcTime.ConvertFromUtc(exchangeHours.TimeZone);
+            if (currentTimeInExchangeTz >= symbol.ID.Date)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static readonly Dictionary<string, int> ExpiriesPriorMonth = new Dictionary<string, int>
         {
-            { Futures.Energies.ArgusLLSvsWTIArgusTradeMonth, 1 },
-            { Futures.Energies.ArgusPropaneSaudiAramco, 1 },
-            { Futures.Energies.BrentCrude, 2 },
-            { Futures.Energies.BrentLastDayFinancial, 2 },
-            { Futures.Energies.CrudeOilWTI, 1 },
-            { Futures.Energies.MicroCrudeOilWTI, 1 },
-            { Futures.Energies.Gasoline, 1 },
-            { Futures.Energies.HeatingOil, 1 },
-            { Futures.Energies.MarsArgusVsWTITradeMonth, 1 },
-            { Futures.Energies.NaturalGas, 1 },
-            { Futures.Energies.NaturalGasHenryHubLastDayFinancial, 1 },
-            { Futures.Energies.NaturalGasHenryHubPenultimateFinancial, 1 },
-            { Futures.Energies.WTIHoustonArgusVsWTITradeMonth, 1 },
-            { Futures.Energies.WTIHoustonCrudeOil, 1 },
+            { Futures.Energy.ArgusLLSvsWTIArgusTradeMonth, 1 },
+            { Futures.Energy.ArgusPropaneSaudiAramco, 1 },
+            { Futures.Energy.BrentCrude, 2 },
+            { Futures.Energy.BrentLastDayFinancial, 2 },
+            { Futures.Energy.CrudeOilWTI, 1 },
+            { Futures.Energy.MicroCrudeOilWTI, 1 },
+            { Futures.Energy.Gasoline, 1 },
+            { Futures.Energy.HeatingOil, 1 },
+            { Futures.Energy.MarsArgusVsWTITradeMonth, 1 },
+            { Futures.Energy.NaturalGas, 1 },
+            { Futures.Energy.NaturalGasHenryHubLastDayFinancial, 1 },
+            { Futures.Energy.NaturalGasHenryHubPenultimateFinancial, 1 },
+            { Futures.Energy.WTIHoustonArgusVsWTITradeMonth, 1 },
+            { Futures.Energy.WTIHoustonCrudeOil, 1 },
             { Futures.Softs.Sugar11, 1 },
             { Futures.Softs.Sugar11CME, 1 }
         };

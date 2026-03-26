@@ -43,8 +43,9 @@ namespace QuantConnect.Data.Consolidators
         /// Creates a consolidator to produce a new 'TradeBar' representing the period
         /// </summary>
         /// <param name="period">The minimum span of time before emitting a consolidated bar</param>
-        public TradeBarConsolidator(TimeSpan period)
-            : base(period)
+        /// <param name="startTime">Optionally the bar start time anchor to use</param>
+        public TradeBarConsolidator(TimeSpan period, TimeSpan? startTime = null)
+            : base(period, startTime)
         {
         }
 
@@ -113,7 +114,6 @@ namespace QuantConnect.Data.Consolidators
                 //Aggregate the working bar
                 workingBar.Close = data.Close;
                 workingBar.Volume += data.Volume;
-                if (!IsTimeBased) workingBar.Period += data.Period;
                 if (data.Low < workingBar.Low) workingBar.Low = data.Low;
                 if (data.High > workingBar.High) workingBar.High = data.High;
             }

@@ -15,10 +15,12 @@
 
 using System;
 using QuantConnect.Util;
-using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using System.Linq;
+using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Data;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -27,22 +29,33 @@ namespace QuantConnect.Lean.Engine.DataFeeds
     /// </summary>
     public abstract class BacktestingChainProvider
     {
-        // see https://github.com/QuantConnect/Lean/issues/6384
-        private static readonly TickType[] DataTypes = new[] { TickType.Quote, TickType.OpenInterest, TickType.Trade };
-        private static readonly Resolution[] Resolutions = new[] { Resolution.Minute, Resolution.Hour, Resolution.Daily };
-        private bool _loggedPreviousTradableDate;
+        /// <summary>
+        /// The map file provider instance to use
+        /// </summary>
+        protected IMapFileProvider MapFileProvider { get; private set; }
 
         /// <summary>
-        /// The data cache instance to use
+        /// The history provider instance to use
         /// </summary>
-        protected IDataCacheProvider DataCacheProvider { get; }
+        protected IHistoryProvider HistoryProvider { get; private set; }
 
         /// <summary>
-        /// Creates a new instance
+        /// Initializes a new instance of the <see cref="BacktestingChainProvider"/> class
         /// </summary>
-        protected BacktestingChainProvider(IDataCacheProvider dataCacheProvider)
+        protected BacktestingChainProvider()
         {
-            DataCacheProvider = dataCacheProvider;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="BacktestingChainProvider"/> class
+        /// </summary>
+        /// <param name="parameters">The initialization parameters</param>
+        // TODO: This should be in the chain provider interfaces.
+        // They might be even be unified in a single interface (futures and options chains providers)
+        public void Initialize(ChainProviderInitializeParameters parameters)
+        {
+            HistoryProvider = parameters.HistoryProvider;
+            MapFileProvider = parameters.MapFileProvider;
         }
 
         /// <summary>
@@ -52,55 +65,47 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <param name="date">The date to search for</param>
         protected IEnumerable<Symbol> GetSymbols(Symbol canonicalSymbol, DateTime date)
         {
-            IEnumerable<string> entries = null;
-            var usedResolution = Resolution.Minute;
-            foreach (var resolution in Resolutions)
+            var marketHoursDataBase = MarketHoursDatabase.FromDataFolder();
+            var universeType = canonicalSymbol.SecurityType.IsOption() ? typeof(OptionUniverse) : typeof(FutureUniverse);
+            // Use this GetEntry extension method since it's data type dependent, so we get the correct entry for the option universe
+            var marketHoursEntry = marketHoursDataBase.GetEntry(canonicalSymbol, new[] { universeType });
+
+            // We will add a safety measure in case the universe file for the current time is not available:
+            // we will use the latest available universe file within the last 3 trading dates.
+            // This is useful in cases like live trading when the algorithm is deployed at a time of day when
+            // the universe file is not available yet.
+            var history = (List<Slice>)null;
+            var periods = 1;
+            while ((history == null || history.Count == 0) && periods <= 3)
             {
-                usedResolution = resolution;
-                entries = GetZipEntries(canonicalSymbol, date, usedResolution);
-                if (entries != null)
-                {
-                    break;
-                }
+                var startDate = Time.GetStartTimeForTradeBars(marketHoursEntry.ExchangeHours, date, Time.OneDay, periods++,
+                    extendedMarketHours: false, marketHoursEntry.DataTimeZone);
+                var request = new HistoryRequest(
+                    startDate.ConvertToUtc(marketHoursEntry.ExchangeHours.TimeZone),
+                    date.ConvertToUtc(marketHoursEntry.ExchangeHours.TimeZone),
+                    universeType,
+                    canonicalSymbol,
+                    Resolution.Daily,
+                    marketHoursEntry.ExchangeHours,
+                    marketHoursEntry.DataTimeZone,
+                    null,
+                    false,
+                    false,
+                    DataNormalizationMode.Raw,
+                    TickType.Quote);
+                history = HistoryProvider.GetHistory([request], marketHoursEntry.DataTimeZone)?.ToList();
             }
 
-            if (entries == null)
+            var symbols = history == null || history.Count == 0
+                ? Enumerable.Empty<Symbol>()
+                : history.Take(1).GetUniverseData().SelectMany(x => x.Values.Single()).Select(x => x.Symbol);
+
+            if (canonicalSymbol.SecurityType.IsOption())
             {
-                var mhdb = MarketHoursDatabase.FromDataFolder();
-                if (mhdb.TryGetEntry(canonicalSymbol.ID.Market, canonicalSymbol, canonicalSymbol.SecurityType, out var entry) && !entry.ExchangeHours.IsDateOpen(date))
-                {
-                    if (!_loggedPreviousTradableDate)
-                    {
-                        _loggedPreviousTradableDate = true;
-                        Log.Trace($"BacktestingCacheProvider.GetSymbols(): {date} is not a tradable date for {canonicalSymbol}. When requesting contracts" +
-                            $" for non tradable dates, will return contracts of previous tradable date.");
-                    }
-
-                    // be user friendly, will return contracts from the previous tradable date
-                    foreach (var symbol in GetSymbols(canonicalSymbol, Time.GetStartTimeForTradeBars(entry.ExchangeHours, date, Time.OneDay, 1, false, entry.DataTimeZone)))
-                    {
-                        yield return symbol;
-                    }
-                    yield break;
-                }
-
-                if (Log.DebuggingEnabled)
-                {
-                    Log.Debug($"BacktestingCacheProvider.GetSymbols(): found no source of contracts for {canonicalSymbol} for date {date.ToString(DateFormat.EightCharacter)} for any tick type");
-                }
-                yield break;
+                symbols = symbols.Where(symbol => symbol.SecurityType.IsOption());
             }
 
-            // generate and return the contract symbol for each zip entry
-            foreach (var zipEntryName in entries)
-            {
-                var symbol = LeanData.ReadSymbolFromZipEntry(canonicalSymbol, usedResolution, zipEntryName);
-                // do not return expired contracts, because we are potentially sourcing this information from daily/hour files we could pick up already expired contracts
-                if (!IsContractExpired(symbol, date))
-                {
-                    yield return symbol;
-                }
-            }
+            return symbols.Where(symbol => symbol.ID.Date >= date.Date);
         }
 
         /// <summary>
@@ -109,25 +114,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         protected static bool IsContractExpired(Symbol symbol, DateTime date)
         {
             return symbol.ID.Date.Date < date.Date;
-        }
-
-        private IEnumerable<string> GetZipEntries(Symbol canonicalSymbol, DateTime date, Resolution resolution)
-        {
-            foreach (var tickType in DataTypes)
-            {
-                // build the zip file name and fetch it with our provider
-                var zipFileName = LeanData.GenerateZipFilePath(Globals.DataFolder, canonicalSymbol, date, resolution, tickType);
-                try
-                {
-                    return DataCacheProvider.GetZipEntries(zipFileName);
-                }
-                catch
-                {
-                    // the cache provider will throw if the file isn't available TODO: it's api should be more like TryGetZipEntries
-                }
-            }
-
-            return null;
         }
     }
 }

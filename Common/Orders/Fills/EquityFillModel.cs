@@ -176,7 +176,7 @@ namespace QuantConnect.Orders.Fills
         ///
         /// The continuous market assumption is not valid if the market opens with an unfavorable gap.
         /// In this case, a new bar opens below/above the stop trigger price, and the order is filled with the opening price.
-        /// <seealso cref="MarketFill(Security, MarketOrder)"/>
+        /// <seealso cref="MarketFill(Security, MarketOrder)"/></remarks>
         public override OrderEvent StopMarketFill(Security asset, StopMarketOrder order)
         {
             // Default order event to return.
@@ -360,7 +360,7 @@ namespace QuantConnect.Orders.Fills
         /// If the buy/sell limit order is placed below/above the current market price,
         /// the order is filled with the opening price.
         /// <seealso cref="StopMarketFill(Security, StopMarketOrder)"/>
-        /// <seealso cref="MarketFill(Security, MarketOrder)"/>
+        /// <seealso cref="MarketFill(Security, MarketOrder)"/></remarks>
         public override OrderEvent LimitFill(Security asset, LimitOrder order)
         {
             //Initialise;
@@ -594,6 +594,8 @@ namespace QuantConnect.Orders.Fills
                 return fill;
             }
 
+            // LocalTime has reached or passed market close, proceed to fill
+
             var subscribedTypes = GetSubscribedTypes(asset);
 
             if (subscribedTypes.Contains(typeof(Tick)))
@@ -640,12 +642,6 @@ namespace QuantConnect.Orders.Fills
                 {
                     fill.FillPrice = tick.Price;
                 }
-            }
-            // make sure the exchange is open/normal market hours before filling
-            // It will return true if the last bar opens before the market closes
-            else if (!IsExchangeOpen(asset, false))
-            {
-                return fill;
             }
             else if (subscribedTypes.Contains(typeof(TradeBar)))
             {

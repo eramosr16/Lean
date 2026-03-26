@@ -57,7 +57,6 @@ namespace QuantConnect.Lean.Launcher
                 Config.MergeCommandLineArgumentsWithConfiguration(LeanArgumentParser.ParseArguments(args));
             }
 
-            var liveMode = Config.GetBool("live-mode");
             //Name thread for the profiler:
             Thread.CurrentThread.Name = "Algorithm Analysis Thread";
 
@@ -65,8 +64,7 @@ namespace QuantConnect.Lean.Launcher
             leanEngineSystemHandlers = Initializer.GetSystemHandlers();
 
             //-> Pull job from QuantConnect job queue, or, pull local build:
-            string assemblyPath;
-            job = leanEngineSystemHandlers.JobQueue.NextJob(out assemblyPath);
+            job = leanEngineSystemHandlers.JobQueue.NextJob(out var assemblyPath);
 
             leanEngineAlgorithmHandlers = Initializer.GetAlgorithmHandlers();
 
@@ -74,7 +72,7 @@ namespace QuantConnect.Lean.Launcher
             {
                 const string jobNullMessage = "Engine.Main(): Sorry we could not process this algorithm request.";
                 Log.Error(jobNullMessage);
-                throw new ArgumentException(jobNullMessage);
+                Exit(1);
             }
 
             // Activate our PythonVirtualEnvironment
@@ -100,13 +98,13 @@ namespace QuantConnect.Lean.Launcher
                 Console.CancelKeyPress += new ConsoleCancelEventHandler(ExitKeyPress);
 
                 // Create the algorithm manager and start our engine
-                algorithmManager = new AlgorithmManager(liveMode, job);
+                algorithmManager = new AlgorithmManager(Globals.LiveMode, job);
 
                 leanEngineSystemHandlers.LeanManager.Initialize(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, job, algorithmManager);
 
                 OS.Initialize();
 
-                var engine = new Engine.Engine(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, liveMode);
+                var engine = new Engine.Engine(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, Globals.LiveMode);
                 engine.Run(job, algorithmManager, assemblyPath, WorkerThread.Instance);
             }
             finally
@@ -129,9 +127,13 @@ namespace QuantConnect.Lean.Launcher
 
         public static void Exit(int exitCode)
         {
-            //Delete the message from the job queue:
-            leanEngineSystemHandlers.JobQueue.AcknowledgeJob(job);
-            Log.Trace("Engine.Main(): Packet removed from queue: " + job.AlgorithmId);
+            // The job can be null if the algorithm file was not found
+            if (job != null)
+            {
+                //Delete the message from the job queue:
+                leanEngineSystemHandlers.JobQueue.AcknowledgeJob(job);
+                Log.Trace("Engine.Main(): Packet removed from queue: " + job.AlgorithmId);
+            }
 
             // clean up resources
             leanEngineSystemHandlers.DisposeSafely();

@@ -29,20 +29,21 @@ namespace QuantConnect.Algorithm.CSharp
     public class AddRemoveOptionUniverseRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
         private const string UnderlyingTicker = "GOOG";
-        public readonly Symbol Underlying = QuantConnect.Symbol.Create(UnderlyingTicker, SecurityType.Equity, Market.USA);
-        public readonly Symbol OptionChainSymbol = QuantConnect.Symbol.Create(UnderlyingTicker, SecurityType.Option, Market.USA);
+        private readonly Symbol Underlying = QuantConnect.Symbol.Create(UnderlyingTicker, SecurityType.Equity, Market.USA);
+        private readonly Symbol OptionChainSymbol = QuantConnect.Symbol.Create(UnderlyingTicker, SecurityType.Option, Market.USA);
         private readonly HashSet<Symbol> _expectedSecurities = new HashSet<Symbol>();
         private readonly HashSet<Symbol> _expectedData = new HashSet<Symbol>();
         private readonly HashSet<Symbol> _expectedUniverses = new HashSet<Symbol>();
         private bool _expectUniverseSubscription;
+        private DateTime _universeSubscriptionTime;
 
         // order of expected contract additions as price moves
         private int _expectedContractIndex;
         private readonly List<Symbol> _expectedContracts = new List<Symbol>
         {
-            SymbolRepresentation.ParseOptionTickerOSI("GOOG  151224P00747500"),
             SymbolRepresentation.ParseOptionTickerOSI("GOOG  151224P00750000"),
-            SymbolRepresentation.ParseOptionTickerOSI("GOOG  151224P00752500")
+            SymbolRepresentation.ParseOptionTickerOSI("GOOG  151224P00752500"),
+            SymbolRepresentation.ParseOptionTickerOSI("GOOG  151224P00755000")
         };
 
         public override void Initialize()
@@ -59,16 +60,16 @@ namespace QuantConnect.Algorithm.CSharp
             _expectedUniverses.Add(UserDefinedUniverse.CreateSymbol(SecurityType.Equity, Market.USA));
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             // verify expectations
             if (SubscriptionManager.Subscriptions.Count(x => x.Symbol == OptionChainSymbol)
                 != (_expectUniverseSubscription ? 1 : 0))
             {
                 Log($"SubscriptionManager.Subscriptions:  {string.Join(" -- ", SubscriptionManager.Subscriptions)}");
-                throw new Exception($"Unexpected {OptionChainSymbol} subscription presence");
+                throw new RegressionTestException($"Unexpected {OptionChainSymbol} subscription presence");
             }
-            if (!data.ContainsKey(Underlying))
+            if (Time != _universeSubscriptionTime && !slice.ContainsKey(Underlying))
             {
                 // TODO : In fact, we're unable to properly detect whether or not we auto-added or it was manually added
                 // this is because when we auto-add the underlying we don't mark it as an internal security like we do with other auto adds
@@ -77,42 +78,42 @@ namespace QuantConnect.Algorithm.CSharp
                 // of the internal flag's purpose, so kicking this issue for now with a big fat note here about it :) to be considerd for any future
                 // refactorings of how we manage subscription/security data and track various aspects about the security (thinking a flags enum with
                 // things like manually added, auto added, internal, and any other boolean state we need to track against a single security)
-                throw new Exception("The underlying equity data should NEVER be removed in this algorithm because it was manually added");
+                throw new RegressionTestException("The underlying equity data should NEVER be removed in this algorithm because it was manually added");
             }
             if (_expectedSecurities.AreDifferent(Securities.Total.Select(x => x.Symbol).ToHashSet()))
             {
                 var expected = string.Join(Environment.NewLine, _expectedSecurities.OrderBy(s => s.ToString()));
                 var actual = string.Join(Environment.NewLine, Securities.Keys.OrderBy(s => s.ToString()));
-                throw new Exception($"{Time}:: Detected differences in expected and actual securities{Environment.NewLine}Expected:{Environment.NewLine}{expected}{Environment.NewLine}Actual:{Environment.NewLine}{actual}");
+                throw new RegressionTestException($"{Time}:: Detected differences in expected and actual securities{Environment.NewLine}Expected:{Environment.NewLine}{expected}{Environment.NewLine}Actual:{Environment.NewLine}{actual}");
             }
             if (_expectedUniverses.AreDifferent(UniverseManager.Keys.ToHashSet()))
             {
                 var expected = string.Join(Environment.NewLine, _expectedUniverses.OrderBy(s => s.ToString()));
                 var actual = string.Join(Environment.NewLine, UniverseManager.Keys.OrderBy(s => s.ToString()));
-                throw new Exception($"{Time}:: Detected differences in expected and actual universes{Environment.NewLine}Expected:{Environment.NewLine}{expected}{Environment.NewLine}Actual:{Environment.NewLine}{actual}");
+                throw new RegressionTestException($"{Time}:: Detected differences in expected and actual universes{Environment.NewLine}Expected:{Environment.NewLine}{expected}{Environment.NewLine}Actual:{Environment.NewLine}{actual}");
             }
-            if (_expectedData.AreDifferent(data.Keys.ToHashSet()))
+            if (Time != _universeSubscriptionTime && _expectedData.AreDifferent(slice.Keys.ToHashSet()))
             {
                 var expected = string.Join(Environment.NewLine, _expectedData.OrderBy(s => s.ToString()));
-                var actual = string.Join(Environment.NewLine, data.Keys.OrderBy(s => s.ToString()));
-                throw new Exception($"{Time}:: Detected differences in expected and actual slice data keys{Environment.NewLine}Expected:{Environment.NewLine}{expected}{Environment.NewLine}Actual:{Environment.NewLine}{actual}");
+                var actual = string.Join(Environment.NewLine, slice.Keys.OrderBy(s => s.ToString()));
+                throw new RegressionTestException($"{Time}:: Detected differences in expected and actual slice data keys{Environment.NewLine}Expected:{Environment.NewLine}{expected}{Environment.NewLine}Actual:{Environment.NewLine}{actual}");
             }
 
             // 10AM add GOOG option chain
-            if (Time.TimeOfDay.Hours == 10 && Time.TimeOfDay.Minutes == 0)
+            if (Time.TimeOfDay.Hours == 10 && Time.TimeOfDay.Minutes == 0 && !_expectUniverseSubscription)
             {
                 if (Securities.ContainsKey(OptionChainSymbol))
                 {
-                    throw new Exception("The option chain security should not have been added yet");
+                    throw new RegressionTestException("The option chain security should not have been added yet");
                 }
 
                 var googOptionChain = AddOption(UnderlyingTicker);
                 googOptionChain.SetFilter(u =>
                 {
                     // we added the universe at 10, the universe selection data should not be from before
-                    if (u.Underlying.EndTime.Hour < 10)
+                    if (u.LocalTime.Hour < 10)
                     {
-                        throw new Exception($"Unexpected underlying data point {u.Underlying.EndTime} {u.Underlying}");
+                        throw new RegressionTestException($"Unexpected selection time {u.LocalTime}");
                     }
                     // find first put above market price
                     return u.IncludeWeeklys()
@@ -124,6 +125,7 @@ namespace QuantConnect.Algorithm.CSharp
                 _expectedSecurities.Add(OptionChainSymbol);
                 _expectedUniverses.Add(OptionChainSymbol);
                 _expectUniverseSubscription = true;
+                _universeSubscriptionTime = Time;
             }
 
             // 11:30AM remove GOOG option chain
@@ -151,7 +153,7 @@ namespace QuantConnect.Algorithm.CSharp
                         var expectedContract = _expectedContracts[_expectedContractIndex];
                         if (added.Symbol != expectedContract)
                         {
-                            throw new Exception($"Expected option contract {expectedContract} to be added but received {added.Symbol}");
+                            throw new RegressionTestException($"Expected option contract {expectedContract.Value} to be added but received {added.Symbol}");
                         }
 
                         _expectedContractIndex++;
@@ -172,7 +174,7 @@ namespace QuantConnect.Algorithm.CSharp
                 // receive removed event next timestep at 11:31AM
                 if (Time.TimeOfDay.Hours != 11 || Time.TimeOfDay.Minutes != 31)
                 {
-                    throw new Exception($"Expected option contracts to be removed at 11:31AM, instead removed at: {Time}");
+                    throw new RegressionTestException($"Expected option contracts to be removed at 11:31AM, instead removed at: {Time}");
                 }
 
                 if (changes.RemovedSecurities
@@ -180,13 +182,13 @@ namespace QuantConnect.Algorithm.CSharp
                     .ToHashSet(s => s.Symbol)
                     .AreDifferent(_expectedContracts.ToHashSet()))
                 {
-                    throw new Exception("Expected removed securities to equal expected contracts added");
+                    throw new RegressionTestException("Expected removed securities to equal expected contracts added");
                 }
             }
 
             if (Securities.ContainsKey(Underlying))
             {
-                Console.WriteLine($"{Time:o}:: PRICE:: {Securities[Underlying].Price} CHANGES:: {changes}");
+                Log($"{Time:o}:: PRICE:: {Securities[Underlying].Price} CHANGES:: {changes}");
             }
         }
 
@@ -198,12 +200,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 200807;
+        public long DataPoints => 3502;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -211,16 +213,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "6"},
+            {"Total Orders", "6"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98784"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -236,10 +245,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$6.00"},
-            {"Estimated Strategy Capacity", "$3000.00"},
-            {"Lowest Capacity Asset", "GOOCV 305RBR0BSWIX2|GOOCV VP83T1ZUHROL"},
-            {"Portfolio Turnover", "1.49%"},
-            {"OrderListHash", "3adcc7ebf4153baabb073a8152e8cb2b"}
+            {"Estimated Strategy Capacity", "$4000.00"},
+            {"Lowest Capacity Asset", "GOOCV 305RBQ2BZGA4M|GOOCV VP83T1ZUHROL"},
+            {"Portfolio Turnover", "2.58%"},
+            {"Drawdown Recovery", "0"},
+            {"OrderListHash", "f418de0673fc166487daf80991dfe3a0"}
         };
     }
 }

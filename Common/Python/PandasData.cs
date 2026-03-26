@@ -15,11 +15,11 @@
 
 using Python.Runtime;
 using QuantConnect.Data;
+using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.Market;
 using QuantConnect.Util;
 using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -30,58 +30,51 @@ namespace QuantConnect.Python
     /// <summary>
     /// Organizes a list of data to create pandas.DataFrames
     /// </summary>
-    public class PandasData
+    public partial class PandasData
     {
-        private const string Open = "open";
-        private const string High = "high";
-        private const string Low = "low";
-        private const string Close = "close";
-        private const string Volume = "volume";
-
-        private const string AskOpen = "askopen";
-        private const string AskHigh = "askhigh";
-        private const string AskLow = "asklow";
-        private const string AskClose = "askclose";
-        private const string AskPrice = "askprice";
-        private const string AskSize = "asksize";
-
-        private const string BidOpen = "bidopen";
-        private const string BidHigh = "bidhigh";
-        private const string BidLow = "bidlow";
-        private const string BidClose = "bidclose";
-        private const string BidPrice = "bidprice";
-        private const string BidSize = "bidsize";
-
-        private const string LastPrice = "lastprice";
-        private const string Quantity = "quantity";
-        private const string Exchange = "exchange";
-        private const string Suspicious = "suspicious";
-        private const string OpenInterest = "openinterest";
-
         // we keep these so we don't need to ask for them each time
         private static PyString _empty;
         private static PyObject _pandas;
+        private static PyObject _pandasColumn;
         private static PyObject _seriesFactory;
         private static PyObject _dataFrameFactory;
         private static PyObject _multiIndexFactory;
+        private static PyObject _multiIndex;
+        private static PyObject _indexFactory;
 
         private static PyList _defaultNames;
+        private static PyList _level1Names;
         private static PyList _level2Names;
         private static PyList _level3Names;
 
-        private readonly static HashSet<string> _baseDataProperties = typeof(BaseData).GetProperties().ToHashSet(x => x.Name.ToLowerInvariant());
-        private readonly static ConcurrentDictionary<Type, IEnumerable<MemberInfo>> _membersByType = new ();
-        private readonly static IReadOnlyList<string> _standardColumns = new string []
-        {
-                Open,    High,    Low,    Close, LastPrice,  Volume,
-            AskOpen, AskHigh, AskLow, AskClose,  AskPrice, AskSize, Quantity, Suspicious,
-            BidOpen, BidHigh, BidLow, BidClose,  BidPrice, BidSize, Exchange, OpenInterest
+        private readonly static Dictionary<Type, List<DataTypeMember>> _membersCache = new();
+
+        private readonly static MemberInfo _tickLastPriceMember = typeof(Tick).GetProperty(nameof(Tick.LastPrice));
+        private readonly static MemberInfo _openInterestLastPriceMember = typeof(OpenInterest).GetProperty(nameof(Tick.LastPrice));
+
+        private static readonly string[] _nonLeanDataTypeForcedMemberNames = new[] { nameof(BaseData.Value) };
+
+        private readonly static string[] _quoteTickOnlyPropertes = new[] {
+            nameof(Tick.AskPrice),
+            nameof(Tick.AskSize),
+            nameof(Tick.BidPrice),
+            nameof(Tick.BidSize)
         };
 
+        private static readonly Type PandasNonExpandableAttribute = typeof(PandasNonExpandableAttribute);
+        private static readonly Type PandasIgnoreAttribute = typeof(PandasIgnoreAttribute);
+        private static readonly Type PandasIgnoreMembersAttribute = typeof(PandasIgnoreMembersAttribute);
+
+        private static readonly IReadOnlyCollection<DateTime> EmptySeriesTimesKey = new List<DateTime>();
+        private static readonly List<DataTypeMember> EmptyDataTypeMembers = new List<DataTypeMember>();
+
         private readonly Symbol _symbol;
+        private readonly bool _isFundamentalType;
+        private readonly bool _isBaseData;
+        private readonly bool _timeAsColumn;
         private readonly Dictionary<string, Serie> _series;
 
-        private readonly IEnumerable<MemberInfo> _members = Enumerable.Empty<MemberInfo>();
+        private readonly Dictionary<Type, List<DataTypeMember>> _members = new();
 
         /// <summary>
         /// Gets true if this is a custom data request, false for normal QC data
@@ -94,145 +87,160 @@ namespace QuantConnect.Python
         public int Levels { get; } = 2;
 
         /// <summary>
+        /// Initializes the static members of the <see cref="PandasData"/> class
+        /// </summary>
+        static PandasData()
+        {
+            using (Py.GIL())
+            {
+                // Use our PandasMapper class that modifies pandas indexing to support tickers, symbols and SIDs
+                _pandas = Py.Import("PandasMapper");
+                _pandasColumn = _pandas.GetAttr("PandasColumn");
+                _seriesFactory = _pandas.GetAttr("Series");
+                _dataFrameFactory = _pandas.GetAttr("DataFrame");
+                _multiIndex = _pandas.GetAttr("MultiIndex");
+                _multiIndexFactory = _multiIndex.GetAttr("from_tuples");
+                _indexFactory = _pandas.GetAttr("Index");
+                _empty = new PyString(string.Empty);
+
+                var time = new PyString("time");
+                var symbol = new PyString("symbol");
+                var expiry = new PyString("expiry");
+                _defaultNames = new PyList(new PyObject[] { expiry, new PyString("strike"), new PyString("type"), symbol, time });
+                _level1Names = new PyList(new PyObject[] { symbol });
+                _level2Names = new PyList(new PyObject[] { symbol, time });
+                _level3Names = new PyList(new PyObject[] { expiry, symbol, time });
+            }
+        }
+
+        /// <summary>
         /// Initializes an instance of <see cref="PandasData"/>
         /// </summary>
-        public PandasData(object data)
+        public PandasData(object data, bool timeAsColumn = false)
         {
-            if (_pandas == null)
-            {
-                using (Py.GIL())
-                {
-                    // Use our PandasMapper class that modifies pandas indexing to support tickers, symbols and SIDs
-                    _pandas = Py.Import("PandasMapper");
-                    _seriesFactory = _pandas.GetAttr("Series");
-                    _dataFrameFactory = _pandas.GetAttr("DataFrame");
-                    using var multiIndex = _pandas.GetAttr("MultiIndex");
-                    _multiIndexFactory = multiIndex.GetAttr("from_tuples");
-                    _empty = new PyString(string.Empty);
-
-                    var time = new PyString("time");
-                    var symbol = new PyString("symbol");
-                    var expiry = new PyString("expiry");
-                    _defaultNames = new PyList(new PyObject[] { expiry, new PyString("strike"), new PyString("type"), symbol, time });
-                    _level2Names = new PyList(new PyObject[] { symbol, time });
-                    _level3Names = new PyList(new PyObject[] { expiry, symbol, time });
-                }
-            }
+            _series = new();
+            var baseData = data as IBaseData;
 
             // in the case we get a list/collection of data we take the first data point to determine the type
             // but it's also possible to get a data which supports enumerating we don't care about those cases
-            if (data is not IBaseData && data is IEnumerable enumerable)
+            if (baseData == null && data is IEnumerable enumerable)
             {
                 foreach (var item in enumerable)
                 {
                     data = item;
+                    baseData = data as IBaseData;
                     break;
                 }
             }
 
             var type = data.GetType();
-            IsCustomData = type.Namespace != typeof(Bar).Namespace;
-            _symbol = ((IBaseData)data).Symbol;
+            _isFundamentalType = type == typeof(Fundamental);
+            _isBaseData = baseData != null;
+            _timeAsColumn = timeAsColumn && _isBaseData;
+            _symbol = _isBaseData ? baseData.Symbol : ((ISymbolProvider)data).Symbol;
+            IsCustomData = Extensions.IsCustomDataType(_symbol, type);
 
-            if (_symbol.SecurityType == SecurityType.Future) Levels = 3;
-            if (_symbol.SecurityType.IsOption()) Levels = 5;
-
-            IEnumerable<string> columns = _standardColumns;
-
-            if (IsCustomData)
+            if (baseData == null)
             {
-                var keys = (data as DynamicData)?.GetStorageDictionary().ToHashSet(x => x.Key);
-
-                // C# types that are not DynamicData type
-                if (keys == null)
-                {
-                    if (_membersByType.TryGetValue(type, out _members))
-                    {
-                        keys = _members.ToHashSet(x => x.Name.ToLowerInvariant());
-                    }
-                    else
-                    {
-                        var members = type.GetMembers().Where(x => x.MemberType == MemberTypes.Field || x.MemberType == MemberTypes.Property).ToList();
-
-                        var duplicateKeys = members.GroupBy(x => x.Name.ToLowerInvariant()).Where(x => x.Count() > 1).Select(x => x.Key);
-                        foreach (var duplicateKey in duplicateKeys)
-                        {
-                            throw new ArgumentException($"PandasData.ctor(): {Messages.PandasData.DuplicateKey(duplicateKey, type.FullName)}");
-                        }
-
-                        // If the custom data derives from a Market Data (e.g. Tick, TradeBar, QuoteBar), exclude its keys
-                        keys = members.ToHashSet(x => x.Name.ToLowerInvariant());
-                        keys.ExceptWith(_baseDataProperties);
-                        keys.ExceptWith(GetPropertiesNames(typeof(QuoteBar), type));
-                        keys.ExceptWith(GetPropertiesNames(typeof(TradeBar), type));
-                        keys.ExceptWith(GetPropertiesNames(typeof(Tick), type));
-                        keys.Add("value");
-
-                        _members = members.Where(x => keys.Contains(x.Name.ToLowerInvariant())).ToList();
-                        _membersByType.TryAdd(type, _members);
-                    }
-                }
-
-                var customColumns = new HashSet<string>(columns);
-                customColumns.Add("value");
-                customColumns.UnionWith(keys);
-
-                columns = customColumns;
+                Levels = 1;
             }
-
-            _series = columns.ToDictionary(k => k, v => new Serie());
+            else if (_symbol.SecurityType == SecurityType.Future)
+            {
+                Levels = 3;
+            }
+            else if (_symbol.SecurityType.IsOption())
+            {
+                Levels = 5;
+            }
         }
 
         /// <summary>
         /// Adds security data object to the end of the lists
         /// </summary>
-        /// <param name="baseData"><see cref="IBaseData"/> object that contains security data</param>
-        public void Add(object baseData)
+        /// <param name="data"><see cref="IBaseData"/> object that contains security data</param>
+        public void Add(object data)
         {
-            foreach (var member in _members)
+            Add(data, false);
+        }
+
+        private void Add(object data, bool overrideValues)
+        {
+            if (data == null)
             {
-                // TODO field/property.GetValue is expensive
-                var key = member.Name.ToLowerInvariant();
-                var endTime = ((IBaseData)baseData).EndTime;
-                var propertyMember = member as PropertyInfo;
-                if (propertyMember != null)
+                return;
+            }
+
+            var typeMembers = GetInstanceDataTypeMembers(data);
+
+            var endTime = default(DateTime);
+            if (_isBaseData)
+            {
+                endTime = ((IBaseData)data).EndTime;
+                if (_timeAsColumn)
                 {
-                    AddToSeries(key, endTime, propertyMember.GetValue(baseData));
-                    continue;
-                }
-                var fieldMember = member as FieldInfo;
-                if (fieldMember != null)
-                {
-                    AddToSeries(key, endTime, fieldMember.GetValue(baseData));
+                    AddToSeries("time", endTime, endTime, overrideValues);
                 }
             }
 
-            var storage = (baseData as DynamicData)?.GetStorageDictionary();
-            if (storage != null)
-            {
-                var endTime = ((IBaseData) baseData).EndTime;
-                var value = ((IBaseData) baseData).Value;
-                AddToSeries("value", endTime, value);
+            AddMembersData(data, typeMembers, endTime, overrideValues);
 
-                foreach (var kvp in storage.Where(x => x.Key != "value"))
-                {
-                    AddToSeries(kvp.Key, endTime, kvp.Value);
-                }
-            }
-            else
+            if (data is DynamicData dynamicData)
             {
-                var tick = baseData as Tick;
-                if (tick != null)
+                var storage = dynamicData.GetStorageDictionary();
+                var value = dynamicData.Value;
+                AddToSeries("value", endTime, value, overrideValues);
+
+                foreach (var kvp in storage.Where(x => x.Key != "value"
+                    // if this is a PythonData instance we add in '__typename' which we don't want into the data frame
+                    && !x.Key.StartsWith("__", StringComparison.InvariantCulture)))
                 {
-                    AddTick(tick);
-                }
-                else
-                {
-                    var tradeBar = baseData as TradeBar;
-                    var quoteBar = baseData as QuoteBar;
-                    Add(tradeBar, quoteBar);
+                    AddToSeries(kvp.Key, endTime, kvp.Value, overrideValues);
                 }
             }
+        }
+
+        private void AddMemberToSeries(object instance, DateTime endTime, DataTypeMember member, bool overrideValues)
+        {
+            var baseName = (string)null;
+            var tick = member.IsTickProperty ? instance as Tick : null;
+            if (tick != null && member.IsTickLastPrice && tick.TickType == TickType.OpenInterest)
+            {
+                baseName = "OpenInterest";
+            }
+
+            // TODO field/property.GetValue is expensive
+            var key = member.GetMemberName(baseName);
+            var value = member.GetValue(instance);
+
+            var memberType = member.GetMemberType();
+            // For DataDictionary instances, we only want to add the values
+            if (MemberIsDataDictionary(memberType))
+            {
+                value = memberType.GetProperty("Values").GetValue(value);
+            }
+            else if (member.IsProperty)
+            {
+                if (_isFundamentalType && value is FundamentalTimeDependentProperty timeDependentProperty)
+                {
+                    value = timeDependentProperty.Clone(new FixedTimeProvider(endTime));
+                }
+                else if (member.IsTickProperty && tick != null)
+                {
+                    if (tick.TickType != TickType.Quote && _quoteTickOnlyPropertes.Contains(member.Member.Name))
+                    {
+                        value = null;
+                    }
+                    else if (member.IsTickLastPrice)
+                    {
+                        var nullValueKey = tick.TickType != TickType.OpenInterest
+                            ? member.GetMemberName("OpenInterest")
+                            : member.GetMemberName();
+                        AddToSeries(nullValueKey, endTime, null, overrideValues);
+                    }
+                }
+            }
+
+            AddToSeries(key, endTime, value, overrideValues);
         }
 
         /// <summary>
@@ -242,156 +250,112 @@ namespace QuantConnect.Python
         /// <param name="quoteBar"><see cref="QuoteBar"/> object that contains quote bar information of the security</param>
         public void Add(TradeBar tradeBar, QuoteBar quoteBar)
         {
-            if (tradeBar != null)
-            {
-                var time = tradeBar.EndTime;
-                GetSerie(Open).Add(time, tradeBar.Open);
-                GetSerie(High).Add(time, tradeBar.High);
-                GetSerie(Low).Add(time, tradeBar.Low);
-                GetSerie(Close).Add(time, tradeBar.Close);
-                GetSerie(Volume).Add(time, tradeBar.Volume);
-            }
-            if (quoteBar != null)
-            {
-                var time = quoteBar.EndTime;
-                if (tradeBar == null)
-                {
-                    GetSerie(Open).Add(time, quoteBar.Open);
-                    GetSerie(High).Add(time, quoteBar.High);
-                    GetSerie(Low).Add(time, quoteBar.Low);
-                    GetSerie(Close).Add(time, quoteBar.Close);
-                }
-                if (quoteBar.Ask != null)
-                {
-                    GetSerie(AskOpen).Add(time, quoteBar.Ask.Open);
-                    GetSerie(AskHigh).Add(time, quoteBar.Ask.High);
-                    GetSerie(AskLow).Add(time, quoteBar.Ask.Low);
-                    GetSerie(AskClose).Add(time, quoteBar.Ask.Close);
-                    GetSerie(AskSize).Add(time, quoteBar.LastAskSize);
-                }
-                if (quoteBar.Bid != null)
-                {
-                    GetSerie(BidOpen).Add(time, quoteBar.Bid.Open);
-                    GetSerie(BidHigh).Add(time, quoteBar.Bid.High);
-                    GetSerie(BidLow).Add(time, quoteBar.Bid.Low);
-                    GetSerie(BidClose).Add(time, quoteBar.Bid.Close);
-                    GetSerie(BidSize).Add(time, quoteBar.LastBidSize);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Adds a tick data point to this pandas collection
-        /// </summary>
-        /// <param name="tick"><see cref="Tick"/> object that contains tick information of the security</param>
-        public void AddTick(Tick tick)
-        {
-            var time = tick.EndTime;
-
-            // We will fill some series with null for tick types that don't have a value for that series, so that we make sure
-            // the indices are the same for every tick series.
-
-            if (tick.TickType == TickType.Quote)
-            {
-                GetSerie(AskPrice).Add(time, tick.AskPrice);
-                GetSerie(AskSize).Add(time, tick.AskSize);
-                GetSerie(BidPrice).Add(time, tick.BidPrice);
-                GetSerie(BidSize).Add(time, tick.BidSize);
-            }
-            else
-            {
-                // Trade and open interest ticks don't have these values, so we'll fill them with null.
-                GetSerie(AskPrice).Add(time, null);
-                GetSerie(AskSize).Add(time, null);
-                GetSerie(BidPrice).Add(time, null);
-                GetSerie(BidSize).Add(time, null);
-            }
-
-            GetSerie(Exchange).Add(time, tick.Exchange);
-            GetSerie(Suspicious).Add(time, tick.Suspicious);
-            GetSerie(Quantity).Add(time, tick.Quantity);
-
-            if (tick.TickType == TickType.OpenInterest)
-            {
-                GetSerie(OpenInterest).Add(time, tick.Value);
-                GetSerie(LastPrice).Add(time, null);
-            }
-            else
-            {
-                GetSerie(LastPrice).Add(time, tick.Value);
-                GetSerie(OpenInterest).Add(time, null);
-            }
+            // Quote bar first, so if there is a trade bar, OHLC will be overwritten
+            Add(quoteBar);
+            Add(tradeBar, overrideValues: true);
         }
 
         /// <summary>
         /// Get the pandas.DataFrame of the current <see cref="PandasData"/> state
         /// </summary>
         /// <param name="levels">Number of levels of the multi index</param>
+        /// <param name="filterMissingValueColumns">If false, make sure columns with "missing" values only are still added to the dataframe</param>
         /// <returns>pandas.DataFrame object</returns>
-        public PyObject ToPandasDataFrame(int levels = 2)
+        public PyObject ToPandasDataFrame(int levels = 2, bool filterMissingValueColumns = true)
         {
-            List<PyObject> list;
-            var symbol = _symbol.ID.ToString().ToPython();
+            using var _ = Py.GIL();
 
+            PyObject[] indexTemplate;
             // Create the index labels
             var names = _defaultNames;
-            if (levels == 2)
+
+            if (levels == 1)
+            {
+                names = _level1Names;
+                indexTemplate = GetIndexTemplate(_symbol);
+            }
+            else if (levels == 2)
             {
                 // symbol, time
                 names = _level2Names;
-                list = new List<PyObject> { symbol, _empty };
+                indexTemplate = GetIndexTemplate(_symbol, null);
             }
             else if (levels == 3)
             {
                 // expiry, symbol, time
                 names = _level3Names;
-                list = new List<PyObject> { _symbol.ID.Date.ToPython(), symbol, _empty };
+                indexTemplate = GetIndexTemplate(_symbol.ID.Date, _symbol, null);
             }
             else
             {
-                list = new List<PyObject> { _empty, _empty, _empty, symbol, _empty };
                 if (_symbol.SecurityType == SecurityType.Future)
                 {
-                    list[0] = _symbol.ID.Date.ToPython();
+                    indexTemplate = GetIndexTemplate(_symbol.ID.Date, null, null, _symbol, null);
                 }
                 else if (_symbol.SecurityType.IsOption())
                 {
-                    list[0] = _symbol.ID.Date.ToPython();
-                    list[1] = _symbol.ID.StrikePrice.ToPython();
-                    list[2] = _symbol.ID.OptionRight.ToString().ToPython();
+                    indexTemplate = GetIndexTemplate(_symbol.ID.Date, _symbol.ID.StrikePrice, _symbol.ID.OptionRight, _symbol, null);
+                }
+                else
+                {
+                    indexTemplate = GetIndexTemplate(null, null, null, _symbol, null);
                 }
             }
 
+            names = new PyList(names.SkipLast(names.Count() > 1 && _timeAsColumn ? 1 : 0).ToArray());
+
             // creating the pandas MultiIndex is expensive so we keep a cash
-            var indexCache = new Dictionary<List<DateTime>, PyObject>(new ListComparer<DateTime>());
+            var indexCache = new Dictionary<IReadOnlyCollection<DateTime>, PyObject>(new ListComparer<DateTime>());
             // Returns a dictionary keyed by column name where values are pandas.Series objects
             using var pyDict = new PyDict();
-            foreach (var kvp in _series)
+            foreach (var (seriesName, serie) in _series)
             {
-                if (kvp.Value.ShouldFilter) continue;
+                if (filterMissingValueColumns && serie.ShouldFilter) continue;
 
-                if (!indexCache.TryGetValue(kvp.Value.Times, out var index))
+                var key = serie.Times ?? EmptySeriesTimesKey;
+                if (!indexCache.TryGetValue(key, out var index))
                 {
-                    using var tuples = kvp.Value.Times.Select(time => CreateTupleIndex(time, list)).ToPyListUnSafe();
-                    using var namesDic = Py.kw("names", names);
+                    PyList indexSource;
+                    if (_timeAsColumn)
+                    {
+                        indexSource = serie.Values.Select(_ => CreateIndexSourceValue(DateTime.MinValue, indexTemplate)).ToPyListUnSafe();
+                    }
+                    else
+                    {
+                        indexSource = serie.Times.Select(time => CreateIndexSourceValue(time, indexTemplate)).ToPyListUnSafe();
+                    }
 
-                    indexCache[kvp.Value.Times] = index = _multiIndexFactory.Invoke(new[] { tuples }, namesDic);
+                    if (indexTemplate.Length == 1)
+                    {
+                        using var nameDic = Py.kw("name", names[0]);
+                        index = _indexFactory.Invoke(new[] { indexSource }, nameDic);
+                    }
+                    else
+                    {
+                        using var namesDic = Py.kw("names", names);
+                        index = _multiIndexFactory.Invoke(new[] { indexSource }, namesDic);
+                    }
 
-                    foreach (var pyObject in tuples)
+                    indexCache[key] = index;
+
+                    foreach (var pyObject in indexSource)
                     {
                         pyObject.Dispose();
                     }
+                    indexSource.Dispose();
                 }
 
                 // Adds pandas.Series value keyed by the column name
                 using var pyvalues = new PyList();
-                for (var i = 0; i < kvp.Value.Values.Count; i++)
+                for (var i = 0; i < serie.Values.Count; i++)
                 {
-                    using var pyObject = kvp.Value.Values[i].ToPython();
+                    using var pyObject = serie.Values[i].ToPython();
                     pyvalues.Append(pyObject);
                 }
                 using var series = _seriesFactory.Invoke(pyvalues, index);
-                pyDict.SetItem(kvp.Key, series);
+                using var pyStrKey = seriesName.ToPython();
+                using var pyKey = _pandasColumn.Invoke(pyStrKey);
+                pyDict.SetItem(pyKey, series);
             }
             _series.Clear();
             foreach (var kvp in indexCache)
@@ -399,10 +363,11 @@ namespace QuantConnect.Python
                 kvp.Value.Dispose();
             }
 
-            for (var i = 0; i < list.Count; i++)
+            for (var i = 0; i < indexTemplate.Length; i++)
             {
-                DisposeIfNotEmpty(list[i]);
+                DisposeIfNotEmpty(indexTemplate[i]);
             }
+            names.Dispose();
 
             // Create the DataFrame
             var result = _dataFrameFactory.Invoke(pyDict);
@@ -416,6 +381,224 @@ namespace QuantConnect.Python
         }
 
         /// <summary>
+        /// Helper method to create a single pandas data frame indexed by symbol
+        /// </summary>
+        /// <remarks>Will add a single point per pandas data series (symbol)</remarks>
+        public static PyObject ToPandasDataFrame(IEnumerable<PandasData> pandasDatas, bool skipTimesColumn = false)
+        {
+            using var _ = Py.GIL();
+
+            using var list = pandasDatas.Select(x => x._symbol).ToPyListUnSafe();
+
+            using var namesDic = Py.kw("name", _level1Names[0]);
+            using var index = _indexFactory.Invoke(new[] { list }, namesDic);
+
+            var valuesPerSeries = new Dictionary<string, PyList>();
+            var seriesToSkip = new Dictionary<string, bool>();
+            foreach (var pandasData in pandasDatas)
+            {
+                foreach (var kvp in pandasData._series)
+                {
+                    if (skipTimesColumn && kvp.Key == "time")
+                    {
+                        continue;
+                    }
+
+                    if (seriesToSkip.ContainsKey(kvp.Key))
+                    {
+                        seriesToSkip[kvp.Key] &= kvp.Value.ShouldFilter;
+                    }
+                    else
+                    {
+                        seriesToSkip[kvp.Key] = kvp.Value.ShouldFilter;
+                    }
+
+                    if (!valuesPerSeries.TryGetValue(kvp.Key, out PyList value))
+                    {
+                        // Adds pandas.Series value keyed by the column name
+                        value = valuesPerSeries[kvp.Key] = new PyList();
+                    }
+
+                    if (kvp.Value.Values.Count > 0)
+                    {
+                        // taking only 1 value per symbol
+                        using var valueOfSymbol = kvp.Value.Values[0].ToPython();
+                        value.Append(valueOfSymbol);
+                    }
+                    else
+                    {
+                        value.Append(PyObject.None);
+                    }
+                }
+            }
+
+            using var pyDict = new PyDict();
+            foreach (var kvp in valuesPerSeries)
+            {
+                if (seriesToSkip.TryGetValue(kvp.Key, out var skip) && skip)
+                {
+                    continue;
+                }
+
+                using var series = _seriesFactory.Invoke(kvp.Value, index);
+                using var pyStrKey = kvp.Key.ToPython();
+                using var pyKey = _pandasColumn.Invoke(pyStrKey);
+                pyDict.SetItem(pyKey, series);
+
+                kvp.Value.Dispose();
+            }
+            var result = _dataFrameFactory.Invoke(pyDict);
+
+            // Drop columns with only NaN or None values
+            using var dropnaKwargs = Py.kw("axis", 1, "inplace", true, "how", "all");
+            result.GetAttr("dropna").Invoke(Array.Empty<PyObject>(), dropnaKwargs);
+
+            return result;
+        }
+
+        private List<DataTypeMember> GetInstanceDataTypeMembers(object data)
+        {
+            var type = data.GetType();
+            if (!_members.TryGetValue(type, out var members))
+            {
+                HashSet<string> columnNames;
+
+                if (data is DynamicData dynamicData)
+                {
+                    columnNames = (data as DynamicData)?.GetStorageDictionary()
+                        // if this is a PythonData instance we add in '__typename' which we don't want into the data frame
+                        .Where(x => !x.Key.StartsWith("__", StringComparison.InvariantCulture)).ToHashSet(x => x.Key);
+                    columnNames.Add("value");
+                    members = EmptyDataTypeMembers;
+                }
+                else
+                {
+                    members = GetTypeMembers(type);
+                    columnNames = members.SelectMany(x => x.GetMemberNames()).ToHashSet();
+                    // We add openinterest key so the series is created: open interest tick LastPrice is renamed to OpenInterest
+                    if (data is Tick)
+                    {
+                        columnNames.Add("openinterest");
+                    }
+                }
+
+                _members[type] = members;
+
+                if (_timeAsColumn)
+                {
+                    columnNames.Add("time");
+                }
+
+                foreach (var columnName in columnNames)
+                {
+                    _series.TryAdd(columnName, new Serie(withTimeIndex: !_timeAsColumn));
+                }
+            }
+
+            return members;
+        }
+
+        /// <summary>
+        /// Gets or create/adds the <see cref="DataTypeMember"/> instances corresponding to the members of the given type,
+        /// and returns the names of the members.
+        /// </summary>
+        private List<DataTypeMember> GetTypeMembers(Type type)
+        {
+            List<DataTypeMember> typeMembers;
+            lock (_membersCache)
+            {
+                if (!_membersCache.TryGetValue(type, out typeMembers))
+                {
+                    var forcedInclusionMembers = LeanData.IsCommonLeanDataType(type)
+                        ? Array.Empty<string>()
+                        : _nonLeanDataTypeForcedMemberNames;
+                    typeMembers = GetDataTypeMembers(type, forcedInclusionMembers).ToList();
+                    _membersCache[type] = typeMembers;
+                }
+            }
+
+            _members[type] = typeMembers;
+            return typeMembers;
+        }
+
+        /// <summary>
+        /// Gets the <see cref="DataTypeMember"/> instances corresponding to the members of the given type.
+        /// It will try to unwrap properties which types are classes unless they are marked either to be ignored or to be added as a whole
+        /// </summary>
+        private static IEnumerable<DataTypeMember> GetDataTypeMembers(Type type, string[] forcedInclusionMembers)
+        {
+            var members = type
+                .GetMembers(BindingFlags.Instance | BindingFlags.Public)
+                .Where(x => x.MemberType == MemberTypes.Field || x.MemberType == MemberTypes.Property)
+                .Where(x => forcedInclusionMembers.Contains(x.Name)
+                    || (!x.IsDefined(PandasIgnoreAttribute) && !x.DeclaringType.IsDefined(PandasIgnoreMembersAttribute)));
+
+            return members
+                .Select(member =>
+                {
+                    var dataTypeMember = CreateDataTypeMember(member);
+                    var memberType = dataTypeMember.GetMemberType();
+
+                    // Should we unpack its properties into columns?
+                    if (memberType.IsClass
+                        && (memberType.Namespace == null
+                            // We only expand members of types in the QuantConnect namespace,
+                            // else we might be expanding types like System.String, NodaTime.DateTimeZone or any other external types
+                            || (memberType.Namespace.StartsWith("QuantConnect.", StringComparison.InvariantCulture)
+                                && !memberType.IsDefined(PandasNonExpandableAttribute)
+                                && !member.IsDefined(PandasNonExpandableAttribute))))
+                    {
+                        dataTypeMember = CreateDataTypeMember(member, GetDataTypeMembers(memberType, forcedInclusionMembers).ToArray());
+                    }
+
+                    return (memberType, dataTypeMember);
+                })
+                // Check if there are multiple properties/fields of the same type,
+                // in which case we add the property/field name as prefix for the inner members to avoid name conflicts
+                .GroupBy(x => x.memberType, x => x.dataTypeMember)
+                .SelectMany(grouping =>
+                {
+                    var typeProperties = grouping.ToList();
+                    if (typeProperties.Count > 1)
+                    {
+                        var propertiesToExpand = typeProperties.Where(x => x.ShouldBeUnwrapped).ToList();
+                        if (propertiesToExpand.Count > 1)
+                        {
+                            foreach (var property in propertiesToExpand)
+                            {
+                                property.SetPrefix();
+                            }
+                        }
+                    }
+
+                    return typeProperties;
+                });
+        }
+
+        /// <summary>
+        /// Adds the member value to the corresponding series, making sure unwrapped values a properly added
+        /// by checking the children members and adding their values to their own series
+        /// </summary>
+        private void AddMembersData(object instance, IEnumerable<DataTypeMember> members, DateTime endTime, bool overrideValues)
+        {
+            foreach (var member in members)
+            {
+                if (!member.ShouldBeUnwrapped)
+                {
+                    AddMemberToSeries(instance, endTime, member, overrideValues);
+                }
+                else
+                {
+                    var memberValue = member.GetValue(instance);
+                    if (memberValue != null)
+                    {
+                        AddMembersData(memberValue, member.Children, endTime, overrideValues);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Only dipose of the PyObject if it was set to something different than empty
         /// </summary>
         private static void DisposeIfNotEmpty(PyObject pyObject)
@@ -426,14 +609,42 @@ namespace QuantConnect.Python
             }
         }
 
+        private static bool MemberIsDataDictionary(Type memberType)
+        {
+            while (memberType != null && !memberType.IsValueType)
+            {
+                if (memberType.IsGenericType && memberType.GetGenericTypeDefinition() == typeof(DataDictionary<>))
+                {
+                    return true;
+                }
+                memberType = memberType.BaseType;
+            }
+
+            return false;
+        }
+
+        private PyObject[] GetIndexTemplate(params object[] args)
+        {
+            return args.SkipLast(args.Length > 1 && _timeAsColumn ? 1 : 0).Select(x => x?.ToPython() ?? _empty).ToArray();
+        }
+
         /// <summary>
         /// Create a new tuple index
         /// </summary>
-        private static PyTuple CreateTupleIndex(DateTime index, List<PyObject> list)
+        private PyObject CreateIndexSourceValue(DateTime index, PyObject[] list)
         {
-            DisposeIfNotEmpty(list[list.Count - 1]);
-            list[list.Count - 1] = index.ToPython();
-            return new PyTuple(list.ToArray());
+            if (!_timeAsColumn && list.Length > 1)
+            {
+                DisposeIfNotEmpty(list[^1]);
+                list[^1] = index.ToPython();
+            }
+
+            if (list.Length > 1)
+            {
+                return new PyTuple(list.ToArray());
+            }
+
+            return list[0].ToPython();
         }
 
         /// <summary>
@@ -442,88 +653,97 @@ namespace QuantConnect.Python
         /// <param name="key">The key of the value to get</param>
         /// <param name="time"><see cref="DateTime"/> object to add to the value associated with the specific key</param>
         /// <param name="input"><see cref="Object"/> to add to the value associated with the specific key. Can be null.</param>
-        private void AddToSeries(string key, DateTime time, object input)
+        private void AddToSeries(string key, DateTime time, object input, bool overrideValues)
         {
-            var serie = GetSerie(key);
-            serie.Add(time, input);
-        }
-
-        private Serie GetSerie(string key)
-        {
-            if (!_series.TryGetValue(key, out var value))
+            if (!_series.TryGetValue(key, out var serie))
             {
-                throw new ArgumentException($"PandasData.GetSerie(): {Messages.PandasData.KeyNotFoundInSeries(key)}");
+                throw new ArgumentException($"PandasData.AddToSeries(): {Messages.PandasData.KeyNotFoundInSeries(key)}");
             }
-            return value;
-        }
 
-        /// <summary>
-        /// Get the lower-invariant name of properties of the type that a another type is assignable from
-        /// </summary>
-        /// <param name="baseType">The type that is assignable from</param>
-        /// <param name="type">The type that is assignable by</param>
-        /// <returns>List of string. Empty list if not assignable from</returns>
-        private static IEnumerable<string> GetPropertiesNames(Type baseType, Type type)
-        {
-            return baseType.IsAssignableFrom(type)
-                ? baseType.GetProperties().Select(x => x.Name.ToLowerInvariant())
-                : Enumerable.Empty<string>();
+            serie.Add(time, input, overrideValues);
         }
 
         private class Serie
         {
             private static readonly IFormatProvider InvariantCulture = CultureInfo.InvariantCulture;
-            public bool ShouldFilter { get; set; } = true;
-            public List<DateTime> Times { get; set; } = new();
-            public List<object> Values { get; set; } = new();
 
-            public void Add(DateTime time, object input)
+            public bool ShouldFilter { get; private set; }
+            public List<DateTime> Times { get; }
+            public List<object> Values { get; }
+
+            public Serie(bool withTimeIndex = true)
+            {
+                ShouldFilter = true;
+                Values = new();
+                if (withTimeIndex)
+                {
+                    Times = new();
+                }
+            }
+
+            public void Add(DateTime time, object input, bool overrideValues)
             {
                 var value = input is decimal ? Convert.ToDouble(input, InvariantCulture) : input;
                 if (ShouldFilter)
                 {
                     // we need at least 1 valid entry for the series not to get filtered
-                    if (value is double)
+                    if (value is double doubleValue)
                     {
-                        if (!((double)value).IsNaNOrZero())
+                        if (!doubleValue.IsNaNOrZero())
                         {
                             ShouldFilter = false;
                         }
                     }
-                    else if (value is string)
+                    else if (value is string stringValue)
                     {
-                        if (!string.IsNullOrWhiteSpace((string)value))
+                        if (!string.IsNullOrWhiteSpace(stringValue))
                         {
                             ShouldFilter = false;
                         }
                     }
-                    else if (value is bool)
+                    else if (value is bool boolValue)
                     {
-                        if ((bool)value)
+                        if (boolValue)
                         {
                             ShouldFilter = false;
                         }
                     }
                     else if (value != null)
                     {
-                        ShouldFilter = false;
+                        if (value is ICollection enumerable)
+                        {
+                            if (enumerable.Count != 0)
+                            {
+                                ShouldFilter = false;
+                            }
+                        }
+                        else
+                        {
+                            ShouldFilter = false;
+                        }
                     }
                 }
 
-                Values.Add(value);
-                Times.Add(time);
-            }
-
-            public void Add(DateTime time, decimal input)
-            {
-                var value = Convert.ToDouble(input, InvariantCulture);
-                if (ShouldFilter && !value.IsNaNOrZero())
+                if (overrideValues && Times != null && Times.Count > 0 && Times[^1] == time)
                 {
-                    ShouldFilter = false;
+                    // If the time is the same as the last one, we overwrite the value
+                    Values[^1] = value;
                 }
+                else
+                {
+                    Values.Add(value);
+                    Times?.Add(time);
+                }
+            }
+        }
 
-                Values.Add(value);
-                Times.Add(time);
+        private class FixedTimeProvider : ITimeProvider
+        {
+            private readonly DateTime _time;
+            public DateTime GetUtcNow() => _time;
+            public FixedTimeProvider(DateTime time)
+            {
+                _time = time;
             }
         }
     }

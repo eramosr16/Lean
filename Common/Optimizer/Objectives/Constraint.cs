@@ -31,8 +31,16 @@ namespace QuantConnect.Optimizer.Objectives
         /// <summary>
         /// The target comparison operation, eg. 'Greater'
         /// </summary>
-        [JsonProperty("operator"), JsonConverter(typeof(StringEnumConverter), typeof(DefaultNamingStrategy))]
-        public ComparisonOperatorTypes Operator { get; }
+        [JsonConverter(typeof(StringEnumConverter))]
+        public ComparisonOperatorTypes Operator { get; set; }
+
+        /// <summary>
+        /// Empty Constraint constructor
+        /// </summary>
+        public Constraint()
+        {
+
+        }
 
         /// <summary>
         /// Creates a new instance
@@ -57,7 +65,7 @@ namespace QuantConnect.Optimizer.Objectives
                 throw new ArgumentNullException(nameof(jsonBacktestResult), $"Constraint.IsMet(): {Messages.OptimizerObjectivesCommon.NullOrEmptyBacktestResult}");
             }
 
-            var token = JObject.Parse(jsonBacktestResult).SelectToken(Target);
+            var token = Objectives.Target.GetTokenInJsonBacktest(jsonBacktestResult, Target);
             if (token == null)
             {
                 return false;

@@ -60,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_lastSplitOrDividendDate == DateTime.MinValue)
             {
-                throw new Exception("No split or dividend was found in the algorithm.");
+                throw new RegressionTestException("No split or dividend was found in the algorithm.");
             }
 
             var start = Time.AddMonths(-18);
@@ -70,7 +70,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (rawHistory.Count == 0 || scaledRawHistory.Count != rawHistory.Count)
             {
-                throw new Exception($@"Expected history results to not be empty and have the same count. Raw: {rawHistory.Count
+                throw new RegressionTestException($@"Expected history results to not be empty and have the same count. Raw: {rawHistory.Count
                     }, ScaledRaw: {scaledRawHistory.Count}");
             }
 
@@ -83,13 +83,13 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     if (rawBar.Open == scaledRawBar.Open || rawBar.High == scaledRawBar.High || rawBar.Low == scaledRawBar.Low || rawBar.Close == scaledRawBar.Close)
                     {
-                        throw new Exception($@"Expected history results to be different at {rawBar.Time
+                        throw new RegressionTestException($@"Expected history results to be different at {rawBar.Time
                             } before the last split or dividend date {_lastSplitOrDividendDate}");
                     }
                 }
                 else if (rawBar.Open != scaledRawBar.Open || rawBar.High != scaledRawBar.High || rawBar.Low != scaledRawBar.Low || rawBar.Close != scaledRawBar.Close)
                 {
-                    throw new Exception($@"Expected history results to be the same at {rawBar.Time} after the last split or dividend date {_lastSplitOrDividendDate}");
+                    throw new RegressionTestException($@"Expected history results to be the same at {rawBar.Time} after the last split or dividend date {_lastSplitOrDividendDate}");
                 }
             }
         }
@@ -102,12 +102,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 516;
+        public long DataPoints => 515;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -115,16 +115,23 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 760;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
             {"Sortino Ratio", "0"},
@@ -143,6 +150,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
             {"Portfolio Turnover", "0%"},
+            {"Drawdown Recovery", "0"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }
